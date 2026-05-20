@@ -1,0 +1,165 @@
+name: Grimora
+options:
+  minimumXcodeGenVersion: 2.45.4
+  createIntermediateGroups: true
+packages:
+  GrimoraKit:
+    path: GrimoraKit
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+    GENERATE_INFOPLIST_FILE: YES
+targets:
+  GrimoraMac:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: GrimoraApp
+        excludes:
+          - AppIconComposerSources
+    dependencies:
+      - package: GrimoraKit
+        product: GrimoraUI
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_NAME: Grimora
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora
+        CODE_SIGN_ENTITLEMENTS: GrimoraApp/Grimora.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: Grimora
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.reference
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGNING_ALLOWED: NO
+  GrimoraiOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: GrimoraApp
+        excludes:
+          - AppIconComposerSources
+    dependencies:
+      - package: GrimoraKit
+        product: GrimoraUI
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_NAME: Grimora
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora.ios
+        CODE_SIGN_ENTITLEMENTS: GrimoraApp/Grimora.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_CFBundleDisplayName: Grimora
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIBackgroundModes: remote-notification
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+  GrimoraVisionOS:
+    type: application
+    platform: visionOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: GrimoraApp
+        excludes:
+          - AppIconComposerSources
+    dependencies:
+      - package: GrimoraKit
+        product: GrimoraUI
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_NAME: Grimora
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora.visionos
+        CODE_SIGN_ENTITLEMENTS: GrimoraApp/Grimora.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIconVision
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: GrimoraApp/GrimoraVisionInfo.plist
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+  GrimoraMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: GrimoraUITests
+    dependencies:
+      - target: GrimoraMac
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora.UITests
+        TEST_TARGET_NAME: GrimoraMac
+  GrimoraiOSUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: GrimoraCrossPlatformUITests
+    dependencies:
+      - target: GrimoraiOS
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora.iOSUITests
+        TEST_TARGET_NAME: GrimoraiOS
+  GrimoraVisionOSUITests:
+    type: bundle.ui-testing
+    platform: visionOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: GrimoraCrossPlatformUITests
+    dependencies:
+      - target: GrimoraVisionOS
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora.VisionOSUITests
+        TEST_TARGET_NAME: GrimoraVisionOS
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+schemes:
+  GrimoraMac:
+    build:
+      targets:
+        GrimoraMac: all
+        GrimoraMacUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - GrimoraMacUITests
+  GrimoraiOS:
+    build:
+      targets:
+        GrimoraiOS: all
+        GrimoraiOSUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - GrimoraiOSUITests
+  GrimoraVisionOS:
+    build:
+      targets:
+        GrimoraVisionOS: all
+        GrimoraVisionOSUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - GrimoraVisionOSUITests
