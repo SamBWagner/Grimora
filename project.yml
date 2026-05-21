@@ -8,8 +8,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: 6.0
-    MARKETING_VERSION: 0.1.0
-    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 1.0
+    CURRENT_PROJECT_VERSION: 2026052203
     GENERATE_INFOPLIST_FILE: YES
 targets:
   GrimoraMac:
@@ -29,12 +29,15 @@ targets:
       base:
         PRODUCT_NAME: Grimora
         PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora
-        CODE_SIGN_ENTITLEMENTS: GrimoraApp/Grimora.entitlements
+        CODE_SIGN_ENTITLEMENTS: GrimoraApp/GrimoraMac.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Grimora
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.reference
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
         ENABLE_HARDENED_RUNTIME: YES
-        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+        DEVELOPMENT_TEAM: BJPQVZR5PZ
   GrimoraiOS:
     type: application
     platform: iOS
@@ -51,10 +54,11 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Grimora
-        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora.ios
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora
         CODE_SIGN_ENTITLEMENTS: GrimoraApp/Grimora.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Grimora
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIBackgroundModes: remote-notification
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
@@ -77,7 +81,7 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Grimora
-        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora.visionos
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora
         CODE_SIGN_ENTITLEMENTS: GrimoraApp/Grimora.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIconVision
         GENERATE_INFOPLIST_FILE: NO
