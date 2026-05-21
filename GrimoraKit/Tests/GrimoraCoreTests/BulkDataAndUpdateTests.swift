@@ -113,6 +113,62 @@ final class BulkDataAndUpdateTests: XCTestCase {
         XCTAssertEqual(purposes, [.bulkDownload])
     }
 
+    func testDownloadAndImportCanDeferPriceHistoryAndStillPrepareReadyLibrary() async throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let downloadURL = URL(string: "https://example.test/default.json")!
+        let manifest = defaultCardsManifest(downloadURL: downloadURL)
+        let network = RecordingNetworkClient(dataResponses: [downloadURL: Fixtures.defaultCardsJSON()])
+        let service = LibraryUpdateService(
+            database: database,
+            bulkDataClient: BulkDataClient(network: network),
+            priceHistoryClient: MTGJSONPriceHistoryClient(network: network),
+            priceHistoryImporter: MTGJSONPriceHistoryImporter(database: database)
+        )
+        let importer = LibraryImporter(database: database, imageResolver: NoImageResolver())
+
+        let summary = try await service.downloadAndImport(
+            manifest: manifest,
+            temporaryDirectory: try temporaryDirectory(),
+            importer: importer,
+            refreshesPriceHistory: false
+        )
+
+        XCTAssertEqual(summary.importedCards, 2)
+        XCTAssertEqual(summary.priceHistoryStatus, .deferred)
+        XCTAssertTrue(try database.isLibraryReady())
+        let requests = await network.requests()
+        XCTAssertEqual(requests.map(\.1), [.bulkDownload])
+    }
+
+    func testLiveDefaultCardsImportCompletesWhenConfigured() async throws {
+        guard let path = ProcessInfo.processInfo.environment["GRIMORA_LIVE_DEFAULT_CARDS_JSON"] else {
+            throw XCTSkip("Set GRIMORA_LIVE_DEFAULT_CARDS_JSON to run the live default-cards import check.")
+        }
+
+        let database = try CardDatabase(storage: .file(try temporaryDirectory().appendingPathComponent("live.sqlite")))
+        let importer = LibraryImporter(database: database, imageResolver: NoImageResolver())
+        let fileURL = URL(fileURLWithPath: path)
+        let manifest = BulkDataManifest(
+            id: "live-default-cards",
+            type: "default_cards",
+            updatedAt: "live",
+            name: "Default Cards",
+            size: (try FileManager.default.attributesOfItem(atPath: path)[.size] as? NSNumber)?.intValue ?? 0,
+            downloadURI: fileURL
+        )
+
+        let summary = try await importer.importDefaultCards(
+            from: fileURL,
+            manifest: manifest,
+            imagePolicy: .reuseExistingImagesWithoutDownloading,
+            preservesCardValueHistory: true
+        )
+
+        XCTAssertGreaterThan(summary.importedCards, 90_000)
+        XCTAssertTrue(try database.isLibraryReady())
+        XCTAssertEqual(try database.cardCount(), summary.importedCards)
+    }
+
     func testPriceHistoryFailureDoesNotFailCardImport() async throws {
         let database = try CardDatabase(storage: .inMemory)
         let downloadURL = URL(string: "https://example.test/default.json")!

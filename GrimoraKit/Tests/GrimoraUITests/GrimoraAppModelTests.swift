@@ -1919,6 +1919,16 @@ final class GrimoraAppModelTests: XCTestCase {
       size: 100,
       downloadURI: URL(string: "https://example.test/default.json")!
     )
+    XCTAssertEqual(
+      model.libraryActivity?.steps.map(\.id),
+      [
+        "check-card-data",
+        "download-card-data",
+        "read-card-data",
+        "build-card-library",
+        "finalize-card-library",
+      ]
+    )
 
     model.handleImportProgress(.downloadingBulkData, manifest: manifest)
     model.handleImportProgress(
@@ -1934,15 +1944,18 @@ final class GrimoraAppModelTests: XCTestCase {
     model.handleImportProgress(.decodingCardData, manifest: manifest)
 
     cardDownloadStep = try activityStep("download-card-data", in: model)
-    var buildStep = try activityStep("build-card-library", in: model)
+    let readStep = try activityStep("read-card-data", in: model)
     XCTAssertEqual(cardDownloadStep.state, .succeeded)
-    XCTAssertEqual(buildStep.state, .running)
-    XCTAssertNil(buildStep.progress)
-    XCTAssertEqual(buildStep.detail, "Reading card data")
+    XCTAssertEqual(readStep.state, .running)
+    XCTAssertNil(readStep.progress)
+    XCTAssertEqual(readStep.detail, "Reading card data, this can take a few minutes")
+    XCTAssertTrue(model.statusMessage.contains("this can take a few minutes"))
 
     model.handleImportProgress(.storingSearchIndex(cardCount: 42), manifest: manifest)
 
-    buildStep = try activityStep("build-card-library", in: model)
+    let updatedReadStep = try activityStep("read-card-data", in: model)
+    var buildStep = try activityStep("build-card-library", in: model)
+    XCTAssertEqual(updatedReadStep.state, .succeeded)
     XCTAssertEqual(buildStep.state, .running)
     XCTAssertNil(buildStep.progress)
     XCTAssertEqual(buildStep.detail, "Writing 42 cards")
@@ -1951,8 +1964,11 @@ final class GrimoraAppModelTests: XCTestCase {
     model.handleImportProgress(.cardDataReady(cardCount: 42), manifest: manifest)
 
     buildStep = try activityStep("build-card-library", in: model)
+    let finalizeStep = try activityStep("finalize-card-library", in: model)
     XCTAssertEqual(buildStep.state, .succeeded)
     XCTAssertEqual(buildStep.progress, 1)
+    XCTAssertEqual(finalizeStep.state, .succeeded)
+    XCTAssertEqual(finalizeStep.progress, 1)
   }
 
   func testRefreshCardValuesImportsPricingOnlyAndPreservesCurrentState() async throws {
@@ -2689,6 +2705,116 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertNil(storedCards.first?.smallImagePath)
     XCTAssertNil(storedCards.first?.normalImagePath)
     XCTAssertNil(storedCards.first?.largeImagePath)
+  }
+
+  func testInitialSetupCompletesWhenValueMetadataRequestIsSuspended() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let downloadURL = URL(string: "https://example.test/default.json")!
+    let imageDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      UUID().uuidString,
+      isDirectory: true
+    )
+    var responses = valueHistoryNetworkResponses(cardID: "setup-forest")
+    responses[BulkDataClient.bulkDataURL] = manifestListJSON(downloadURL: downloadURL)
+    responses[downloadURL] = setupCardsJSON()
+    let network = SuspendedModelNetworkClient(
+      dataResponses: responses,
+      suspendedURL: MTGJSONPriceHistoryClient.metaURL
+    )
+    let importer = LibraryImporter(
+      database: database,
+      imageResolver: ModelTestImageResolver(rootDirectory: imageDirectory)
+    )
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        network: network,
+        importer: importer,
+        priceHistoryEnabled: true
+      ))
+
+    await model.startInitialSetup()
+    await model.drainSearchForTesting()
+    await network.waitForRequestCount(3)
+
+    XCTAssertEqual(model.libraryState, .ready)
+    XCTAssertTrue(model.hasLibrary)
+    XCTAssertEqual(model.cards.map(\.name), ["Setup Forest"])
+    XCTAssertEqual(
+      model.statusMessage,
+      "Imported 1 cards. Images load as you browse. Values update in background."
+    )
+    XCTAssertEqual(model.libraryActivity?.state, .succeeded)
+    XCTAssertEqual(model.valueHistoryBackgroundActivity?.state, .running)
+    XCTAssertEqual(model.valueHistoryBackgroundActivity?.title, "Values updating")
+
+    await network.release()
+    await model.valueHistoryRefreshTask?.value
+    await model.valueHistoryBackgroundTask?.value
+  }
+
+  func testInitialSetupCompletesWhenDeferredValueDownloadFails() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let downloadURL = URL(string: "https://example.test/default.json")!
+    let imageDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      UUID().uuidString,
+      isDirectory: true
+    )
+    let network = ModelTestNetworkClient(dataResponses: [
+      BulkDataClient.bulkDataURL: manifestListJSON(downloadURL: downloadURL),
+      downloadURL: setupCardsJSON(),
+      MTGJSONPriceHistoryClient.metaURL: modelValueHistoryMetaJSON(),
+    ])
+    let importer = LibraryImporter(
+      database: database,
+      imageResolver: ModelTestImageResolver(rootDirectory: imageDirectory)
+    )
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        network: network,
+        importer: importer,
+        priceHistoryEnabled: true
+      ))
+
+    await model.startInitialSetup()
+    await model.drainSearchForTesting()
+
+    XCTAssertEqual(model.libraryState, .ready)
+    XCTAssertTrue(model.hasLibrary)
+    XCTAssertEqual(model.cards.map(\.name), ["Setup Forest"])
+
+    await model.valueHistoryRefreshTask?.value
+    XCTAssertEqual(model.valueHistoryBackgroundActivity?.state, .failed)
+    XCTAssertEqual(model.valueHistoryBackgroundActivity?.title, "Value update failed")
+    let requests = await network.requests()
+    XCTAssertEqual(requests.map(\.purpose), [
+      .manifestCheck,
+      .bulkDownload,
+      .priceHistoryDownload,
+      .priceHistoryDownload,
+      .priceHistoryDownload,
+    ])
+  }
+
+  func testInitialSetupFailureDismissesOverlayToRetryableSetupScreen() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        network: ModelTestNetworkClient(dataResponses: [:])
+      ))
+
+    await model.startInitialSetup()
+
+    XCTAssertEqual(
+      model.libraryState,
+      .failed("Setup failed. Check your connection and disk space, then try again.")
+    )
+    XCTAssertFalse(model.isWorking)
+    XCTAssertNil(model.libraryActivity)
+    XCTAssertFalse(model.hasLibrary)
+    XCTAssertFalse(model.hasLocalCardData)
   }
 
   func testRequiredSyncedDatabaseUpdateShowsDataLoadActivity() async throws {
@@ -5185,6 +5311,7 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
 
     XCTAssertEqual(model.priceHistoryStatusSuffix(for: .notConfigured), "")
+    XCTAssertEqual(model.priceHistoryStatusSuffix(for: .deferred), " Values update in background.")
     XCTAssertEqual(model.priceHistoryStatusSuffix(for: .skipped), " Value history is current.")
     XCTAssertEqual(
       model.priceHistoryStatusSuffix(

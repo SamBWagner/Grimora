@@ -18,6 +18,7 @@ public struct ImportSummary: Equatable, Sendable {
 
 public enum PriceHistoryImportStatus: Equatable, Sendable {
     case notConfigured
+    case deferred
     case skipped
     case imported(MTGJSONPriceImportSummary)
     case failed

@@ -165,15 +165,26 @@ struct DataLoadScreen: View {
                     .accessibilityHidden(true)
             }
 
-            ProgressView(value: progressValue(for: step), total: 1)
-                .progressViewStyle(.linear)
-                .tint(tint(for: step.state))
+            progressIndicator(for: step)
                 .accessibilityIdentifier("data-load-progress-\(step.id)")
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(step.title)
         .accessibilityValue(progressText(for: step))
         .accessibilityIdentifier("data-load-step-\(step.id)")
+    }
+
+    @ViewBuilder
+    private func progressIndicator(for step: GrimoraLibraryActivityStep) -> some View {
+        if let value = progressValue(for: step) {
+            ProgressView(value: value, total: 1)
+                .progressViewStyle(.linear)
+                .tint(tint(for: step.state))
+        } else {
+            ProgressView()
+                .progressViewStyle(.linear)
+                .tint(tint(for: step.state))
+        }
     }
 
     private var statusBadge: some View {

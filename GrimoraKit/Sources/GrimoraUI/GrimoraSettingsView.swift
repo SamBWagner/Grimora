@@ -40,8 +40,13 @@ public struct GrimoraSettingsView: View {
       .tabItem {
         Label("Value", systemImage: "chart.line.uptrend.xyaxis")
       }
+
+      legalForm
+      .tabItem {
+        Label("Legal", systemImage: "info.circle")
+      }
     }
-    .frame(width: 500, height: 340)
+    .frame(width: 500, height: 360)
     .scenePadding()
     #elseif os(iOS) || os(visionOS)
     settingsForm
@@ -101,6 +106,8 @@ public struct GrimoraSettingsView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
       }
+
+      legalSections
       #endif
     }
   }
@@ -123,6 +130,35 @@ public struct GrimoraSettingsView: View {
       Text("AUD values are converted from USD with a cached daily exchange rate.")
         .font(.caption)
         .foregroundStyle(.secondary)
+    }
+  }
+
+  private var legalForm: some View {
+    Form {
+      legalSections
+    }
+  }
+
+  private var legalSections: some View {
+    Group {
+      Section("Unofficial Fan Content") {
+        Text("Grimora is unofficial Fan Content permitted under the Fan Content Policy. Not approved or endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. (C) Wizards of the Coast LLC.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+
+      Section("Credits") {
+        Text("Card data and imagery are provided by Scryfall. Grimora is not produced by or endorsed by Scryfall.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+
+        Text("Value history uses data from MTGJSON. MTGJSON is copyright (C) 2018-Present Zach Halpern and is distributed under the MIT License.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
     }
   }
 

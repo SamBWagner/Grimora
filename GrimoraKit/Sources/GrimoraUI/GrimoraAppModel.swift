@@ -238,8 +238,10 @@ public final class GrimoraAppModel: ObservableObject {
   var nextPagePrefetchTask: Task<Void, Never>?
   var searchHistoryRecordTask: Task<Void, Never>?
   var cloudSyncTask: Task<Void, Never>?
+  var valueHistoryRefreshTask: Task<Void, Never>?
   var valueHistoryBackgroundTask: Task<Void, Never>?
   var libraryActivityDismissTask: Task<Void, Never>?
+  var cardDataReadHeartbeatTask: Task<Void, Never>?
   var searchGeneration: UInt64 = 0
   var currentSearchCacheKey: SearchResultCacheKey?
   var isUpdatingCurrentSort = false

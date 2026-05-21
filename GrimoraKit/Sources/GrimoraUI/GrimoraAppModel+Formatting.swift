@@ -12,6 +12,12 @@ extension GrimoraAppModel {
   }
 
   func handleImportProgress(_ progress: ImportProgress, manifest: BulkDataManifest) {
+    if case .decodingCardData = progress {
+      startCardDataReadHeartbeat()
+    } else {
+      stopCardDataReadHeartbeat()
+    }
+
     switch progress {
     case .downloadingBulkData:
       statusMessage =
@@ -23,7 +29,7 @@ extension GrimoraAppModel {
         totalBytes: totalBytes
       )
     case .decodingCardData:
-      statusMessage = "Reading Scryfall card data..."
+      statusMessage = "Reading Scryfall card data... this can take a few minutes on first install."
     case .storingSearchIndex(let cardCount):
       statusMessage = "Writing offline search index for \(formatted(cardCount)) cards..."
     case .cardDataReady(let cardCount):
@@ -128,6 +134,8 @@ extension GrimoraAppModel {
     switch status {
     case .notConfigured:
       "Value history updates are unavailable."
+    case .deferred:
+      "Values are updating in the background."
     case .skipped:
       "Value history is current."
     case .imported(let summary):
@@ -184,6 +192,8 @@ extension GrimoraAppModel {
     switch status {
     case .notConfigured:
       ""
+    case .deferred:
+      " Values update in background."
     case .skipped:
       " Value history is current."
     case .imported(let summary):

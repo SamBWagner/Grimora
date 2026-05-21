@@ -224,12 +224,14 @@ extension GrimoraAppModel {
         manifest: manifest,
         temporaryDirectory: temporaryDirectory,
         importer: importer,
-        imagePolicy: .reuseExistingImagesWithoutDownloading
+        imagePolicy: .reuseExistingImagesWithoutDownloading,
+        refreshesPriceHistory: false
       ) { [weak self] progress in
         await MainActor.run {
           self?.handleImportProgress(progress, manifest: manifest)
         }
       }
+      stopCardDataReadHeartbeat()
       updateManifest = nil
       refreshLibraryState()
       searchResultCache.removeAll()
@@ -239,13 +241,7 @@ extension GrimoraAppModel {
       resetSearchVisibleImageRequests()
 
       guard hasLibrary else {
-        libraryState = .failed(
-          "The card data imported, but the library could not be verified. Try again to finish setup."
-        )
-        statusMessage = "Setup could not verify the local card data."
-        finishLibraryActivity(message: statusMessage, state: .failed)
-        cards = []
-        searchResultTotal = 0
+        failInitialSetup(message: "Setup could not verify the local card data.")
         return
       }
 
@@ -255,16 +251,12 @@ extension GrimoraAppModel {
       finishLibraryActivityForImportSummary(summary, message: statusMessage)
       reloadCardLists()
       reloadSearch()
-      startValueHistoryBackgroundImportIfNeeded()
+      startDeferredValueHistoryRefreshIfNeeded(for: summary.priceHistoryStatus)
       if cloudSyncMode == .enabled {
         await startCloudSync()
       }
     } catch {
-      libraryState = .failed("Setup failed. Check your connection and disk space, then try again.")
-      statusMessage = "Setup failed. Check your connection and disk space, then try again."
-      finishLibraryActivity(message: statusMessage, state: .failed)
-      cards = []
-      searchResultTotal = 0
+      failInitialSetup(message: "Setup failed. Check your connection and disk space, then try again.")
     }
   }
 
@@ -561,6 +553,9 @@ extension GrimoraAppModel {
   }
 
   private func prepareForLibraryMaintenance() {
+    stopCardDataReadHeartbeat()
+    valueHistoryRefreshTask?.cancel()
+    valueHistoryRefreshTask = nil
     searchDebounceTask?.cancel()
     searchTask?.cancel()
     plainTextSearchTask?.cancel()
@@ -582,6 +577,131 @@ extension GrimoraAppModel {
     listVisibleImageWindowTracker.reset()
     resetAllVisibleImageRequests()
     closeSelectedCard()
+  }
+
+  private func failInitialSetup(message: String) {
+    stopCardDataReadHeartbeat()
+    libraryState = .failed(message)
+    statusMessage = message
+    finishLibraryActivity(message: statusMessage, state: .failed)
+    dismissLibraryActivity()
+    cards = []
+    searchResultTotal = 0
+  }
+
+  func startDeferredValueHistoryRefreshIfNeeded(for status: PriceHistoryImportStatus) {
+    guard status == .deferred, valueHistoryRefreshTask == nil else {
+      return
+    }
+
+    valueHistoryBackgroundActivity = ValueHistoryBackgroundActivity(
+      state: .running,
+      title: "Values updating",
+      message: "Checking current values",
+      progress: nil
+    )
+
+    let updateService = updateService
+    let temporaryDirectory = temporaryDirectory
+    valueHistoryRefreshTask = Task { [weak self, updateService, temporaryDirectory] in
+      let status = await updateService.refreshPriceHistory(
+        temporaryDirectory: temporaryDirectory
+      ) { [weak self] progress in
+        await MainActor.run {
+          self?.publishDeferredValueHistoryProgress(progress)
+        }
+      }
+
+      await MainActor.run {
+        guard let self else {
+          return
+        }
+        self.valueHistoryRefreshTask = nil
+        switch status {
+        case .imported:
+          self.valueHistoryBackgroundActivity = ValueHistoryBackgroundActivity(
+            state: .running,
+            title: "Values updating",
+            message: self.priceHistoryStatusMessage(for: status),
+            progress: 1
+          )
+          if let selectedCard = self.selectedCard {
+            Task { [weak self, selectedCard] in
+              await self?.loadValueGuide(for: selectedCard)
+            }
+          }
+          self.startValueHistoryBackgroundImportIfNeeded()
+        case .deferred:
+          self.valueHistoryBackgroundActivity = ValueHistoryBackgroundActivity(
+            state: .running,
+            title: "Values updating",
+            message: self.priceHistoryStatusMessage(for: status),
+            progress: nil
+          )
+        case .failed:
+          self.valueHistoryBackgroundActivity = ValueHistoryBackgroundActivity(
+            state: .failed,
+            title: "Value update failed",
+            message: "Card search is ready. Refresh card values to retry.",
+            progress: nil
+          )
+        case .notConfigured, .skipped:
+          self.valueHistoryBackgroundActivity = nil
+        }
+      }
+    }
+  }
+
+  func publishDeferredValueHistoryProgress(_ progress: ImportProgress) {
+    let message: String
+    let fraction: Double?
+
+    switch progress {
+    case .downloadingPriceHistoryData:
+      message = "Checking current values"
+      fraction = nil
+    case .downloadingPriceHistoryDataProgress(let file, let completedBytes, let totalBytes):
+      message = downloadStatusMessage(
+        label: priceHistoryDownloadLabel(for: file),
+        completedBytes: completedBytes,
+        totalBytes: totalBytes
+      )
+      fraction = Self.byteProgressFraction(completedBytes: completedBytes, totalBytes: totalBytes)
+    case .buildingPriceIDMap:
+      message = "Mapping cards to current prices"
+      fraction = nil
+    case .buildingPriceIDMapProgress(let scannedBytes, let totalBytes, let mappedCards):
+      message = scanStatusMessage(
+        label: "MTGJSON card identifiers",
+        scannedBytes: scannedBytes,
+        totalBytes: totalBytes,
+        suffix: mappedCards > 0 ? "\(formatted(mappedCards)) mapped" : nil
+      )
+      fraction = Self.byteProgressFraction(completedBytes: scannedBytes, totalBytes: totalBytes)
+    case .importingPriceHistory:
+      message = "Importing current prices"
+      fraction = nil
+    case .importingPriceHistoryProgress(let scannedBytes, let totalBytes, let importedPricePoints):
+      message = scanStatusMessage(
+        label: "current prices",
+        scannedBytes: scannedBytes,
+        totalBytes: totalBytes,
+        suffix: importedPricePoints > 0 ? "\(formatted(importedPricePoints)) prices" : nil
+      )
+      fraction = Self.byteProgressFraction(completedBytes: scannedBytes, totalBytes: totalBytes)
+    case .priceHistoryReady(let pricePointCount):
+      message = "Indexed \(formatted(pricePointCount)) value points"
+      fraction = 1
+    default:
+      return
+    }
+
+    valueHistoryBackgroundActivity = ValueHistoryBackgroundActivity(
+      state: .running,
+      title: "Values updating",
+      message: message,
+      progress: fraction
+    )
   }
 
   func startValueHistoryBackgroundImportIfNeeded() {

@@ -4,7 +4,9 @@ import GrimoraCore
 private enum LibraryActivityStepID {
   static let checkCardData = "check-card-data"
   static let downloadCardData = "download-card-data"
+  static let readCardData = "read-card-data"
   static let buildCardLibrary = "build-card-library"
+  static let finalizeCardLibrary = "finalize-card-library"
   static let checkPriceHistory = "check-price-history"
   static let downloadPriceIdentifiers = "download-price-identifiers"
   static let downloadPrices = "download-prices"
@@ -86,12 +88,56 @@ extension GrimoraAppModel {
     libraryActivity = nil
   }
 
+  func startCardDataReadHeartbeat() {
+    cardDataReadHeartbeatTask?.cancel()
+    let startedAt = Date()
+    cardDataReadHeartbeatTask = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(nanoseconds: 15_000_000_000)
+        guard !Task.isCancelled else {
+          return
+        }
+
+        let elapsedSeconds = Int(Date().timeIntervalSince(startedAt).rounded(.down))
+        await MainActor.run {
+          self?.publishCardDataReadHeartbeat(elapsedSeconds: elapsedSeconds)
+        }
+      }
+    }
+  }
+
+  func stopCardDataReadHeartbeat() {
+    cardDataReadHeartbeatTask?.cancel()
+    cardDataReadHeartbeatTask = nil
+  }
+
+  private func publishCardDataReadHeartbeat(elapsedSeconds: Int) {
+    guard cardDataReadHeartbeatTask != nil,
+      libraryActivity?.state == .running
+    else {
+      return
+    }
+
+    let message = "Reading Scryfall card data... still working after \(Self.elapsedTimeDescription(elapsedSeconds))."
+    statusMessage = message
+    updateLibraryActivity(message: message) { steps in
+      Self.updateStep(
+        LibraryActivityStepID.readCardData,
+        title: "Read card data",
+        detail: "Reading card data, \(Self.elapsedTimeDescription(elapsedSeconds))",
+        progress: nil,
+        state: .running,
+        in: &steps
+      )
+    }
+  }
+
   func finishLibraryActivityForPriceHistory(_ status: PriceHistoryImportStatus) {
     let state: GrimoraLibraryActivityState =
       switch status {
       case .failed, .notConfigured:
         .failed
-      case .skipped, .imported:
+      case .deferred, .skipped, .imported:
         .succeeded
       }
     finishLibraryActivity(
@@ -114,7 +160,7 @@ extension GrimoraAppModel {
     switch status {
     case .failed:
       .failed
-    case .notConfigured, .skipped, .imported:
+    case .notConfigured, .deferred, .skipped, .imported:
       .succeeded
     }
   }
@@ -139,6 +185,16 @@ extension GrimoraAppModel {
   }
 
   static let libraryActivityCompletionDelayNanoseconds: UInt64 = 2_500_000_000
+
+  private static func elapsedTimeDescription(_ seconds: Int) -> String {
+    guard seconds >= 60 else {
+      return "\(max(seconds, 0))s"
+    }
+
+    let minutes = seconds / 60
+    let remainingSeconds = seconds % 60
+    return remainingSeconds == 0 ? "\(minutes)m" : "\(minutes)m \(remainingSeconds)s"
+  }
 }
 
 extension GrimoraAppModel {
@@ -150,12 +206,16 @@ extension GrimoraAppModel {
       [
         step(id: LibraryActivityStepID.checkCardData, title: "Check card database", progress: 0.15, state: .running),
         step(id: LibraryActivityStepID.downloadCardData, title: "Download card data"),
+        step(id: LibraryActivityStepID.readCardData, title: "Read card data"),
         step(id: LibraryActivityStepID.buildCardLibrary, title: "Build local library"),
+        step(id: LibraryActivityStepID.finalizeCardLibrary, title: "Finalize library"),
       ]
     case .importCardDatabase, .refreshCardDatabase, .deleteAndRefreshDatabase, .updateSyncedDatabase:
       [
         step(id: LibraryActivityStepID.downloadCardData, title: "Download card data"),
+        step(id: LibraryActivityStepID.readCardData, title: "Read card data"),
         step(id: LibraryActivityStepID.buildCardLibrary, title: "Build local library"),
+        step(id: LibraryActivityStepID.finalizeCardLibrary, title: "Finalize library"),
       ]
     case .refreshCardValues:
       priceHistorySteps(checkIsRunning: true)
@@ -213,14 +273,15 @@ extension GrimoraAppModel {
       finishStep(LibraryActivityStepID.checkCardData, in: &steps)
       finishStep(LibraryActivityStepID.downloadCardData, in: &steps)
       updateStep(
-        LibraryActivityStepID.buildCardLibrary,
-        title: "Build local library",
-        detail: "Reading card data",
+        LibraryActivityStepID.readCardData,
+        title: "Read card data",
+        detail: "Reading card data, this can take a few minutes",
         progress: nil,
         state: .running,
         in: &steps
       )
     case .storingSearchIndex(let cardCount):
+      finishStep(LibraryActivityStepID.readCardData, in: &steps)
       finishStep(LibraryActivityStepID.downloadCardData, in: &steps)
       updateStep(
         LibraryActivityStepID.buildCardLibrary,
@@ -232,6 +293,14 @@ extension GrimoraAppModel {
       )
     case .cardDataReady:
       finishStep(LibraryActivityStepID.buildCardLibrary, in: &steps)
+      updateStep(
+        LibraryActivityStepID.finalizeCardLibrary,
+        title: "Finalize library",
+        detail: "Ready for offline search",
+        progress: 1,
+        state: .succeeded,
+        in: &steps
+      )
     case .downloadingPriceHistoryData:
       ensurePriceHistorySteps(in: &steps)
       finishStep(LibraryActivityStepID.checkPriceHistory, in: &steps)

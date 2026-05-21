@@ -56,6 +56,7 @@ public final class LibraryUpdateService: Sendable {
         temporaryDirectory: URL,
         importer: LibraryImporter,
         imagePolicy: ImageImportPolicy = .reuseExistingImagesWithoutDownloading,
+        refreshesPriceHistory: Bool = true,
         progress: (@Sendable (ImportProgress) async -> Void)? = nil
     ) async throws -> ImportSummary {
         let destination = temporaryDirectory.appendingPathComponent("default-cards-\(manifest.updatedAt.fileSafeComponent).json")
@@ -76,7 +77,11 @@ public final class LibraryUpdateService: Sendable {
             preservesCardValueHistory: priceHistoryClient != nil && priceHistoryImporter != nil,
             progress: progress
         )
-        summary.priceHistoryStatus = await refreshPriceHistory(temporaryDirectory: temporaryDirectory, progress: progress)
+        if refreshesPriceHistory {
+            summary.priceHistoryStatus = await refreshPriceHistory(temporaryDirectory: temporaryDirectory, progress: progress)
+        } else if priceHistoryClient != nil && priceHistoryImporter != nil {
+            summary.priceHistoryStatus = .deferred
+        }
         return summary
     }
 
