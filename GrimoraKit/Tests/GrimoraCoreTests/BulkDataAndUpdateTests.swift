@@ -228,6 +228,44 @@ final class BulkDataAndUpdateTests: XCTestCase {
         XCTAssertEqual(requests.map(\.1), [.bulkDownload, .priceHistoryDownload, .priceHistoryDownload])
     }
 
+    func testCurrentPriceDownloadFailureDoesNotFailCardImport() async throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let downloadURL = URL(string: "https://example.test/default.json")!
+        let manifest = defaultCardsManifest(downloadURL: downloadURL)
+        let priceFixtures = try writeGzipPriceFixtures()
+        let network = RecordingNetworkClient(
+            dataResponses: [
+                downloadURL: Fixtures.defaultCardsJSON(),
+                MTGJSONPriceHistoryClient.metaURL: mtgjsonMetaJSON(),
+                MTGJSONPriceHistoryClient.allPrintingsURL: try Data(contentsOf: priceFixtures.printingsURL)
+            ],
+            errors: [MTGJSONPriceHistoryClient.allPricesTodayURL: TestNetworkError()]
+        )
+        let service = LibraryUpdateService(
+            database: database,
+            bulkDataClient: BulkDataClient(network: network),
+            priceHistoryClient: MTGJSONPriceHistoryClient(network: network),
+            priceHistoryImporter: MTGJSONPriceHistoryImporter(database: database)
+        )
+
+        let summary = try await service.downloadAndImport(
+            manifest: manifest,
+            temporaryDirectory: try temporaryDirectory(),
+            importer: LibraryImporter(database: database, imageResolver: NoImageResolver())
+        )
+
+        XCTAssertEqual(summary.importedCards, 2)
+        XCTAssertEqual(summary.priceHistoryStatus, .failed)
+        XCTAssertEqual(try database.cardCount(), 2)
+        let requests = await network.requests()
+        XCTAssertEqual(requests.map(\.0), [
+            downloadURL,
+            MTGJSONPriceHistoryClient.metaURL,
+            MTGJSONPriceHistoryClient.allPrintingsURL,
+            MTGJSONPriceHistoryClient.allPricesTodayURL
+        ])
+    }
+
     func testPriceImportIsSkippedWhenMTGJSONMetadataMatchesAndSummariesExist() async throws {
         let database = try CardDatabase(storage: .inMemory)
         let importer = LibraryImporter(database: database, imageResolver: NoImageResolver())
@@ -410,6 +448,143 @@ final class BulkDataAndUpdateTests: XCTestCase {
         XCTAssertFalse(requests.contains { $0.1 == .bulkDownload })
     }
 
+    func testBackgroundHistoryReusesCurrentMappingsAndCleansLargeArtifacts() async throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let cardImporter = LibraryImporter(database: database, imageResolver: NoImageResolver())
+        _ = try await cardImporter.importDefaultCards(
+            from: Fixtures.defaultCardsJSON(),
+            manifest: nil,
+            imagePolicy: .skipImageDownloads
+        )
+        let priceFixtures = try writeGzipPriceFixtures()
+        let network = RecordingNetworkClient(dataResponses: [
+            MTGJSONPriceHistoryClient.metaURL: mtgjsonMetaJSON(),
+            MTGJSONPriceHistoryClient.allPrintingsURL: try Data(contentsOf: priceFixtures.printingsURL),
+            MTGJSONPriceHistoryClient.allPricesTodayURL: try Data(contentsOf: priceFixtures.pricesURL),
+            MTGJSONPriceHistoryClient.allPricesURL: try Data(contentsOf: priceFixtures.pricesURL)
+        ])
+        let service = LibraryUpdateService(
+            database: database,
+            bulkDataClient: BulkDataClient(network: network),
+            priceHistoryClient: MTGJSONPriceHistoryClient(network: network),
+            priceHistoryImporter: MTGJSONPriceHistoryImporter(database: database)
+        )
+        let temporaryURL = try temporaryDirectory()
+        let backgroundDirectory = try temporaryDirectory()
+
+        let currentStatus = await service.refreshPriceHistory(temporaryDirectory: temporaryURL)
+        let historyStatus = await service.runPendingValueHistoryBackgroundImport(
+            backgroundDirectory: backgroundDirectory,
+            temporaryDirectory: temporaryURL
+        )
+
+        XCTAssertEqual(
+            currentStatus,
+            .imported(MTGJSONPriceImportSummary(mappedCards: 1, importedPricePoints: 1))
+        )
+        XCTAssertEqual(
+            historyStatus,
+            PriceHistoryImportStatus.imported(
+                MTGJSONPriceImportSummary(mappedCards: 1, importedPricePoints: 1)
+            )
+        )
+        XCTAssertEqual(try database.valueGuide(forCardID: "json-alpha").entries.first?.currentPrice, 2.50)
+        XCTAssertEqual(try database.latestValueHistoryBackgroundJob()?.status, .succeeded)
+        let jobID = try XCTUnwrap(try database.latestValueHistoryBackgroundJob()?.id)
+        XCTAssertEqual(
+            try database.stagedValueHistorySummary(jobID: jobID),
+            MTGJSONPriceImportSummary(mappedCards: 0, importedPricePoints: 0)
+        )
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: backgroundDirectory.path),
+            []
+        )
+
+        let requests = await network.requests()
+        XCTAssertEqual(requests.map(\.0), [
+            MTGJSONPriceHistoryClient.metaURL,
+            MTGJSONPriceHistoryClient.allPrintingsURL,
+            MTGJSONPriceHistoryClient.allPricesTodayURL,
+            MTGJSONPriceHistoryClient.allPricesURL
+        ])
+    }
+
+    func testBackgroundHistoryFailureKeepsCurrentPriceAndCanRetryCleanly() async throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let cardImporter = LibraryImporter(database: database, imageResolver: NoImageResolver())
+        _ = try await cardImporter.importDefaultCards(
+            from: Fixtures.defaultCardsJSON(),
+            manifest: nil,
+            imagePolicy: .skipImageDownloads
+        )
+        let priceFixtures = try writeGzipPriceFixtures()
+        let failingNetwork = RecordingNetworkClient(dataResponses: [
+            MTGJSONPriceHistoryClient.metaURL: mtgjsonMetaJSON(),
+            MTGJSONPriceHistoryClient.allPrintingsURL: try Data(contentsOf: priceFixtures.printingsURL),
+            MTGJSONPriceHistoryClient.allPricesTodayURL: try Data(contentsOf: priceFixtures.pricesURL),
+            MTGJSONPriceHistoryClient.allPricesURL: Data("invalid gzip".utf8)
+        ])
+        let failingService = LibraryUpdateService(
+            database: database,
+            bulkDataClient: BulkDataClient(network: failingNetwork),
+            priceHistoryClient: MTGJSONPriceHistoryClient(network: failingNetwork),
+            priceHistoryImporter: MTGJSONPriceHistoryImporter(database: database)
+        )
+        let temporaryURL = try temporaryDirectory()
+        let backgroundDirectory = try temporaryDirectory()
+
+        _ = await failingService.refreshPriceHistory(temporaryDirectory: temporaryURL)
+        let failedStatus = await failingService.runPendingValueHistoryBackgroundImport(
+            backgroundDirectory: backgroundDirectory,
+            temporaryDirectory: temporaryURL
+        )
+
+        XCTAssertEqual(failedStatus, PriceHistoryImportStatus.failed)
+        XCTAssertEqual(try database.valueGuide(forCardID: "json-alpha").entries.first?.currentPrice, 2.50)
+        let failedJob = try XCTUnwrap(try database.latestValueHistoryBackgroundJob())
+        XCTAssertEqual(failedJob.status, .failed)
+        XCTAssertNotNil(failedJob.lastError)
+        XCTAssertEqual(
+            try database.stagedValueHistorySummary(jobID: failedJob.id),
+            MTGJSONPriceImportSummary(mappedCards: 0, importedPricePoints: 0)
+        )
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: backgroundDirectory.path),
+            []
+        )
+
+        let retryNetwork = RecordingNetworkClient(dataResponses: [
+            MTGJSONPriceHistoryClient.metaURL: mtgjsonMetaJSON(),
+            MTGJSONPriceHistoryClient.allPricesURL: try Data(contentsOf: priceFixtures.pricesURL)
+        ])
+        let retryService = LibraryUpdateService(
+            database: database,
+            bulkDataClient: BulkDataClient(network: retryNetwork),
+            priceHistoryClient: MTGJSONPriceHistoryClient(network: retryNetwork),
+            priceHistoryImporter: MTGJSONPriceHistoryImporter(database: database)
+        )
+
+        let refreshStatus = await retryService.refreshPriceHistory(temporaryDirectory: temporaryURL)
+        XCTAssertEqual(refreshStatus, .skipped)
+        let retryStatus = await retryService.runPendingValueHistoryBackgroundImport(
+            backgroundDirectory: backgroundDirectory,
+            temporaryDirectory: temporaryURL
+        )
+
+        XCTAssertEqual(
+            retryStatus,
+            PriceHistoryImportStatus.imported(
+                MTGJSONPriceImportSummary(mappedCards: 1, importedPricePoints: 1)
+            )
+        )
+        XCTAssertEqual(try database.latestValueHistoryBackgroundJob()?.status, .succeeded)
+        let retryRequests = await retryNetwork.requests()
+        XCTAssertEqual(
+            retryRequests.map(\.0),
+            [MTGJSONPriceHistoryClient.metaURL, MTGJSONPriceHistoryClient.allPricesURL]
+        )
+    }
+
     func testRefreshPriceHistorySkipsWhenMTGJSONMetadataMatchesAndSummariesExist() async throws {
         let database = try CardDatabase(storage: .inMemory)
         let cardImporter = LibraryImporter(database: database, imageResolver: NoImageResolver())
@@ -473,7 +648,7 @@ final class BulkDataAndUpdateTests: XCTestCase {
             try database.metadataValue(forKey: MetadataKey.defaultCardsUpdatedAt.rawValue),
             "2026-04-25T09:09:59.477+00:00"
         )
-        let response = try database.search(CardSearchRequest(text: "forest", activeFilters: []))
+        let response = try database.search(CardSearchRequest(text: "forest"))
         guard case .results(let cards, _) = response else {
             return XCTFail("Expected search results after failed value refresh.")
         }

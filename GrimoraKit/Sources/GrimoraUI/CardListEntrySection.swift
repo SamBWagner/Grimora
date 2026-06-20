@@ -25,6 +25,54 @@ struct CardListEntrySection: Equatable, Identifiable {
     }
 }
 
+struct CardListDetailSnapshot: Equatable {
+    var visibleEntries: [CardListEntryRecord]
+    var sections: [CardListEntrySection]
+    var expandedEntries: [CardListEntryRecord]
+    var expandedEntryIDs: [CardListEntryRecord.ID]
+    var entryCountText: String
+
+    init(
+        entries: [CardListEntryRecord],
+        categories: [CardListCategoryRecord],
+        ruleset: CardListRuleset,
+        displaySortMode: SortMode?,
+        displaySortDirection: SearchSortDirection,
+        collapsedSectionIDs: Set<CardListEntrySection.ID>,
+        isSearchActive: Bool,
+        totalEntryCount: Int
+    ) {
+        visibleEntries = entries
+
+        let builtSections = CardListEntrySectionBuilder.sections(
+            entries: entries,
+            categories: categories,
+            ruleset: ruleset,
+            displaySortMode: displaySortMode,
+            displaySortDirection: displaySortDirection
+        )
+        sections = isSearchActive
+            ? builtSections.filter { !$0.entries.isEmpty }
+            : builtSections
+        expandedEntries = sections.flatMap { section in
+            collapsedSectionIDs.contains(section.id) ? [] : section.entries
+        }
+        expandedEntryIDs = expandedEntries.map(\.id)
+
+        let visibleEntryCount = entries.reduce(0) { $0 + $1.quantity }
+        if isSearchActive {
+            entryCountText = "\(Self.cardCountText(visibleEntryCount)) of \(Self.cardCountText(totalEntryCount))"
+        } else {
+            entryCountText = Self.cardCountText(totalEntryCount)
+        }
+    }
+
+    private static func cardCountText(_ count: Int) -> String {
+        let noun = count == 1 ? "card" : "cards"
+        return "\(count.formatted()) \(noun)"
+    }
+}
+
 enum CardListEntrySectionBuilder {
     static func sections(
         entries: [CardListEntryRecord],
@@ -34,23 +82,29 @@ enum CardListEntrySectionBuilder {
         displaySortDirection: SearchSortDirection = .ascending
     ) -> [CardListEntrySection] {
         var sections: [CardListEntrySection] = []
+        var uncategorizedEntriesByZone: [CardListZone: [CardListEntryRecord]] = [:]
+        var entriesByCategoryID: [CardListCategoryRecord.ID: [CardListEntryRecord]] = [:]
+        var categoriesByZone: [CardListZone: [CardListCategoryRecord]] = [:]
+        var zonesWithEntries: Set<CardListZone> = []
+
+        for entry in entries {
+            zonesWithEntries.insert(entry.zone)
+            if let categoryID = entry.categoryID {
+                entriesByCategoryID[categoryID, default: []].append(entry)
+            } else {
+                uncategorizedEntriesByZone[entry.zone, default: []].append(entry)
+            }
+        }
+
+        for category in categories {
+            categoriesByZone[category.zone, default: []].append(category)
+        }
 
         for zone in ruleset.allowedZones {
-            let zoneEntries = entries.filter { $0.zone == zone }
-            let zoneCategories = categories.filter { $0.zone == zone }
-            guard !zoneEntries.isEmpty || !zoneCategories.isEmpty || zone == .mainboard else {
+            let uncategorizedEntries = uncategorizedEntriesByZone[zone, default: []]
+            let zoneCategories = categoriesByZone[zone, default: []]
+            guard zonesWithEntries.contains(zone) || !zoneCategories.isEmpty || zone == .mainboard else {
                 continue
-            }
-
-            var uncategorizedEntries: [CardListEntryRecord] = []
-            var entriesByCategoryID: [CardListCategoryRecord.ID: [CardListEntryRecord]] = [:]
-
-            for entry in zoneEntries {
-                if let categoryID = entry.categoryID {
-                    entriesByCategoryID[categoryID, default: []].append(entry)
-                } else {
-                    uncategorizedEntries.append(entry)
-                }
             }
 
             if !uncategorizedEntries.isEmpty || zoneCategories.isEmpty {

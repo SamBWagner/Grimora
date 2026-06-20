@@ -23,7 +23,6 @@ public struct CardSearchRequest: Equatable, Sendable {
     public var text: String
     public var sortMode: SortMode
     public var sortDirection: SearchSortDirection
-    public var activeFilters: Set<FilterPreset>
     public var printingDisplayMode: PrintingDisplayMode
     public var offset: Int
     public var limit: Int
@@ -32,7 +31,6 @@ public struct CardSearchRequest: Equatable, Sendable {
         text: String,
         sortMode: SortMode = .name,
         sortDirection: SearchSortDirection = .ascending,
-        activeFilters: Set<FilterPreset> = [.realCards],
         printingDisplayMode: PrintingDisplayMode = .preferred,
         offset: Int = 0,
         limit: Int = 250
@@ -40,7 +38,6 @@ public struct CardSearchRequest: Equatable, Sendable {
         self.text = text
         self.sortMode = sortMode
         self.sortDirection = sortDirection
-        self.activeFilters = activeFilters
         self.printingDisplayMode = printingDisplayMode
         self.offset = max(0, offset)
         self.limit = limit
@@ -93,20 +90,17 @@ public struct SearchDisplayOptions: Equatable, Sendable {
     public var printingDisplayMode: PrintingDisplayMode?
     public var sortMode: SortMode?
     public var sortDirection: SearchSortDirection?
-    public var includeExtras: Bool
     public var preferences: Set<SearchPreference>
 
     public init(
         printingDisplayMode: PrintingDisplayMode? = nil,
         sortMode: SortMode? = nil,
         sortDirection: SearchSortDirection? = nil,
-        includeExtras: Bool = false,
         preferences: Set<SearchPreference> = []
     ) {
         self.printingDisplayMode = printingDisplayMode
         self.sortMode = sortMode
         self.sortDirection = sortDirection
-        self.includeExtras = includeExtras
         self.preferences = preferences
     }
 }

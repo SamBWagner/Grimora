@@ -3,11 +3,16 @@ import SwiftUI
 
 @main
 struct GrimoraApp: App {
-    private let environment: GrimoraEnvironment
+    @StateObject private var model: GrimoraAppModel
 
     init() {
         do {
-            environment = try GrimoraEnvironment.live()
+            let environment = try GrimoraEnvironment.live()
+            _model = StateObject(
+                wrappedValue: GrimoraAppModel.configuredForCurrentPreferences(
+                    environment: environment
+                )
+            )
         } catch {
             fatalError("Unable to start Grimora: \(error)")
         }
@@ -15,7 +20,7 @@ struct GrimoraApp: App {
 
     var body: some Scene {
         WindowGroup {
-            GrimoraRootView(environment: environment)
+            GrimoraRootView(model: model)
         }
         #if os(visionOS)
         .defaultSize(width: 1280, height: 900)
@@ -36,6 +41,7 @@ struct GrimoraApp: App {
         #if os(macOS)
         Settings {
             GrimoraSettingsView()
+                .environmentObject(model)
         }
         #endif
     }

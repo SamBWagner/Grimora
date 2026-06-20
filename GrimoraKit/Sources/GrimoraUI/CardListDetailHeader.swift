@@ -7,7 +7,7 @@ import AppKit
 #endif
 
 extension CardListDetailView {
-    var header: some View {
+    func header(snapshot: CardListDetailSnapshot) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             #if os(iOS)
             VStack(alignment: .leading, spacing: 4) {
@@ -17,13 +17,13 @@ extension CardListDetailView {
                     .lineLimit(2)
                     .accessibilityIdentifier("card-list-detail-title")
 
-                Text(entryCountText)
+                Text(snapshot.entryCountText)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(palette.secondaryText.color)
                     .accessibilityIdentifier("card-list-entry-count")
             }
             #else
-            Text(entryCountText)
+            Text(snapshot.entryCountText)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(palette.secondaryText.color)
                 .accessibilityIdentifier("card-list-entry-count")
@@ -66,7 +66,7 @@ extension CardListDetailView {
 
     #if os(macOS)
     @ToolbarContentBuilder
-    var macListToolbar: some ToolbarContent {
+    func macListToolbar(snapshot: CardListDetailSnapshot) -> some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             if let selectedList = model.selectedList {
                 listViewModePicker(for: selectedList)
@@ -111,13 +111,16 @@ extension CardListDetailView {
                 .help("New Category")
                 .accessibilityIdentifier("create-list-category-button")
 
-                macListMoreMenu(for: selectedList)
+                macListMoreMenu(for: selectedList, snapshot: snapshot)
             }
         }
     }
 
     @ViewBuilder
-    func macListMoreMenu(for selectedList: CardListRecord) -> some View {
+    func macListMoreMenu(
+        for selectedList: CardListRecord,
+        snapshot: CardListDetailSnapshot
+    ) -> some View {
         Menu {
             if isSelectingListEntries || !listEntrySelection.isEmpty {
                 Section("Selection") {
@@ -149,9 +152,9 @@ extension CardListDetailView {
                     )
                 }
 
-                if !entrySections.isEmpty && !isReorderingCategories {
+                if !snapshot.sections.isEmpty && !isReorderingCategories {
                     Button {
-                        collapseAllSections()
+                        collapseAllSections(snapshot)
                     } label: {
                         Text("Collapse All")
                     }
@@ -192,44 +195,36 @@ extension CardListDetailView {
 
     #if os(iOS) || os(visionOS)
     @ToolbarContentBuilder
-    var touchListToolbar: some ToolbarContent {
-        #if os(iOS)
-        if let selectedList = model.selectedList {
-            ToolbarItem(placement: .topBarTrailing) {
-                listViewModePicker(for: selectedList)
-            }
-
-            ToolbarSpacer(.fixed, placement: .topBarTrailing)
-        }
-
-        ToolbarItem(placement: .topBarTrailing) {
-            touchListActionsMenu
-        }
-        #else
+    func touchListToolbar(snapshot: CardListDetailSnapshot) -> some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
             if let selectedList = model.selectedList {
                 listViewModePicker(for: selectedList)
+                    #if os(iOS)
+                    .fixedSize(horizontal: true, vertical: false)
+                    #endif
             }
-            touchListActionsMenu
+            touchListActionsMenu(snapshot: snapshot)
         }
-        #endif
     }
 
     @ViewBuilder
-    var touchListActionsMenu: some View {
+    func touchListActionsMenu(snapshot: CardListDetailSnapshot) -> some View {
         if let selectedList = model.selectedList {
             Menu {
                 #if os(visionOS)
-                visionListMenuContent(for: selectedList)
+                visionListMenuContent(for: selectedList, snapshot: snapshot)
                 #else
-                touchListMenuContent(for: selectedList)
+                touchListMenuContent(for: selectedList, snapshot: snapshot)
                 #endif
             } label: {
                 listActionsMenuLabel
+                    .accessibilityIdentifier("list-detail-actions-menu")
             }
+            #if os(iOS)
+            .buttonStyle(.plain)
+            #endif
             .help("List Actions")
             .accessibilityLabel("List Actions")
-            .accessibilityIdentifier("list-detail-actions-menu")
         }
     }
 
@@ -238,11 +233,22 @@ extension CardListDetailView {
         Label("List Actions", systemImage: "ellipsis")
             .labelStyle(.iconOnly)
             .imageScale(.large)
+            #if os(iOS)
+            .frame(width: 44, height: 34)
+            .background(.regularMaterial, in: Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(palette.hairline.color, lineWidth: 1)
+            }
+            #endif
     }
 
     #if os(visionOS)
     @ViewBuilder
-    func visionListMenuContent(for selectedList: CardListRecord) -> some View {
+    func visionListMenuContent(
+        for selectedList: CardListRecord,
+        snapshot: CardListDetailSnapshot
+    ) -> some View {
         Button {
             onRenameList(selectedList)
         } label: {
@@ -328,9 +334,9 @@ extension CardListDetailView {
             )
         }
 
-        if !entrySections.isEmpty {
+        if !snapshot.sections.isEmpty {
             Button {
-                collapseAllSections()
+                collapseAllSections(snapshot)
             } label: {
                 Text("Collapse All")
             }
@@ -374,7 +380,10 @@ extension CardListDetailView {
     #endif
 
     @ViewBuilder
-    func touchListMenuContent(for selectedList: CardListRecord) -> some View {
+    func touchListMenuContent(
+        for selectedList: CardListRecord,
+        snapshot: CardListDetailSnapshot
+    ) -> some View {
         Section("List") {
             Button {
                 onRenameList(selectedList)
@@ -455,9 +464,9 @@ extension CardListDetailView {
                 )
             }
 
-            if !entrySections.isEmpty {
+            if !snapshot.sections.isEmpty {
                 Button {
-                    collapseAllSections()
+                    collapseAllSections(snapshot)
                 } label: {
                     Text("Collapse All")
                 }

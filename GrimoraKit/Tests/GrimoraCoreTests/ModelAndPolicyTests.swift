@@ -2,15 +2,6 @@
 import XCTest
 
 final class ModelAndPolicyTests: XCTestCase {
-    func testFilterTitlesAndIdentifiersAreStable() {
-        XCTAssertEqual(FilterPreset.allCases.map(\.title), ["Universes Beyond", "Alchemy", "Real Cards"])
-        XCTAssertEqual(FilterPreset.allCases.map(\.accessibilityIdentifier), [
-            "filter-universes-beyond",
-            "filter-alchemy",
-            "filter-real-cards"
-        ])
-    }
-
     func testSortTitlesAndIdentifiersAreStable() {
         XCTAssertEqual(SortMode.allCases.map(\.id), [
             "name", "releaseDate", "setNumber", "rarity", "color", "priceUSD", "priceTIX",

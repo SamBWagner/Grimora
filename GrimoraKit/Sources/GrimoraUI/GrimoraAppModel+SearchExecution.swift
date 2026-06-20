@@ -119,7 +119,6 @@ extension GrimoraAppModel {
       text: resolvedSearch.text,
       sortMode: resolvedSearch.sortMode,
       sortDirection: resolvedSearch.sortDirection,
-      activeFilters: activeFilters,
       printingDisplayMode: printingDisplayMode,
       offset: offset,
       limit: searchPerformance.pageSize

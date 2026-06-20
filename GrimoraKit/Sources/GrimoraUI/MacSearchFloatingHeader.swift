@@ -138,7 +138,7 @@ struct MacSearchFloatingHeader: View {
 
     private var compactSearchControlRow: some View {
         HStack(spacing: 8) {
-            moreFiltersMenu
+            moreOptionsMenu
             Spacer(minLength: 12)
             createListButton
         }
@@ -220,7 +220,6 @@ struct MacSearchFloatingHeader: View {
         HStack(spacing: 8) {
             sortMenu
             orderMenu
-            filterMenu
             printingModeMenu
         }
         .controlSize(.regular)
@@ -247,16 +246,6 @@ struct MacSearchFloatingHeader: View {
         }
     }
 
-    private var filterMenu: some View {
-        MacSearchRefinementMenu(
-            title: filterSummary,
-            accessibilityIdentifier: "search-filter-menu",
-            helpText: "Filter search results"
-        ) {
-            filterButtons
-        }
-    }
-
     private var printingModeMenu: some View {
         MacSearchRefinementMenu(
             title: model.printingDisplayMode.title,
@@ -268,24 +257,42 @@ struct MacSearchFloatingHeader: View {
         }
     }
 
-    private var moreFiltersMenu: some View {
-        MacSearchRefinementMenu(
-            title: "More Filters",
-            accessibilityIdentifier: "search-more-filters-menu",
-            helpText: "Search filters and display options"
-        ) {
-            Section("Sort") {
-                sortPicker
-                orderPicker
-            }
+    private var moreOptionsMenu: some View {
+        MacSearchRefinementPopoverButton(
+            title: "More Options",
+            accessibilityIdentifier: "search-more-options-menu",
+            helpText: "Search sorting and display options"
+        ) { dismiss in
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Text("More Options")
+                        .font(.headline)
 
-            Section("Filters") {
-                filterButtons
-            }
+                    Spacer(minLength: 12)
 
-            Section("Printings") {
-                printingModeButtons
+                    Button {
+                        dismiss()
+                    } label: {
+                        Label("Close", systemImage: "xmark")
+                            .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Close More Options")
+                    .accessibilityIdentifier("search-more-options-panel-close-button")
+                }
+
+                SearchRefinementPanelSection(title: "Sort") {
+                    sortPicker
+                    orderPicker
+                }
+
+                SearchRefinementPanelSection(title: "Printings") {
+                    printingModeButtons
+                }
             }
+            .padding(14)
+            .frame(minWidth: 260, alignment: .leading)
+            .accessibilityIdentifier("search-more-options-panel")
         }
     }
 
@@ -314,22 +321,6 @@ struct MacSearchFloatingHeader: View {
         }
     }
 
-    private var filterButtons: some View {
-        ForEach(FilterPreset.allCases) { filter in
-            Button {
-                model.toggleFilter(filter)
-            } label: {
-                HStack {
-                    Text(filter.title)
-                    if model.activeFilters.contains(filter) {
-                        Image(systemName: "checkmark")
-                    }
-                }
-            }
-            .accessibilityIdentifier(filter.accessibilityIdentifier)
-        }
-    }
-
     private var printingModeButtons: some View {
         ForEach(PrintingDisplayMode.allCases) { mode in
             Button {
@@ -350,19 +341,6 @@ struct MacSearchFloatingHeader: View {
             return "Ask for cards"
         }
         return "Search cards"
-    }
-
-    private var filterSummary: String {
-        if model.activeFilters.isEmpty {
-            return "All Cards"
-        }
-
-        if model.activeFilters.count == 1,
-           let filter = model.activeFilters.first {
-            return filter.title
-        }
-
-        return "\(model.activeFilters.count) Filters"
     }
 
     private var orderTitle: String {
@@ -404,6 +382,22 @@ struct MacSearchFloatingHeader: View {
 
     private var searchFieldShape: Capsule {
         Capsule(style: .continuous)
+    }
+}
+
+private struct SearchRefinementPanelSection<Content: View>: View {
+    var title: String
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

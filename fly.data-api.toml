@@ -1,0 +1,30 @@
+app = "grimora-data-api"
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile.data-api"
+
+[env]
+  PORT = "8080"
+  TIGRIS_ENDPOINT = "https://fly.storage.tigris.dev"
+  TIGRIS_REGION = "auto"
+  TIGRIS_ARTIFACTS_BUCKET = "grimora-catalog-artifacts-bjpqvzr5pz"
+  TIGRIS_METADATA_BUCKET = "grimora-catalog-metadata-bjpqvzr5pz"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/health/ready"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

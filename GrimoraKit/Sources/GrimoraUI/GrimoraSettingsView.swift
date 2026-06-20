@@ -2,6 +2,8 @@ import GrimoraCore
 import SwiftUI
 
 public struct GrimoraSettingsView: View {
+  @EnvironmentObject private var model: GrimoraAppModel
+
   @AppStorage(GrimoraSearchPreferences.defaultSearchTextKey)
   private var defaultSearchText = GrimoraSearchPreferences.defaultSearchText
 
@@ -20,6 +22,8 @@ public struct GrimoraSettingsView: View {
 
   @AppStorage(GrimoraValuePreferences.displayCurrencyKey)
   private var valueDisplayCurrencyRawValue = CardValueDisplayCurrency.usd.rawValue
+
+  @State private var pendingRecoverySnapshotID: CloudSyncRecoverySnapshot.ID?
 
   public init() {}
 
@@ -98,14 +102,7 @@ public struct GrimoraSettingsView: View {
       #if os(iOS) || os(visionOS)
       valueSection
 
-      Section("iCloud") {
-        Toggle("Sync lists and search settings", isOn: cloudSyncEnabled)
-          .accessibilityIdentifier("cloud-sync-toggle")
-
-        Text("Card data stays local. Grimora only uses iCloud to keep devices on the same Scryfall database version before syncing lists.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
+      cloudSyncSections
 
       legalSections
       #endif
@@ -164,14 +161,62 @@ public struct GrimoraSettingsView: View {
 
   private var syncForm: some View {
     Form {
+      cloudSyncSections
+    }
+  }
+
+  private var cloudSyncSections: some View {
+    Group {
       Section("iCloud") {
         Toggle("Sync lists and search settings", isOn: cloudSyncEnabled)
           .accessibilityIdentifier("cloud-sync-toggle")
 
-        Text("Card data stays local. Grimora only uses iCloud to keep devices on the same Scryfall database version before syncing lists.")
+        Text("Card data stays local. Lists, favourites, search settings, and search history sync through your private iCloud database.")
           .font(.caption)
           .foregroundStyle(.secondary)
       }
+
+      CloudSyncStatusSection()
+
+      if !model.cloudSyncRecoverySnapshots.isEmpty {
+        Section("Sync Recovery") {
+          Text("Grimora keeps local recovery copies before iCloud changes your lists. Restoring also preserves your current lists as another recovery copy.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          Menu {
+            ForEach(model.cloudSyncRecoverySnapshots) { snapshot in
+              Button(recoveryLabel(for: snapshot)) {
+                pendingRecoverySnapshotID = snapshot.id
+              }
+            }
+          } label: {
+            Label("Restore Previous Lists", systemImage: "clock.arrow.circlepath")
+          }
+          .accessibilityIdentifier("restore-cloud-sync-lists-menu")
+        }
+        .confirmationDialog(
+          "Restore Previous Lists?",
+          isPresented: recoveryConfirmationPresented,
+          titleVisibility: .visible
+        ) {
+          Button("Restore Lists", role: .destructive) {
+            guard let pendingRecoverySnapshotID else {
+              return
+            }
+            model.restoreCloudSyncRecoverySnapshot(id: pendingRecoverySnapshotID)
+            self.pendingRecoverySnapshotID = nil
+          }
+          Button("Cancel", role: .cancel) {
+            pendingRecoverySnapshotID = nil
+          }
+        } message: {
+          Text("This replaces the current lists with the selected recovery copy. The current lists are backed up first.")
+        }
+      }
+    }
+    .onAppear {
+      model.reloadCloudSyncRecoverySnapshots()
     }
   }
 
@@ -234,6 +279,23 @@ public struct GrimoraSettingsView: View {
         ? GrimoraCloudSyncMode.enabled.rawValue
         : GrimoraCloudSyncMode.disabled.rawValue
     }
+  }
+
+  private var recoveryConfirmationPresented: Binding<Bool> {
+    Binding {
+      pendingRecoverySnapshotID != nil
+    } set: { isPresented in
+      if !isPresented {
+        pendingRecoverySnapshotID = nil
+      }
+    }
+  }
+
+  private func recoveryLabel(for snapshot: CloudSyncRecoverySnapshot) -> String {
+    let listCount = snapshot.listSnapshot.lists.count
+    let listNoun = listCount == 1 ? "list" : "lists"
+    let date = snapshot.createdAt.formatted(date: .abbreviated, time: .shortened)
+    return "\(date) - \(listCount) \(listNoun)"
   }
 }
 

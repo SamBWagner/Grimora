@@ -1,5 +1,10 @@
-import CryptoKit
 import Foundation
+
+#if canImport(CryptoKit)
+import CryptoKit
+#else
+import Crypto
+#endif
 
 public struct ImageStore: Sendable {
     public var rootDirectory: URL
@@ -20,11 +25,53 @@ public struct ImageStore: Sendable {
             .appendingPathComponent("\(quality)-\(digest).\(extensionName)")
     }
 
-    public func removeAllImages(fileManager: FileManager = .default) throws {
-        if fileManager.fileExists(atPath: rootDirectory.path) {
-            try fileManager.removeItem(at: rootDirectory)
+    public func removeAllImages(
+        fileManager: FileManager = .default,
+        progress: ((ImageStoreRemovalProgress) -> Void)? = nil
+    ) throws {
+        guard fileManager.fileExists(atPath: rootDirectory.path) else {
+            progress?(ImageStoreRemovalProgress(removedItems: 0, totalItems: 0))
+            try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+            return
         }
+
+        let items = try fileManager.contentsOfDirectory(
+            at: rootDirectory,
+            includingPropertiesForKeys: nil
+        )
+        let totalItems = items.count
+        progress?(ImageStoreRemovalProgress(removedItems: 0, totalItems: totalItems))
+
+        for (index, item) in items.enumerated() {
+            try fileManager.removeItem(at: item)
+            let removedItems = index + 1
+            if Self.shouldReportRemovalProgress(removedItems: removedItems, totalItems: totalItems) {
+                progress?(ImageStoreRemovalProgress(removedItems: removedItems, totalItems: totalItems))
+            }
+        }
+
         try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
+    }
+
+    static func shouldReportRemovalProgress(removedItems: Int, totalItems: Int) -> Bool {
+        totalItems == 0 || removedItems == 1 || removedItems == totalItems || removedItems.isMultiple(of: 100)
+    }
+}
+
+public struct ImageStoreRemovalProgress: Equatable, Sendable {
+    public var removedItems: Int
+    public var totalItems: Int
+
+    public var fraction: Double {
+        guard totalItems > 0 else {
+            return 1
+        }
+        return Double(min(max(removedItems, 0), totalItems)) / Double(totalItems)
+    }
+
+    public init(removedItems: Int, totalItems: Int) {
+        self.totalItems = max(totalItems, 0)
+        self.removedItems = min(max(removedItems, 0), self.totalItems)
     }
 }
 

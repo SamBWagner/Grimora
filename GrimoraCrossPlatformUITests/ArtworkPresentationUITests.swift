@@ -269,7 +269,7 @@ final class ArtworkPresentationUITests: XCTestCase {
 
         XCTAssertTrue(firstElement(app, identifier: "search-options-menu").waitForExistence(timeout: 3))
         let total = app.staticTexts["search-results-total"]
-        XCTAssertTrue(waitForValue(of: total, toEqual: "2 cards"))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
 
         try activateMenuItem(
             app: app,
@@ -279,14 +279,36 @@ final class ArtworkPresentationUITests: XCTestCase {
         activateMenuOverlayElement(firstElement(app, identifier: "search-sort-direction-option-descending"))
         XCTAssertTrue(waitForCard("alpha-mage", toAppearBefore: "beta-mage", in: app))
 
-        XCTAssertTrue(firstElement(app, identifier: "search-options-menu").waitForExistence(timeout: 3))
-        try activateMenuItem(
-            app: app,
-            menuIdentifier: "search-options-menu",
-            itemIdentifier: "search-filter-menu"
-        )
-        activateMenuOverlayElement(firstElement(app, identifier: "filter-real-cards"))
-        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards", timeout: 5))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+    }
+
+    @MainActor
+    func testTouchSearchOptionsDoNotExposeLegacyFilters() throws {
+        let app = try launchPhoneSearchOptionsApp()
+        XCTAssertTrue(firstElement(app, identifier: "open-card-beta-mage").waitForExistence(timeout: 8))
+
+        let total = app.staticTexts["search-results-total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+
+        activateMenuOverlayElement(firstElement(app, identifier: "search-options-menu"))
+        XCTAssertTrue(firstElement(app, identifier: "search-view-options-menu").waitForExistence(timeout: 3))
+        XCTAssertFalse(firstElement(app, identifier: "search-filter-menu").exists)
+        XCTAssertFalse(firstElement(app, identifier: "filter-universes-beyond").exists)
+        XCTAssertFalse(firstElement(app, identifier: "filter-alchemy").exists)
+        XCTAssertFalse(firstElement(app, identifier: "filter-real-cards").exists)
+    }
+
+    @MainActor
+    func testTouchSearchSupportsFirstPrintSyntax() throws {
+        let app = try launchPhoneSearchOptionsApp(defaultSearchText: "is:first-print")
+        let total = app.staticTexts["search-results-total"]
+
+        XCTAssertTrue(total.waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "2 cards"))
+        XCTAssertTrue(firstElement(app, identifier: "open-card-alpha-mage").exists)
+        XCTAssertTrue(firstElement(app, identifier: "open-card-token-mage").exists)
+        XCTAssertFalse(firstElement(app, identifier: "open-card-beta-mage").exists)
     }
     #endif
 
@@ -306,6 +328,9 @@ final class ArtworkPresentationUITests: XCTestCase {
             "scryfall"
         ]
         let fixtureData = try JSONEncoder().encode(Self.fixtureCards)
+        app.launchEnvironment["GRIMORA_TEST_DATABASE_PATH"] =
+            temporaryDirectory.appendingPathComponent("artwork-fixture.sqlite").path
+        app.launchEnvironment["GRIMORA_TEST_RESET_DATABASE"] = "1"
         app.launchEnvironment["GRIMORA_TEST_FIXTURE_CARDS_JSON"] = String(decoding: fixtureData, as: Unicode.UTF8.self)
         app.launchEnvironment["GRIMORA_TEST_IMAGE_DIR"] = temporaryDirectory.appendingPathComponent("Images", isDirectory: true).path
         app.launchEnvironment["GRIMORA_TEST_USER_DEFAULTS_SUITE"] = "GrimoraArtworkUITests-\(UUID().uuidString)"
@@ -361,11 +386,11 @@ final class ArtworkPresentationUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchPhoneSearchOptionsApp() throws -> XCUIApplication {
+    private func launchPhoneSearchOptionsApp(defaultSearchText: String = "") throws -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [
             "-\(DefaultSearchPreferenceKeys.text)",
-            "",
+            defaultSearchText,
             "-\(DefaultSearchPreferenceKeys.alwaysIncludedText)",
             "",
             "-\(DefaultSearchPreferenceKeys.sortMode)",
@@ -376,6 +401,9 @@ final class ArtworkPresentationUITests: XCTestCase {
             "scryfall"
         ]
         let fixtureData = try JSONEncoder().encode(Self.phoneSearchFixtureCards)
+        app.launchEnvironment["GRIMORA_TEST_DATABASE_PATH"] =
+            temporaryDirectory.appendingPathComponent("phone-search-fixture.sqlite").path
+        app.launchEnvironment["GRIMORA_TEST_RESET_DATABASE"] = "1"
         app.launchEnvironment["GRIMORA_TEST_FIXTURE_CARDS_JSON"] = String(decoding: fixtureData, as: Unicode.UTF8.self)
         app.launchEnvironment["GRIMORA_TEST_IMAGE_DIR"] = temporaryDirectory.appendingPathComponent("Images", isDirectory: true).path
         app.launchEnvironment["GRIMORA_TEST_USER_DEFAULTS_SUITE"] = "GrimoraPhoneSearchUITests-\(UUID().uuidString)"
@@ -782,7 +810,8 @@ private extension ArtworkPresentationUITests {
                 colorSortKey: 1,
                 oracleText: "Draw two cards.",
                 priceUSD: 4.5,
-                isRealCard: true
+                isRealCard: true,
+                isReprint: true
             ),
             mageCard(
                 id: "alpha-mage",
@@ -922,7 +951,8 @@ private extension ArtworkPresentationUITests {
         colorSortKey: Int,
         oracleText: String,
         priceUSD: Double?,
-        isRealCard: Bool
+        isRealCard: Bool,
+        isReprint: Bool = false
     ) -> CardRecord {
         CardRecord(
             id: id,
@@ -948,7 +978,8 @@ private extension ArtworkPresentationUITests {
             oracleText: oracleText,
             games: ["paper"],
             finishes: ["nonfoil"],
-            isRealCard: isRealCard
+            isRealCard: isRealCard,
+            isReprint: isReprint
         )
     }
 }

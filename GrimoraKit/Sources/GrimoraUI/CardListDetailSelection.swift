@@ -84,8 +84,10 @@ extension CardListDetailView {
         pendingListEntryOpenTask = nil
     }
 
-    func syncListEntrySelectionVisibleIDs() {
-        listEntrySelection.setVisibleIDs(visibleListEntryIDs)
+    func syncListEntrySelectionVisibleIDs(
+        _ visibleIDs: [CardListEntryRecord.ID]? = nil
+    ) {
+        listEntrySelection.setVisibleIDs(visibleIDs ?? renderedListEntryIDs)
     }
 
     func updateSelectionDrag(_ value: DragGesture.Value) {

@@ -30,23 +30,13 @@ struct LibrarySetupView: View {
                 .accessibilityIdentifier("setup-progress")
             } else {
                 VStack(spacing: 10) {
-                    if model.requiredCloudLibraryIdentity != nil {
-                        Button {
-                            Task { await model.importRequiredCloudDatabaseUpdate() }
-                        } label: {
-                            Text("Update Synced Database")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("start-synced-setup-button")
-                    } else {
-                        Button {
-                            Task { await model.startInitialSetup() }
-                        } label: {
-                            Text("Start Download")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("start-setup-button")
+                    Button {
+                        Task { await model.startInitialSetup() }
+                    } label: {
+                        Text("Start Download")
                     }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("start-setup-button")
 
                     if model.cloudSyncMode != .undecided {
                         Button {
@@ -88,7 +78,7 @@ struct LibrarySetupView: View {
     private var description: String {
         switch model.libraryState {
         case .missing:
-            "Download Scryfall card data for offline search. Images load as you browse."
+            "Download the Grimora catalog for offline search. Images load as you browse."
         case .initializing:
             "Preparing the offline card library."
         case .ready:

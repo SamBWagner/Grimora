@@ -1,0 +1,8 @@
+LibraryIdentity
+DeviceSnapshot
+GrimoraSyncMetadata
+GrimoraUserPreferences
+GrimoraCardList
+GrimoraCardListCategory
+GrimoraCardListEntry
+GrimoraRecoveryRevision

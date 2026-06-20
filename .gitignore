@@ -22,6 +22,8 @@ DerivedData/
 *.profraw
 *.dSYM/
 *.xcarchive/
+**/__pycache__/
+*.pyc
 *.xcuserstate
 *.xcuserdata/
 xcuserdata/
@@ -40,6 +42,12 @@ AppStoreScreenshots/
 *.log.*
 log*.txt
 log.txt*
+
+# Local task notes
+/tasks/
+
+# Local code-analysis tool cache
+.understand-anything/
 
 # Local card data and databases
 all-cards-*.json

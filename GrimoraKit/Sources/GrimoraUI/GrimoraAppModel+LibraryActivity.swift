@@ -1,17 +1,144 @@
 import Foundation
 import GrimoraCore
 
-private enum LibraryActivityStepID {
+enum LibraryActivityStepID {
   static let checkCardData = "check-card-data"
   static let downloadCardData = "download-card-data"
   static let readCardData = "read-card-data"
   static let buildCardLibrary = "build-card-library"
+  static let deleteCachedImages = "delete-cached-images"
   static let finalizeCardLibrary = "finalize-card-library"
   static let checkPriceHistory = "check-price-history"
   static let downloadPriceIdentifiers = "download-price-identifiers"
   static let downloadPrices = "download-prices"
   static let indexPriceHistory = "index-price-history"
   static let downloadImages = "download-images"
+}
+
+enum LibraryActivityHeartbeatStage {
+  case checkCardData
+  case downloadCardData
+  case readCardData
+  case buildCardLibrary
+  case deleteCachedImages
+  case finalizeCardLibrary
+
+  var stepID: String {
+    switch self {
+    case .checkCardData:
+      LibraryActivityStepID.checkCardData
+    case .downloadCardData:
+      LibraryActivityStepID.downloadCardData
+    case .readCardData:
+      LibraryActivityStepID.readCardData
+    case .buildCardLibrary:
+      LibraryActivityStepID.buildCardLibrary
+    case .deleteCachedImages:
+      LibraryActivityStepID.deleteCachedImages
+    case .finalizeCardLibrary:
+      LibraryActivityStepID.finalizeCardLibrary
+    }
+  }
+
+  var title: String {
+    switch self {
+    case .checkCardData:
+      "Check card database"
+    case .downloadCardData:
+      "Download card data"
+    case .readCardData:
+      "Read card data"
+    case .buildCardLibrary:
+      "Build local library"
+    case .deleteCachedImages:
+      "Delete cached images"
+    case .finalizeCardLibrary:
+      "Finalize library"
+    }
+  }
+
+  func message(elapsedSeconds: Int, currentDetail: String? = nil) -> String {
+    let elapsed = GrimoraAppModel.elapsedTimeDescription(elapsedSeconds)
+    let detail = currentDetail?.trimmingCharacters(in: .whitespacesAndNewlines)
+    switch self {
+    case .checkCardData:
+      return elapsedSeconds > 0
+        ? "Checking Scryfall bulk data... still working after \(elapsed)."
+        : "Checking Scryfall bulk data..."
+    case .downloadCardData:
+      return elapsedSeconds > 0
+        ? "Downloading card data... still working after \(elapsed)."
+        : "Downloading card data..."
+    case .readCardData:
+      return elapsedSeconds > 0
+        ? "Reading Scryfall card data... still working after \(elapsed)."
+        : "Reading Scryfall card data..."
+    case .buildCardLibrary:
+      if let detail, !detail.isEmpty {
+        return elapsedSeconds > 0
+          ? "\(detail)... still working after \(elapsed)."
+          : "\(detail)..."
+      }
+      return elapsedSeconds > 0
+        ? "Writing offline search index... still working after \(elapsed)."
+        : "Writing offline search index..."
+    case .deleteCachedImages:
+      if let detail, !detail.isEmpty {
+        return elapsedSeconds > 0
+          ? "\(detail)... still working after \(elapsed)."
+          : "\(detail)..."
+      }
+      return elapsedSeconds > 0
+        ? "Deleting cached card images... still working after \(elapsed)."
+        : "Deleting cached card images..."
+    case .finalizeCardLibrary:
+      return elapsedSeconds > 0
+        ? "Finalizing offline library... still working after \(elapsed)."
+        : "Finalizing offline library..."
+    }
+  }
+
+  func detail(elapsedSeconds: Int, currentDetail: String? = nil) -> String {
+    let elapsed = GrimoraAppModel.elapsedTimeDescription(elapsedSeconds)
+    let detail = currentDetail?.trimmingCharacters(in: .whitespacesAndNewlines)
+    switch self {
+    case .checkCardData:
+      return "Checking card database, \(elapsed)"
+    case .downloadCardData:
+      return "Starting download, \(elapsed)"
+    case .readCardData:
+      return "Reading card data, \(elapsed)"
+    case .buildCardLibrary:
+      if let detail, !detail.isEmpty {
+        return detail
+      }
+      return "Writing card records, \(elapsed)"
+    case .deleteCachedImages:
+      if let detail, !detail.isEmpty {
+        return detail
+      }
+      return "Deleting image cache, \(elapsed)"
+    case .finalizeCardLibrary:
+      return "Preparing offline search, \(elapsed)"
+    }
+  }
+
+  var defaultProgress: Double? {
+    switch self {
+    case .checkCardData:
+      0.15
+    case .downloadCardData:
+      0.02
+    case .readCardData:
+      nil
+    case .buildCardLibrary:
+      0
+    case .deleteCachedImages:
+      nil
+    case .finalizeCardLibrary:
+      nil
+    }
+  }
 }
 
 extension GrimoraAppModel {
@@ -23,6 +150,7 @@ extension GrimoraAppModel {
   ) -> UUID {
     libraryActivityDismissTask?.cancel()
     libraryActivityDismissTask = nil
+    stopLibraryActivityHeartbeat()
 
     let id = UUID()
     libraryActivity = GrimoraLibraryActivity(
@@ -69,6 +197,7 @@ extension GrimoraAppModel {
     activity.message = message
     activity.state = state
     activity.steps = Self.finishedLibraryActivitySteps(activity.steps, state: state)
+    stopLibraryActivityHeartbeat()
     libraryActivity = activity
     if state == .succeeded {
       scheduleLibraryActivityDismissal(for: activity.id)
@@ -85,47 +214,56 @@ extension GrimoraAppModel {
 
     libraryActivityDismissTask?.cancel()
     libraryActivityDismissTask = nil
+    stopLibraryActivityHeartbeat()
     libraryActivity = nil
   }
 
-  func startCardDataReadHeartbeat() {
-    cardDataReadHeartbeatTask?.cancel()
+  func startLibraryActivityHeartbeat(stage: LibraryActivityHeartbeatStage) {
+    libraryActivityHeartbeatTask?.cancel()
     let startedAt = Date()
-    cardDataReadHeartbeatTask = Task { [weak self] in
+    libraryActivityHeartbeatTask = Task { [weak self] in
       while !Task.isCancelled {
-        try? await Task.sleep(nanoseconds: 15_000_000_000)
+        try? await Task.sleep(nanoseconds: Self.libraryActivityHeartbeatIntervalNanoseconds)
         guard !Task.isCancelled else {
           return
         }
 
         let elapsedSeconds = Int(Date().timeIntervalSince(startedAt).rounded(.down))
         await MainActor.run {
-          self?.publishCardDataReadHeartbeat(elapsedSeconds: elapsedSeconds)
+          self?.publishLibraryActivityHeartbeat(stage: stage, elapsedSeconds: elapsedSeconds)
         }
       }
     }
+    publishLibraryActivityHeartbeat(stage: stage, elapsedSeconds: 0)
   }
 
-  func stopCardDataReadHeartbeat() {
-    cardDataReadHeartbeatTask?.cancel()
-    cardDataReadHeartbeatTask = nil
+  func stopLibraryActivityHeartbeat() {
+    libraryActivityHeartbeatTask?.cancel()
+    libraryActivityHeartbeatTask = nil
   }
 
-  private func publishCardDataReadHeartbeat(elapsedSeconds: Int) {
-    guard cardDataReadHeartbeatTask != nil,
-      libraryActivity?.state == .running
+  private func publishLibraryActivityHeartbeat(
+    stage: LibraryActivityHeartbeatStage,
+    elapsedSeconds: Int
+  ) {
+    guard libraryActivityHeartbeatTask != nil,
+      let activity = libraryActivity,
+      activity.state == .running
     else {
       return
     }
 
-    let message = "Reading Scryfall card data... still working after \(Self.elapsedTimeDescription(elapsedSeconds))."
+    let currentStep = activity.steps.first(where: { $0.id == stage.stepID })
+    let message = stage.message(elapsedSeconds: elapsedSeconds, currentDetail: currentStep?.detail)
     statusMessage = message
     updateLibraryActivity(message: message) { steps in
+      let currentProgress = steps.first(where: { $0.id == stage.stepID })?.progress
+      let currentDetail = steps.first(where: { $0.id == stage.stepID })?.detail
       Self.updateStep(
-        LibraryActivityStepID.readCardData,
-        title: "Read card data",
-        detail: "Reading card data, \(Self.elapsedTimeDescription(elapsedSeconds))",
-        progress: nil,
+        stage.stepID,
+        title: stage.title,
+        detail: stage.detail(elapsedSeconds: elapsedSeconds, currentDetail: currentDetail),
+        progress: currentProgress ?? stage.defaultProgress,
         state: .running,
         in: &steps
       )
@@ -185,8 +323,9 @@ extension GrimoraAppModel {
   }
 
   static let libraryActivityCompletionDelayNanoseconds: UInt64 = 2_500_000_000
+  static let libraryActivityHeartbeatIntervalNanoseconds: UInt64 = 2_000_000_000
 
-  private static func elapsedTimeDescription(_ seconds: Int) -> String {
+  nonisolated fileprivate static func elapsedTimeDescription(_ seconds: Int) -> String {
     guard seconds >= 60 else {
       return "\(max(seconds, 0))s"
     }
@@ -210,7 +349,15 @@ extension GrimoraAppModel {
         step(id: LibraryActivityStepID.buildCardLibrary, title: "Build local library"),
         step(id: LibraryActivityStepID.finalizeCardLibrary, title: "Finalize library"),
       ]
-    case .importCardDatabase, .refreshCardDatabase, .deleteAndRefreshDatabase, .updateSyncedDatabase:
+    case .deleteAndRefreshDatabase:
+      [
+        step(id: LibraryActivityStepID.downloadCardData, title: "Download card data"),
+        step(id: LibraryActivityStepID.readCardData, title: "Read card data"),
+        step(id: LibraryActivityStepID.buildCardLibrary, title: "Build local library"),
+        step(id: LibraryActivityStepID.deleteCachedImages, title: "Delete cached images"),
+        step(id: LibraryActivityStepID.finalizeCardLibrary, title: "Finalize library"),
+      ]
+    case .importCardDatabase, .refreshCardDatabase, .updateSyncedDatabase:
       [
         step(id: LibraryActivityStepID.downloadCardData, title: "Download card data"),
         step(id: LibraryActivityStepID.readCardData, title: "Read card data"),
@@ -246,6 +393,7 @@ extension GrimoraAppModel {
   static func applyImportProgress(
     _ progress: ImportProgress,
     manifest: BulkDataManifest?,
+    operation: GrimoraLibraryActivityOperation? = nil,
     to steps: inout [GrimoraLibraryActivityStep]
   ) {
     switch progress {
@@ -286,21 +434,24 @@ extension GrimoraAppModel {
       updateStep(
         LibraryActivityStepID.buildCardLibrary,
         title: "Build local library",
-        detail: "Writing \(Self.integerFormatter.string(from: NSNumber(value: cardCount)) ?? "\(cardCount)") cards",
-        progress: nil,
+        detail: "Starting \(Self.integerFormatter.string(from: NSNumber(value: cardCount)) ?? "\(cardCount)") cards",
+        progress: 0,
+        state: .running,
+        in: &steps
+      )
+    case .storingSearchIndexProgress(let writeProgress):
+      finishStep(LibraryActivityStepID.readCardData, in: &steps)
+      finishStep(LibraryActivityStepID.downloadCardData, in: &steps)
+      updateStep(
+        LibraryActivityStepID.buildCardLibrary,
+        title: "Build local library",
+        detail: cardDatabaseBuildDetail(for: writeProgress),
+        progress: cardDatabaseBuildProgress(for: writeProgress),
         state: .running,
         in: &steps
       )
     case .cardDataReady:
       finishStep(LibraryActivityStepID.buildCardLibrary, in: &steps)
-      updateStep(
-        LibraryActivityStepID.finalizeCardLibrary,
-        title: "Finalize library",
-        detail: "Ready for offline search",
-        progress: 1,
-        state: .succeeded,
-        in: &steps
-      )
     case .downloadingPriceHistoryData:
       ensurePriceHistorySteps(in: &steps)
       finishStep(LibraryActivityStepID.checkPriceHistory, in: &steps)
@@ -422,9 +573,19 @@ extension GrimoraAppModel {
   }
 
   static func ensurePriceHistorySteps(in steps: inout [GrimoraLibraryActivityStep]) {
-    for priceStep in priceHistorySteps() where !steps.contains(where: { $0.id == priceStep.id }) {
-      steps.append(priceStep)
+    let missingSteps = priceHistorySteps().filter { priceStep in
+      !steps.contains(where: { $0.id == priceStep.id })
     }
+    guard !missingSteps.isEmpty else {
+      return
+    }
+
+    let insertionIndex =
+      steps.firstIndex {
+        $0.id == LibraryActivityStepID.deleteCachedImages
+          || $0.id == LibraryActivityStepID.finalizeCardLibrary
+      } ?? steps.endIndex
+    steps.insert(contentsOf: missingSteps, at: insertionIndex)
   }
 
   static func step(
@@ -493,6 +654,64 @@ extension GrimoraAppModel {
     }
     let total = Self.byteCountFormatter.string(fromByteCount: totalBytes)
     return "\(completed) of \(total)"
+  }
+
+  static func cardDatabaseBuildDetail(for progress: CardDatabaseWriteProgress) -> String {
+    switch progress.phase {
+    case .preparingMetadata:
+      let completed = integerFormatter.string(from: NSNumber(value: progress.completedUnitCount))
+        ?? "\(progress.completedUnitCount)"
+      let total = integerFormatter.string(from: NSNumber(value: progress.totalUnitCount ?? 0))
+        ?? "\(progress.totalUnitCount ?? 0)"
+      return "Preparing search fields \(completed) of \(total) cards"
+    case .preservingValueHistory:
+      return "Preserving existing value history"
+    case .clearingValueHistoryCache:
+      if let totalUnitCount = progress.totalUnitCount {
+        let completed = integerFormatter.string(from: NSNumber(value: progress.completedUnitCount))
+          ?? "\(progress.completedUnitCount)"
+        let total = integerFormatter.string(from: NSNumber(value: totalUnitCount))
+          ?? "\(totalUnitCount)"
+        return "Clearing cached values \(completed) of \(total)"
+      }
+      return "Checking cached value rows"
+    case .resettingCachedLibrary:
+      return "Resetting cached library tables"
+    case .resettingSearchIndex:
+      return "Resetting offline search tables"
+    case .clearingExistingLibrary:
+      if let totalUnitCount = progress.totalUnitCount {
+        let completed = integerFormatter.string(from: NSNumber(value: progress.completedUnitCount))
+          ?? "\(progress.completedUnitCount)"
+        let total = integerFormatter.string(from: NSNumber(value: totalUnitCount))
+          ?? "\(totalUnitCount)"
+        return "Clearing old card records \(completed) of \(total)"
+      }
+      return "Clearing old card records"
+    case .writingCards:
+      let written = integerFormatter.string(from: NSNumber(value: progress.writtenCards))
+        ?? "\(progress.writtenCards)"
+      let total = integerFormatter.string(from: NSNumber(value: progress.totalCards))
+        ?? "\(progress.totalCards)"
+      return "Writing \(written) of \(total) cards"
+    case .restoringValueHistory:
+      return "Restoring value history"
+    }
+  }
+
+  static func cardDatabaseBuildProgress(for progress: CardDatabaseWriteProgress) -> Double? {
+    switch progress.phase {
+    case .preparingMetadata, .writingCards:
+      return progress.progressFraction
+    case .clearingValueHistoryCache:
+      return progress.progressFraction
+    case .resettingCachedLibrary:
+      return progress.progressFraction
+    case .clearingExistingLibrary:
+      return progress.progressFraction
+    case .preservingValueHistory, .resettingSearchIndex, .restoringValueHistory:
+      return nil
+    }
   }
 
   static func clampedProgress(_ progress: Double?) -> Double? {

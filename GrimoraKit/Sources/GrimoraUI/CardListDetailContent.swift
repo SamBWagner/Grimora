@@ -4,11 +4,11 @@ import UniformTypeIdentifiers
 
 extension CardListDetailView {
     @ViewBuilder
-    var content: some View {
+    func content(snapshot: CardListDetailSnapshot) -> some View {
         if isListViewMode {
-            listModeContent
+            listModeContent(snapshot: snapshot)
         } else {
-            gridModeContent
+            gridModeContent(snapshot: snapshot)
         }
     }
 
@@ -20,13 +20,13 @@ extension CardListDetailView {
         !isListViewMode
     }
 
-    private var gridModeContent: some View {
+    private func gridModeContent(snapshot: CardListDetailSnapshot) -> some View {
         ScrollViewReader { proxy in
             listSelectionContainer(
                 ZStack {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            header
+                            header(snapshot: snapshot)
                                 .id(Self.listDetailTopAnchorID)
                                 .jumpToTopLegacyOffsetReader(coordinateSpaceName: Self.entrySelectionCoordinateSpace)
                             Divider()
@@ -39,7 +39,7 @@ extension CardListDetailView {
                                     .padding(24)
                                     .accessibilityIdentifier("empty-card-list")
                             } else {
-                                gridDetailSections
+                                gridDetailSections(snapshot: snapshot)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -65,12 +65,12 @@ extension CardListDetailView {
         }
     }
 
-    private var listModeContent: some View {
+    private func listModeContent(snapshot: CardListDetailSnapshot) -> some View {
         ScrollViewReader { proxy in
             listSelectionContainer(
                 ZStack {
                     List {
-                        header
+                        header(snapshot: snapshot)
                             .id(Self.listDetailTopAnchorID)
                             .jumpToTopLegacyOffsetReader(coordinateSpaceName: Self.entrySelectionCoordinateSpace)
                             .listRowInsets(EdgeInsets())
@@ -86,7 +86,7 @@ extension CardListDetailView {
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(Color.clear)
                         } else {
-                            listDetailSections
+                            listDetailSections(snapshot: snapshot)
                         }
                     }
                     .listStyle(.inset)
@@ -133,7 +133,7 @@ extension CardListDetailView {
             && !isShowingDescription
     }
 
-    private var gridDetailSections: some View {
+    private func gridDetailSections(snapshot: CardListDetailSnapshot) -> some View {
         LazyVStack(alignment: .leading, spacing: 28) {
             if !model.selectedListRulesetWarnings.isEmpty {
                 CardListRulesetWarningPanel(
@@ -144,11 +144,11 @@ extension CardListDetailView {
 
             if let selectedList = model.selectedList,
                selectedList.showsDashboard,
-               !visibleListEntries.isEmpty
+               !snapshot.visibleEntries.isEmpty
             {
                 CardListDashboardView(
                     stats: CardListDashboardStats.make(
-                        entries: visibleListEntries,
+                        entries: snapshot.visibleEntries,
                         includeLandsInTypes: selectedList.dashboardIncludesLands
                     ),
                     includesLands: selectedList.dashboardIncludesLands,
@@ -183,7 +183,7 @@ extension CardListDetailView {
                 .tint(palette.accent.color)
                 .frame(maxWidth: .infinity, minHeight: 220)
                 .accessibilityIdentifier("unsupported-list-search")
-            } else if isListSearchActive && !hasListSearchResults {
+            } else if isListSearchActive && snapshot.visibleEntries.isEmpty {
                 ContentUnavailableView {
                     Label("No Matching Cards", systemImage: "magnifyingglass")
                 } description: {
@@ -199,7 +199,7 @@ extension CardListDetailView {
                     onRenameCategory: onRenameCategory
                 )
             } else {
-                ForEach(entrySections) { section in
+                ForEach(snapshot.sections) { section in
                     VStack(alignment: .leading, spacing: 28) {
                         CardListCategorySectionView(
                             section: section,
@@ -231,7 +231,10 @@ extension CardListDetailView {
                                     horizontalAlignment: listGridHorizontalAlignment,
                                     fillsSingleColumn: listGridFillsSingleColumn
                                 ) { entry in
-                                    listEntryView(entry)
+                                    listEntryView(
+                                        entry,
+                                        displayedEntries: snapshot.expandedEntries
+                                    )
                                 }
                                 #if os(macOS) || os(iOS) || os(visionOS)
                                 .dropDestination(for: String.self) { tokens, _ in
@@ -258,7 +261,7 @@ extension CardListDetailView {
     }
 
     @ViewBuilder
-    private var listDetailSections: some View {
+    private func listDetailSections(snapshot: CardListDetailSnapshot) -> some View {
         if !model.selectedListRulesetWarnings.isEmpty {
             CardListRulesetWarningPanel(
                 warnings: model.selectedListRulesetWarnings,
@@ -270,11 +273,11 @@ extension CardListDetailView {
 
         if let selectedList = model.selectedList,
            selectedList.showsDashboard,
-           !visibleListEntries.isEmpty
+           !snapshot.visibleEntries.isEmpty
         {
             CardListDashboardView(
                 stats: CardListDashboardStats.make(
-                    entries: visibleListEntries,
+                    entries: snapshot.visibleEntries,
                     includeLandsInTypes: selectedList.dashboardIncludesLands
                 ),
                 includesLands: selectedList.dashboardIncludesLands,
@@ -317,7 +320,7 @@ extension CardListDetailView {
             .accessibilityIdentifier("unsupported-list-search")
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
-        } else if isListSearchActive && !hasListSearchResults {
+        } else if isListSearchActive && snapshot.visibleEntries.isEmpty {
             ContentUnavailableView {
                 Label("No Matching Cards", systemImage: "magnifyingglass")
             } description: {
@@ -337,7 +340,7 @@ extension CardListDetailView {
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         } else {
-            ForEach(entrySections) { section in
+            ForEach(snapshot.sections) { section in
                 Section {
                     if !isSectionCollapsed(section) {
                         if section.entries.isEmpty {

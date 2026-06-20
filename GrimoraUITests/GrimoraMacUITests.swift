@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import GrimoraCore
 import XCTest
 
@@ -19,12 +20,71 @@ final class GrimoraMacUITests: XCTestCase {
         }
     }
 
-    func testLightAppearanceSearchFilterSortAndDetailUseOnlyLocalData() throws {
-        try runSearchFilterSortAndDetailFlow(appearance: .light)
+    func testLightAppearanceSearchSortAndDetailUseOnlyLocalData() throws {
+        try runSearchSortAndDetailFlow(appearance: .light)
     }
 
-    func testDarkAppearanceSearchFilterSortAndDetailUseOnlyLocalData() throws {
-        try runSearchFilterSortAndDetailFlow(appearance: .dark)
+    func testDarkAppearanceSearchSortAndDetailUseOnlyLocalData() throws {
+        try runSearchSortAndDetailFlow(appearance: .dark)
+    }
+
+    func testSearchIncludesAllCardClassesWithoutLegacyFilterControls() throws {
+        let databaseURL = try seedDatabase(cards: allCardClassFixtureCards())
+        let app = launchApp(databaseURL: databaseURL)
+        let total = app.staticTexts["search-results-total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+        XCTAssertTrue(app.buttons["open-card-token"].exists)
+        XCTAssertFalse(firstElement(app, identifier: "search-filter-menu").exists)
+        XCTAssertFalse(firstElement(app, identifier: "filter-universes-beyond").exists)
+        XCTAssertFalse(firstElement(app, identifier: "filter-alchemy").exists)
+        XCTAssertFalse(firstElement(app, identifier: "filter-real-cards").exists)
+    }
+
+    func testSearchSupportsFirstPrintSyntax() throws {
+        let databaseURL = try seedDatabase(cards: [
+            CardRecord(
+                id: "first-print",
+                name: "First Print Fixture",
+                releasedAt: "2025-01-01",
+                setCode: "ncc",
+                setName: "First Print Set",
+                setType: "expansion",
+                collectorNumber: "1",
+                collectorNumberNumber: 1,
+                rarity: "common",
+                rarityRank: 0,
+                colorSortKey: 1,
+                layout: "normal",
+                typeLine: "Creature",
+                oracleText: "",
+                isReprint: false
+            ),
+            CardRecord(
+                id: "reprint",
+                name: "Reprint Fixture",
+                releasedAt: "2024-01-01",
+                setCode: "ncc",
+                setName: "First Print Set",
+                setType: "expansion",
+                collectorNumber: "2",
+                collectorNumberNumber: 2,
+                rarity: "common",
+                rarityRank: 0,
+                colorSortKey: 2,
+                layout: "normal",
+                typeLine: "Creature",
+                oracleText: "",
+                isReprint: true
+            )
+        ])
+        let app = launchApp(databaseURL: databaseURL, defaultSearchText: "is:first-print")
+        let total = app.staticTexts["search-results-total"]
+
+        XCTAssertTrue(total.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "1 card"))
+        XCTAssertTrue(app.buttons["open-card-first-print"].exists)
+        XCTAssertFalse(app.buttons["open-card-reprint"].exists)
     }
 
     func testInitialCloudSyncChoiceCanGoBackBeforeDownload() throws {
@@ -49,7 +109,7 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Keep This Device Separate"].waitForExistence(timeout: 2))
     }
 
-    private func runSearchFilterSortAndDetailFlow(appearance: Appearance) throws {
+    private func runSearchSortAndDetailFlow(appearance: Appearance) throws {
         let imageURL = try makeFixtureImage(named: "alpha.png")
         let databaseURL = try seedDatabase(cards: [
             CardRecord(
@@ -115,7 +175,8 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(firstElement(app, identifier: "search-sort-menu").waitForExistence(timeout: 5))
         let resultTotal = app.staticTexts["search-results-total"]
         XCTAssertTrue(resultTotal.waitForExistence(timeout: 2))
-        XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "2 cards"))
+        XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "3 cards"))
+        XCTAssertTrue(app.buttons["open-card-token"].exists)
 
         let searchField = app.searchFields.firstMatch
         XCTAssertTrue(searchField.waitForExistence(timeout: 5))
@@ -129,11 +190,8 @@ final class GrimoraMacUITests: XCTestCase {
         searchField.typeKey("a", modifierFlags: .command)
         searchField.typeKey(.delete, modifierFlags: [])
         XCTAssertTrue(app.buttons["open-card-beta"].waitForExistence(timeout: 2))
-        XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "2 cards"))
-
-        try clickToolbarMenuItem(app: app, menuIdentifier: "search-filter-menu", itemIdentifier: "filter-real-cards")
-        XCTAssertTrue(app.buttons["open-card-token"].waitForExistence(timeout: 2))
         XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "3 cards"))
+        XCTAssertFalse(firstElement(app, identifier: "search-filter-menu").exists)
 
         openSearchResultCard(app: app, cardID: "alpha")
         XCTAssertTrue(app.scrollViews["card-detail"].waitForExistence(timeout: 3) || app.staticTexts["Fixture Artist"].waitForExistence(timeout: 3))
@@ -490,7 +548,7 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["default-search-indicator"].exists)
         XCTAssertFalse(app.descendants(matching: .any)["edit-default-search-button"].exists)
         XCTAssertTrue(firstElement(app, identifier: "search-sort-menu").isEnabled)
-        XCTAssertTrue(firstElement(app, identifier: "search-filter-menu").isEnabled)
+        XCTAssertFalse(firstElement(app, identifier: "search-filter-menu").exists)
 
         app.typeKey(",", modifierFlags: .command)
         XCTAssertTrue(app.textFields["default-search-text-field"].waitForExistence(timeout: 3))
@@ -910,7 +968,7 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(app.buttons["open-card-zoom-00"].waitForExistence(timeout: 5))
         let expandedHeader = app.descendants(matching: .any)["mac-search-expanded-header"]
         XCTAssertTrue(expandedHeader.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["search-filter-menu"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["search-filter-menu"].exists)
         let expandedSearchField = app.searchFields.firstMatch
         XCTAssertTrue(expandedSearchField.waitForExistence(timeout: 3))
         XCTAssertGreaterThanOrEqual(expandedSearchField.frame.height, 28)
@@ -942,7 +1000,7 @@ final class GrimoraMacUITests: XCTestCase {
 
         compactSearchBar.click()
         XCTAssertTrue(app.descendants(matching: .any)["mac-search-expanded-header"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["search-filter-menu"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["search-filter-menu"].exists)
         app.typeText("35")
 
         XCTAssertTrue(app.buttons["open-card-zoom-35"].waitForExistence(timeout: 3))
@@ -963,7 +1021,7 @@ final class GrimoraMacUITests: XCTestCase {
         }
 
         XCTAssertTrue(app.descendants(matching: .any)["mac-search-expanded-header"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.descendants(matching: .any)["search-filter-menu"].exists)
+        XCTAssertFalse(app.descendants(matching: .any)["search-filter-menu"].exists)
     }
 
     func testJumpToTopButtonsReturnMainBrowsersToStart() throws {
@@ -1142,6 +1200,76 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(firstElement(app, identifier: "list-detail-more-menu").exists)
     }
 
+    func testLargeCategorizedListCollapseExpandAndViewModeStaysResponsive() throws {
+        let fixtureDirectory = try macAppSupportDirectory()
+        let categoryNames = (0..<12).map { String(format: "Category %02d", $0) }
+        let app = launchApp(
+            databaseURL: fixtureDirectory.appendingPathComponent("category-performance.sqlite"),
+            imageDirectory: fixtureDirectory.appendingPathComponent(
+                "CategoryPerformanceImages",
+                isDirectory: true
+            ),
+            fixtureCards: makeZoomFixtureCards(count: 240),
+            categorizedListName: "Large Categorized List",
+            categoryNames: categoryNames,
+            resetDatabase: true
+        )
+        defer { app.terminate() }
+        let listRow = app.buttons["card-list-row-Large Categorized List"]
+        XCTAssertTrue(listRow.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(of: listRow, toEqual: "240 cards"))
+        listRow.click()
+
+        let categoryName = "Category 00"
+        let categorySection = firstElement(app, identifier: "list-category-section-content-\(categoryName)")
+        let collapseButton = app.buttons["toggle-list-category-collapse-\(categoryName)"]
+        XCTAssertTrue(categorySection.waitForExistence(timeout: 3))
+        XCTAssertTrue(collapseButton.waitForExistence(timeout: 3))
+
+        collapseButton.click()
+        XCTAssertTrue(waitForValue(of: collapseButton, toEqual: "Collapsed"))
+        XCTAssertFalse(categorySection.buttons
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "open-list-entry-"))
+            .firstMatch.exists)
+
+        let viewModePicker = firstElement(app, identifier: "card-list-view-mode-picker")
+        XCTAssertTrue(viewModePicker.waitForExistence(timeout: 3))
+        viewModePicker.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5)).click()
+        XCTAssertTrue(waitForValue(of: collapseButton, toEqual: "Collapsed"))
+        viewModePicker.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5)).click()
+        XCTAssertTrue(waitForValue(of: collapseButton, toEqual: "Collapsed"))
+
+        for _ in 0..<4 {
+            collapseButton.click()
+            XCTAssertTrue(waitForValue(of: collapseButton, toEqual: "Expanded"))
+            collapseButton.click()
+            XCTAssertTrue(waitForValue(of: collapseButton, toEqual: "Collapsed"))
+        }
+
+        try clickToolbarMenuItem(
+            app: app,
+            menuIdentifier: "list-detail-more-menu",
+            itemIdentifier: "collapse-all-list-categories-button"
+        )
+        XCTAssertTrue(waitForNonExistence(
+            of: app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "open-list-entry-")).firstMatch,
+            timeout: 3
+        ))
+
+        try clickToolbarMenuItem(
+            app: app,
+            menuIdentifier: "list-detail-more-menu",
+            itemIdentifier: "unfold-all-list-categories-button"
+        )
+        XCTAssertTrue(app.buttons
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "open-list-entry-"))
+            .firstMatch.waitForExistence(timeout: 3))
+
+        rapidlyScroll(cardListScrollView(app: app), passes: 18)
+        XCTAssertTrue(firstElement(app, identifier: "list-detail-more-menu").waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForValue(of: app.staticTexts["card-list-entry-count"], toEqual: "240 cards"))
+    }
+
     func testSearchHeaderDoesNotExposeDefaultSearchControl() throws {
         let databaseURL = try seedDatabase(cards: makeZoomFixtureCards(count: 18))
         let app = launchApp(
@@ -1153,7 +1281,7 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertFalse(firstElement(app, identifier: "default-search-indicator").exists)
         XCTAssertFalse(firstElement(app, identifier: "edit-default-search-button").exists)
         XCTAssertTrue(firstElement(app, identifier: "search-sort-menu").waitForExistence(timeout: 3))
-        XCTAssertTrue(firstElement(app, identifier: "search-filter-menu").exists)
+        XCTAssertFalse(firstElement(app, identifier: "search-filter-menu").exists)
         XCTAssertTrue(firstElement(app, identifier: "printing-display-mode-picker").exists)
     }
 
@@ -2116,7 +2244,12 @@ final class GrimoraMacUITests: XCTestCase {
         searchInputMode: String = "scryfall",
         plainTextSearchResponses: [String: String] = [:],
         valueDisplayCurrency: CardValueDisplayCurrency? = nil,
-        usdToAUDRate: Double? = nil
+        usdToAUDRate: Double? = nil,
+        imageDirectory: URL? = nil,
+        fixtureCards: [CardRecord]? = nil,
+        categorizedListName: String? = nil,
+        categoryNames: [String] = [],
+        resetDatabase: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         switch appearance {
@@ -2153,7 +2286,20 @@ final class GrimoraMacUITests: XCTestCase {
             app.launchEnvironment["GRIMORA_TEST_SEARCH_HISTORY"] = searchHistory.joined(separator: "\n")
         }
         app.launchEnvironment["GRIMORA_TEST_DATABASE_PATH"] = databaseURL.path
-        app.launchEnvironment["GRIMORA_TEST_IMAGE_DIR"] = temporaryDirectory.appendingPathComponent("Images", isDirectory: true).path
+        app.launchEnvironment["GRIMORA_TEST_IMAGE_DIR"] =
+            (imageDirectory ?? temporaryDirectory.appendingPathComponent("Images", isDirectory: true)).path
+        if let fixtureCards,
+           let fixtureData = try? JSONEncoder().encode(fixtureCards) {
+            app.launchEnvironment["GRIMORA_TEST_FIXTURE_CARDS_JSON"] =
+                String(decoding: fixtureData, as: UTF8.self)
+        }
+        if let categorizedListName, !categoryNames.isEmpty {
+            app.launchEnvironment["GRIMORA_TEST_CATEGORIZED_LIST_NAME"] = categorizedListName
+            app.launchEnvironment["GRIMORA_TEST_CATEGORY_NAMES"] = categoryNames.joined(separator: "\n")
+        }
+        if resetDatabase {
+            app.launchEnvironment["GRIMORA_TEST_RESET_DATABASE"] = "1"
+        }
         app.launchEnvironment["GRIMORA_TEST_USER_DEFAULTS_SUITE"] = userDefaultsSuite
         app.launchEnvironment["GRIMORA_TEST_SEARCH_DEBOUNCE_NANOSECONDS"] = "0"
         if !plainTextSearchResponses.isEmpty {
@@ -2171,6 +2317,62 @@ final class GrimoraMacUITests: XCTestCase {
         app.launchEnvironment["GRIMORA_DISABLE_AUTO_UPDATE"] = "1"
         app.launch()
         return app
+    }
+
+    private func allCardClassFixtureCards() -> [CardRecord] {
+        [
+            CardRecord(
+                id: "alpha",
+                name: "Alpha Forest",
+                releasedAt: "2020-01-01",
+                setCode: "abc",
+                setName: "Alpha Set",
+                setType: "expansion",
+                collectorNumber: "1",
+                collectorNumberNumber: 1,
+                rarity: "common",
+                rarityRank: 0,
+                colorSortKey: 1,
+                layout: "normal",
+                typeLine: "Creature",
+                oracleText: "Reach",
+                isRealCard: true
+            ),
+            CardRecord(
+                id: "beta",
+                name: "Beta Mage",
+                releasedAt: "2020-01-02",
+                setCode: "abc",
+                setName: "Alpha Set",
+                setType: "expansion",
+                collectorNumber: "2",
+                collectorNumberNumber: 2,
+                rarity: "rare",
+                rarityRank: 2,
+                colorSortKey: 2,
+                layout: "normal",
+                typeLine: "Creature",
+                oracleText: "Draw a card.",
+                isRealCard: true
+            ),
+            CardRecord(
+                id: "token",
+                name: "Soldier Token",
+                releasedAt: "2020-01-03",
+                setCode: "tok",
+                setName: "Token Set",
+                setType: "token",
+                collectorNumber: "1",
+                collectorNumberNumber: 1,
+                rarity: "common",
+                rarityRank: 0,
+                colorSortKey: 3,
+                layout: "token",
+                typeLine: "Token Creature",
+                oracleText: "",
+                isRealCard: false
+            )
+        ]
     }
 
     private func seedDatabase(cards: [CardRecord]) throws -> URL {
@@ -2702,6 +2904,26 @@ final class GrimoraMacUITests: XCTestCase {
 
     private func firstElement(_ app: XCUIApplication, identifier: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
+    private func macAppSupportDirectory() throws -> URL {
+        guard let passwd = Darwin.getpwuid(Darwin.getuid()),
+              let homeDirectory = passwd.pointee.pw_dir else {
+            throw NSError(
+                domain: "GrimoraUITests",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Unable to resolve host home directory."]
+            )
+        }
+
+        return URL(
+            fileURLWithPath: String(cString: homeDirectory),
+            isDirectory: true
+        )
+        .appendingPathComponent(
+            "Library/Containers/com.samwagner.Grimora/Data/Library/Application Support/Grimora",
+            isDirectory: true
+        )
     }
 
     private func makeFixtureImage(named name: String) throws -> URL {

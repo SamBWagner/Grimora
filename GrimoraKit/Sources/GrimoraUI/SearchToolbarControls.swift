@@ -50,7 +50,6 @@ struct SearchRefinementToolbar: ToolbarContent {
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: placement) {
             SearchSortMenu()
-            SearchFiltersMenu()
             SearchPrintingsToggle()
 
             if usesCompactActions {
@@ -102,32 +101,6 @@ struct SearchSortMenu: View {
         [.ascending, .descending]
     }
 
-}
-
-struct SearchFiltersMenu: View {
-    @EnvironmentObject private var model: GrimoraAppModel
-
-    var body: some View {
-        Menu {
-            ForEach(FilterPreset.allCases) { filter in
-                Button {
-                    model.toggleFilter(filter)
-                } label: {
-                    HStack {
-                        Text(filter.title)
-                        if model.activeFilters.contains(filter) {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-                .accessibilityIdentifier(filter.accessibilityIdentifier)
-            }
-        } label: {
-            Text("Filters")
-        }
-        .accessibilityIdentifier("search-filter-menu")
-        .help("Filter search results")
-    }
 }
 
 struct SearchPrintingsToggle: View {

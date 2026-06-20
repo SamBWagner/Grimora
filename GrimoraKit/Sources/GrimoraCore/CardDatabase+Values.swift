@@ -78,6 +78,47 @@ extension CardDatabase {
     finish: CardValueFinish,
     currentDate: String
   ) throws -> [CardValueHistoryPoint] {
+    let compactStatement = try database.prepare(
+      """
+      SELECT start_date, day_count, prices_cents
+      FROM card_value_series
+      WHERE card_id = ?
+          AND provider = ?
+          AND finish = ?
+      LIMIT 1
+      """)
+    try compactStatement.bind(cardID, at: 1)
+    try compactStatement.bind(provider.rawValue, at: 2)
+    try compactStatement.bind(finish.rawValue, at: 3)
+    if try compactStatement.step(),
+      let startDate = compactStatement.string(at: 0),
+      let dayCount = compactStatement.int(at: 1),
+      let encoded = compactStatement.data(at: 2)
+    {
+      let prices = try CompactCardValueSeries.decodePrices(encoded, expectedCount: dayCount)
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+      let formatter = DateFormatter()
+      formatter.calendar = calendar
+      formatter.locale = Locale(identifier: "en_US_POSIX")
+      formatter.timeZone = calendar.timeZone
+      formatter.dateFormat = "yyyy-MM-dd"
+      guard let firstDate = formatter.date(from: startDate) else {
+        throw CatalogStorageError.invalidCatalog("Compact price series has an invalid start date")
+      }
+      return prices.enumerated().compactMap { offset, cents in
+        guard cents != CompactCardValueSeries.missingPrice,
+          let date = calendar.date(byAdding: .day, value: offset, to: firstDate)
+        else {
+          return nil
+        }
+        return CardValueHistoryPoint(
+          date: formatter.string(from: date),
+          price: Double(cents) / 100
+        )
+      }
+    }
+
     let statement = try database.prepare(
       """
       SELECT "date", price
@@ -131,6 +172,33 @@ extension CardDatabase {
 
       let minimumExpectedCoverage = min(10_000, max(100, cardCount / 5))
       return summaryCardCount >= minimumExpectedCoverage
+    }
+  }
+
+  func hasUsableValueMappingCoverage() throws -> Bool {
+    try withDatabaseLock {
+      let cardCountStatement = try database.prepare("SELECT COUNT(*) FROM cards")
+      _ = try cardCountStatement.step()
+      let cardCount = cardCountStatement.int(at: 0) ?? 0
+      guard cardCount > 0 else {
+        return false
+      }
+
+      let mappingCountStatement = try database.prepare(
+        "SELECT COUNT(DISTINCT card_id) FROM card_value_mappings"
+      )
+      _ = try mappingCountStatement.step()
+      let mappingCount = mappingCountStatement.int(at: 0) ?? 0
+      guard mappingCount > 0 else {
+        return false
+      }
+
+      if cardCount < 100 {
+        return true
+      }
+
+      let minimumExpectedCoverage = min(10_000, max(100, cardCount / 5))
+      return mappingCount >= minimumExpectedCoverage
     }
   }
 
@@ -203,7 +271,7 @@ extension CardDatabase {
   func upsertCurrentCardValues(
     meta: MTGJSONPriceHistoryMeta,
     mappingsByMTGJSONUUID: [String: CardRecord.ID],
-    importPricePoints: (CardPricePointWriter) throws -> Int
+    pricePoints: [CardValueImportPoint]
   ) throws -> MTGJSONPriceImportSummary {
     try withDatabaseLock {
       var summary = MTGJSONPriceImportSummary(mappedCards: 0, importedPricePoints: 0)
@@ -226,7 +294,15 @@ extension CardDatabase {
           VALUES (?, ?, ?, ?, ?)
           """)
         let writer = CardPricePointWriter(statement: priceInsert)
-        let importedPricePoints = try importPricePoints(writer)
+        for point in pricePoints {
+          try writer.insert(
+            cardID: point.cardID,
+            provider: point.provider,
+            finish: point.finish,
+            date: point.date,
+            price: point.price
+          )
+        }
         try rebuildCardValueSummariesUnlocked()
         try saveMetadataValue(meta.date, forKey: MetadataKey.mtgjsonCurrentPricesDate.rawValue)
         try saveMetadataValue(meta.version, forKey: MetadataKey.mtgjsonCurrentPricesVersion.rawValue)
@@ -236,7 +312,7 @@ extension CardDatabase {
         )
         summary = MTGJSONPriceImportSummary(
           mappedCards: mappingsByMTGJSONUUID.count,
-          importedPricePoints: importedPricePoints
+          importedPricePoints: pricePoints.count
         )
       }
       return summary
@@ -244,18 +320,10 @@ extension CardDatabase {
   }
 
   func clearCardValueHistoryUnlocked() throws {
-    try database.execute("DELETE FROM card_value_summaries")
-    try database.execute("DELETE FROM card_price_points")
-    try database.execute("DELETE FROM card_value_mappings")
-    try database.execute("DELETE FROM staging_card_price_points")
-    try database.execute("DELETE FROM staging_card_value_mappings")
-    try database.execute("DELETE FROM value_history_background_jobs")
-    try saveMetadataValue(nil, forKey: MetadataKey.mtgjsonCurrentPricesDate.rawValue)
-    try saveMetadataValue(nil, forKey: MetadataKey.mtgjsonCurrentPricesVersion.rawValue)
-    try saveMetadataValue(nil, forKey: MetadataKey.mtgjsonCurrentPricesCardDatabaseIdentity.rawValue)
-    try saveMetadataValue(nil, forKey: MetadataKey.mtgjsonPriceHistoryDate.rawValue)
-    try saveMetadataValue(nil, forKey: MetadataKey.mtgjsonPriceHistoryVersion.rawValue)
-    try saveMetadataValue(nil, forKey: MetadataKey.mtgjsonPriceHistoryCardDatabaseIdentity.rawValue)
+    try clearCardValueHistoryRowsUnlocked(
+      includingBackgroundJobs: true,
+      clearsMetadata: true
+    )
   }
 
   func rebuildCardValueSummariesUnlocked() throws {
@@ -359,6 +427,14 @@ extension CardDatabase {
 
 enum CardValueProvider: String, Sendable {
   case tcgplayer
+}
+
+struct CardValueImportPoint: Equatable, Sendable {
+  var cardID: CardRecord.ID
+  var provider: CardValueProvider
+  var finish: CardValueFinish
+  var date: String
+  var price: Double
 }
 
 final class CardPricePointWriter {

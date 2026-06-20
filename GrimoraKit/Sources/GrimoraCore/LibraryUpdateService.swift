@@ -57,8 +57,18 @@ public final class LibraryUpdateService: Sendable {
         importer: LibraryImporter,
         imagePolicy: ImageImportPolicy = .reuseExistingImagesWithoutDownloading,
         refreshesPriceHistory: Bool = true,
+        preservesCardValueHistory: Bool? = nil,
+        automatic: Bool = false,
         progress: (@Sendable (ImportProgress) async -> Void)? = nil
     ) async throws -> ImportSummary {
+        if manifest.type == BulkDataManifest.grimoraCatalogType {
+            return try await downloadAndInstallCatalog(
+                manifest: manifest,
+                temporaryDirectory: temporaryDirectory,
+                automatic: automatic,
+                progress: progress
+            )
+        }
         let destination = temporaryDirectory.appendingPathComponent("default-cards-\(manifest.updatedAt.fileSafeComponent).json")
         await progress?(.downloadingBulkData)
         let fallbackTotalBytes = manifest.size > 0 ? Int64(manifest.size) : nil
@@ -74,7 +84,7 @@ public final class LibraryUpdateService: Sendable {
             from: destination,
             manifest: manifest,
             imagePolicy: imagePolicy,
-            preservesCardValueHistory: priceHistoryClient != nil && priceHistoryImporter != nil,
+            preservesCardValueHistory: preservesCardValueHistory ?? (priceHistoryClient != nil && priceHistoryImporter != nil),
             progress: progress
         )
         if refreshesPriceHistory {
@@ -83,6 +93,54 @@ public final class LibraryUpdateService: Sendable {
             summary.priceHistoryStatus = .deferred
         }
         return summary
+    }
+
+    private func downloadAndInstallCatalog(
+        manifest: BulkDataManifest,
+        temporaryDirectory: URL,
+        automatic: Bool,
+        progress: (@Sendable (ImportProgress) async -> Void)?
+    ) async throws -> ImportSummary {
+        guard let catalog = manifest.catalog else {
+            throw CatalogStorageError.invalidCatalog("Catalog manifest payload is missing")
+        }
+        let compressedURL = temporaryDirectory
+            .appendingPathComponent("catalog-\(catalog.version.fileSafeComponent).sqlite.gz")
+        let stagedURL = temporaryDirectory
+            .appendingPathComponent("catalog-\(catalog.version.fileSafeComponent).sqlite")
+        defer {
+            try? FileManager.default.removeItem(at: compressedURL)
+            try? FileManager.default.removeItem(at: stagedURL)
+        }
+
+        await progress?(.downloadingBulkData)
+        try await bulkDataClient.downloadDefaultCards(
+            manifest: manifest,
+            to: compressedURL,
+            purpose: automatic ? .automaticCatalogDownload : .bulkDownload
+        ) { downloadProgress in
+            await progress?(
+                .downloadingBulkDataProgress(
+                    completedBytes: downloadProgress.completedBytes,
+                    totalBytes: downloadProgress.totalBytes ?? catalog.artifact.compressedBytes
+                )
+            )
+        }
+        guard try FileSHA256.hash(url: compressedURL) == catalog.artifact.sha256 else {
+            throw CatalogStorageError.invalidCatalog("Downloaded catalog SHA-256 does not match")
+        }
+        await progress?(.decodingCardData)
+        try GzipArchive.decompressFile(at: compressedURL, to: stagedURL)
+        guard try FileSHA256.hash(url: stagedURL) == catalog.artifact.uncompressedSHA256 else {
+            throw CatalogStorageError.invalidCatalog("Expanded catalog SHA-256 does not match")
+        }
+        try database.installCatalog(from: stagedURL, expectedManifest: catalog)
+        await progress?(.cardDataReady(cardCount: catalog.counts.cards))
+        return ImportSummary(
+            importedCards: catalog.counts.cards,
+            failedImageURLs: [],
+            priceHistoryStatus: .skipped
+        )
     }
 
     public func refreshPriceHistory(
@@ -129,14 +187,17 @@ public final class LibraryUpdateService: Sendable {
             )
             return status
         } catch {
-            if let running = try? database.incompleteValueHistoryBackgroundJob(),
-               let failed = try? database.updateValueHistoryBackgroundJob(
-                id: running.id,
-                stage: .failed,
-                status: .failed,
-                lastError: String(describing: error)
-               ) {
-                await progress?(failed)
+            if let running = try? database.incompleteValueHistoryBackgroundJob() {
+                try? discardBackgroundFiles(for: running, in: backgroundDirectory)
+                try? database.discardValueHistoryStaging(jobID: running.id)
+                if let failed = try? database.updateValueHistoryBackgroundJob(
+                    id: running.id,
+                    stage: .failed,
+                    status: .failed,
+                    lastError: String(describing: error)
+                ) {
+                    await progress?(failed)
+                }
             }
             return .failed
         }
@@ -170,7 +231,8 @@ public final class LibraryUpdateService: Sendable {
             if currentDate == meta.date,
                currentVersion == meta.version,
                currentIdentity == cardDatabaseIdentity,
-               (try database.hasUsableValueSummaryCoverage()) {
+               (try database.hasUsableValueSummaryCoverage()),
+               (try database.hasUsableValueMappingCoverage()) {
                 _ = try database.prepareValueHistoryBackgroundJob(meta: meta, cardDatabaseIdentity: cardDatabaseIdentity)
                 return .currentPricesReadyNeedsHistory(meta)
             }
@@ -307,24 +369,21 @@ public final class LibraryUpdateService: Sendable {
         ) ?? activeJob
         await progress?(activeJob)
 
-        let printingsGzipURL = temporaryDirectory
-            .appendingPathComponent("mtgjson-all-printings-\(activeJob.mtgjsonDate.fileSafeComponent).json.gz")
-        let printingsJSONURL = temporaryDirectory
-            .appendingPathComponent("mtgjson-all-printings-\(activeJob.mtgjsonDate.fileSafeComponent).json")
         let pricesJSONURL = temporaryDirectory
             .appendingPathComponent("mtgjson-all-prices-background-\(activeJob.mtgjsonDate.fileSafeComponent).json")
-        try await priceHistoryClient.downloadAllPrintings(to: printingsGzipURL)
-        try MTGJSONGzip.decompressFile(at: printingsGzipURL, to: printingsJSONURL)
         try MTGJSONGzip.decompressFile(at: pricesGzipURL, to: pricesJSONURL)
         defer {
-            try? FileManager.default.removeItem(at: printingsGzipURL)
-            try? FileManager.default.removeItem(at: printingsJSONURL)
             try? FileManager.default.removeItem(at: pricesJSONURL)
+        }
+
+        let mappingsByMTGJSONUUID = try database.valueMappingsByMTGJSONUUID()
+        guard !mappingsByMTGJSONUUID.isEmpty else {
+            throw MTGJSONPriceHistoryError.missingCurrentPriceMappings
         }
 
         let summary = try await priceHistoryImporter.importHistoryToStaging(
             meta: activeJob.meta,
-            allPrintingsJSONURL: printingsJSONURL,
+            mappingsByMTGJSONUUID: mappingsByMTGJSONUUID,
             allPricesJSONURL: pricesJSONURL,
             jobID: jobID
         ) { [database, jobID] importProgress in
@@ -393,6 +452,7 @@ public final class LibraryUpdateService: Sendable {
         ) {
             await progress?(completed)
         }
+        try discardBackgroundFiles(for: activeJob, in: backgroundDirectory)
         return .imported(committedSummary)
     }
 

@@ -174,6 +174,57 @@ final class CardListEntrySectionBuilderTests: XCTestCase {
     XCTAssertEqual(sections[2].entries.map(\.id), ["maybe-0"])
   }
 
+  func testDetailSnapshotExcludesCollapsedEntriesFromExpandedSequence() {
+    let categories = [
+      category(id: "core", name: "Core", position: 0),
+      category(id: "land", name: "Land", position: 1),
+    ]
+    let entries = [
+      entry(id: "core-0", categoryID: "core", position: 0),
+      entry(id: "land-0", categoryID: "land", position: 1),
+      entry(id: "core-1", categoryID: "core", position: 2),
+    ]
+
+    let snapshot = CardListDetailSnapshot(
+      entries: entries,
+      categories: categories,
+      ruleset: .none,
+      displaySortMode: nil,
+      displaySortDirection: .ascending,
+      collapsedSectionIDs: ["core"],
+      isSearchActive: false,
+      totalEntryCount: 3
+    )
+
+    XCTAssertEqual(snapshot.sections.map(\.id), ["core", "land"])
+    XCTAssertEqual(snapshot.visibleEntries.map(\.id), ["core-0", "land-0", "core-1"])
+    XCTAssertEqual(snapshot.expandedEntries.map(\.id), ["land-0"])
+    XCTAssertEqual(snapshot.expandedEntryIDs, ["land-0"])
+    XCTAssertEqual(snapshot.entryCountText, "3 cards")
+  }
+
+  func testBuildsProductionSizedCategorizedInputWithoutChangingStableSectionIDs() {
+    let categories = (0..<12).map { index in
+      category(id: "category-\(index)", name: "Category \(index)", position: index)
+    }
+    let entries = (0..<240).map { index in
+      entry(
+        id: "entry-\(index)",
+        categoryID: categories[index % categories.count].id,
+        position: index
+      )
+    }
+
+    let sections = CardListEntrySectionBuilder.sections(
+      entries: entries,
+      categories: categories
+    )
+
+    XCTAssertEqual(sections.map(\.id), categories.map(\.id))
+    XCTAssertEqual(sections.flatMap(\.entries).count, entries.count)
+    XCTAssertEqual(sections.map(\.entries.count), Array(repeating: 20, count: 12))
+  }
+
   private func category(
     id: CardListCategoryRecord.ID,
     name: String,

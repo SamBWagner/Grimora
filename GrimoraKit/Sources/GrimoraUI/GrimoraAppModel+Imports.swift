@@ -144,6 +144,8 @@ extension GrimoraAppModel {
 
   @discardableResult
   func performListMutation<T>(_ body: () throws -> T) throws -> T {
+    pauseCloudSyncMonitoringForLocalMutation()
+    defer { resumeCloudSyncMonitoringAfterLocalMutation() }
     let undoState = try CardListUndoState(
       snapshot: database.cardListLibrarySnapshot(),
       sidebarSelection: sidebarSelection,

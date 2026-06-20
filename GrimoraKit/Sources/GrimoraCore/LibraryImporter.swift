@@ -49,6 +49,7 @@ public enum ImportProgress: Equatable, Sendable {
     case downloadingBulkDataProgress(completedBytes: Int64, totalBytes: Int64?)
     case decodingCardData
     case storingSearchIndex(cardCount: Int)
+    case storingSearchIndexProgress(CardDatabaseWriteProgress)
     case cardDataReady(cardCount: Int)
     case downloadingPriceHistoryData
     case downloadingPriceHistoryDataProgress(
@@ -418,7 +419,22 @@ public final class LibraryImporter: Sendable {
         progress: (@Sendable (ImportProgress) async -> Void)?
     ) async throws {
         await progress?(.storingSearchIndex(cardCount: records.count))
-        try database.replaceAllCards(records, preservesCardValueHistory: preservesCardValueHistory)
+        var writeProgressTasks: [Task<Void, Never>] = []
+        try database.replaceAllCards(
+            records,
+            preservesCardValueHistory: preservesCardValueHistory
+        ) { writeProgress in
+            guard let progress else {
+                return
+            }
+
+            writeProgressTasks.append(Task {
+                await progress(.storingSearchIndexProgress(writeProgress))
+            })
+        }
+        for task in writeProgressTasks {
+            await task.value
+        }
 
         if let manifest {
             try database.saveMetadataValue(manifest.updatedAt, forKey: MetadataKey.defaultCardsUpdatedAt.rawValue)
@@ -527,6 +543,8 @@ public enum MetadataKey: String, Sendable {
     case mtgjsonPriceHistoryDate
     case mtgjsonPriceHistoryVersion
     case mtgjsonPriceHistoryCardDatabaseIdentity
+    case catalogSchemaVersion
+    case catalogArtifactSHA256
 }
 
 private extension String {

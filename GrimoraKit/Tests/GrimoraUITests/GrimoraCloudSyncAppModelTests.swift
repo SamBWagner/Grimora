@@ -17,6 +17,11 @@ private actor FailingCloudSyncTransport: CloudSyncTransport {
 
 @MainActor
 final class GrimoraCloudSyncAppModelTests: XCTestCase {
+  override func setUp() {
+    super.setUp()
+    UserDefaults.standard.removeObject(forKey: GrimoraCloudSyncPreferences.searchSettingsUpdatedAtKey)
+  }
+
   func testFirstLaunchCanKeepDeviceSeparate() async throws {
     let database = try CardDatabase(storage: .inMemory)
     let model = GrimoraAppModel(
@@ -83,7 +88,22 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     XCTAssertEqual(model.statusMessage, "iCloud sync is unavailable right now.")
   }
 
-  func testRemoteRequiredDatabaseShowsUpdateRequiredState() async throws {
+  func testActivationDoesNotRaceInitialCloudSyncBootstrap() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let coordinator = CloudSyncCoordinator(database: database, transport: FailingCloudSyncTransport())
+    let model = GrimoraAppModel(
+      environment: environment(database: database, cloudSyncCoordinator: coordinator)
+    )
+    model.cloudSyncMode = .enabled
+    model.cloudSyncStatus = .preparing
+
+    model.refreshCloudSyncWhenActive()
+    await Task.yield()
+
+    XCTAssertEqual(model.cloudSyncStatus, .preparing)
+  }
+
+  func testRemoteCatalogVersionDoesNotBlockUserDataSync() async throws {
     let database = try CardDatabase(storage: .inMemory)
     let requiredIdentity = LibraryIdentity(
       defaultCardsUpdatedAt: "2026-05-01T00:00:00.000+00:00",
@@ -104,11 +124,8 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     model.cloudSyncMode = .enabled
     await model.startCloudSync()
 
-    XCTAssertEqual(model.requiredCloudLibraryIdentity, requiredIdentity)
-    XCTAssertEqual(
-      model.statusMessage,
-      "A synced card database update is required before lists can sync."
-    )
+    XCTAssertEqual(model.cloudSyncStatus, .ready)
+    XCTAssertEqual(model.statusMessage, "iCloud sync is ready.")
   }
 
   func testRemoteNewerSyncSchemaShowsAppUpdateState() async throws {
@@ -200,6 +217,202 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
 
     XCTAssertEqual(model.cloudSyncStatus, .ready)
     XCTAssertEqual(Set(model.cardLists.map(\.name)), ["Favourites", "Remote Picks", "Local Picks"])
+  }
+
+  func testRunningDevicesPropagateListsFavouritesAndSelectedListState() async throws {
+    let transport = MemoryCloudSyncTransport()
+    let databaseA = try CardDatabase(storage: .inMemory)
+    let databaseB = try CardDatabase(storage: .inMemory)
+    let card = testCard()
+    try databaseA.replaceAllCards([card])
+    try databaseB.replaceAllCards([card])
+
+    let modelA = GrimoraAppModel(
+      environment: environment(
+        database: databaseA,
+        cloudSyncCoordinator: CloudSyncCoordinator(database: databaseA, transport: transport)
+      ),
+      cloudSyncDeviceID: "device-a",
+      cloudSyncDeviceName: "Device A",
+      initialCloudSyncSearchSettingsUpdatedAt: .distantPast
+    )
+    modelA.cloudSyncMode = .enabled
+    await modelA.startCloudSync()
+
+    let modelB = GrimoraAppModel(
+      environment: environment(
+        database: databaseB,
+        cloudSyncCoordinator: CloudSyncCoordinator(database: databaseB, transport: transport)
+      ),
+      cloudSyncDeviceID: "device-b",
+      cloudSyncDeviceName: "Device B",
+      initialCloudSyncSearchSettingsUpdatedAt: .distantPast
+    )
+    modelB.cloudSyncMode = .enabled
+    await modelB.startCloudSync()
+
+    let sharedList = try XCTUnwrap(
+      modelA.createCardList(named: "Live Picks", selectAfterCreate: true)
+    )
+    let createdListArrived = await waitUntil {
+      modelB.cardLists.contains { $0.id == sharedList.id }
+    }
+    XCTAssertTrue(createdListArrived)
+
+    modelB.selectCardList(id: sharedList.id)
+    modelA.renameCardList(id: sharedList.id, to: "Renamed Live Picks")
+    XCTAssertEqual(
+      modelA.cardLists.first { $0.id == sharedList.id }?.name,
+      "Renamed Live Picks",
+      "The local rename must commit before any remote reconciliation."
+    )
+    let immediateRenameTimestamp = try databaseA.cardList(id: sharedList.id)?.updatedAt
+    let renamedListArrived = await waitUntil {
+      modelB.selectedList?.name == "Renamed Live Picks"
+        && modelB.sidebarSelection == .list(sharedList.id)
+    }
+    let renamedRemoteState = await transport.currentState()
+    let saveHistory = await transport.saveHistory()
+    XCTAssertTrue(
+      renamedListArrived,
+      """
+      immediateRenameTimestamp=\(String(describing: immediateRenameTimestamp?.timeIntervalSince1970)), \
+      aStatus=\(modelA.cloudSyncStatus), \
+      aLists=\(modelA.cardLists.map { "\($0.id):\($0.name):\($0.updatedAt.timeIntervalSince1970)" }), \
+      bStatus=\(modelB.cloudSyncStatus), \
+      bLists=\(modelB.cardLists.map { "\($0.id):\($0.name):\($0.updatedAt.timeIntervalSince1970)" }), \
+      remote=\(renamedRemoteState.snapshots.flatMap(\.listSnapshot.lists).map { "\($0.id):\($0.name):\($0.updatedAt.timeIntervalSince1970)" }), \
+      saves=\(saveHistory.map { snapshot in
+        "\(snapshot.id)[\(snapshot.listSnapshot.lists.map { "\($0.name):\($0.updatedAt.timeIntervalSince1970)" }.joined(separator: ","))]"
+      })
+      """
+    )
+
+    modelA.addCardToFavourites(card)
+    let favouriteArrived = await waitUntil {
+      guard let favouritesID = modelB.favouritesList?.id else {
+        return false
+      }
+      modelB.selectCardList(id: favouritesID)
+      return modelB.selectedListEntries.map(\.cardID) == [card.id]
+    }
+    XCTAssertTrue(favouriteArrived)
+
+    let favouriteEntry = try XCTUnwrap(modelA.favouritesList).id
+    modelA.selectCardList(id: favouriteEntry)
+    let favouriteEntryID = try XCTUnwrap(modelA.selectedListEntries.first).id
+    modelA.removeCardListEntriesCompletely(ids: [favouriteEntryID])
+    let favouriteRemovalArrived = await waitUntil {
+      modelB.favouritesList.map { list in
+        modelB.selectCardList(id: list.id)
+        return modelB.selectedListEntries.isEmpty
+      } ?? false
+    }
+    XCTAssertTrue(favouriteRemovalArrived)
+
+    modelA.deleteCardList(id: sharedList.id)
+    let deletionArrived = await waitUntil {
+      !modelB.cardLists.contains { $0.id == sharedList.id }
+        && modelB.selectedListID != sharedList.id
+    }
+    XCTAssertTrue(deletionArrived)
+
+    modelA.keepDeviceSeparate()
+    modelB.keepDeviceSeparate()
+  }
+
+  func testTransportFailureEventIsVisibleWhileSyncIsRunning() async throws {
+    let transport = MemoryCloudSyncTransport()
+    let database = try CardDatabase(storage: .inMemory)
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        cloudSyncCoordinator: CloudSyncCoordinator(database: database, transport: transport)
+      ),
+      cloudSyncDeviceID: "device-a",
+      initialCloudSyncSearchSettingsUpdatedAt: .distantPast
+    )
+    model.cloudSyncMode = .enabled
+    await model.startCloudSync()
+
+    await transport.publish(.failed("CloudKit fetch failed."))
+
+    let failureArrived = await waitUntil {
+      model.cloudSyncStatus == .failed("CloudKit fetch failed.")
+        && model.statusMessage == "CloudKit fetch failed."
+    }
+    XCTAssertTrue(failureArrived)
+    model.keepDeviceSeparate()
+  }
+
+  func testSearchSettingsModificationDateAdvancesWhileSyncIsDisabled() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let model = GrimoraAppModel(
+      environment: environment(database: database),
+      initialCloudSyncSearchSettingsUpdatedAt: .distantPast
+    )
+
+    model.applySearchPreferences(
+      GrimoraDefaultSearchConfiguration(text: "type:artifact")
+    )
+
+    XCTAssertGreaterThan(model.currentSyncSearchSettings().updatedAt, Date.distantPast)
+  }
+
+  func testRecoveryCopyIsVisibleAndRestorableThroughAppModel() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let localList = try database.createCardList(
+      named: "Existing Deck",
+      now: Date(timeIntervalSince1970: 10)
+    )
+    try database.applyDeviceSyncSnapshot(
+      deviceSnapshot(
+        id: "remote",
+        deviceName: "Remote",
+        listID: "remote-list",
+        listName: "Remote Deck"
+      )
+    )
+    let model = GrimoraAppModel(environment: environment(database: database))
+
+    let recovery = try XCTUnwrap(model.cloudSyncRecoverySnapshots.first)
+    XCTAssertEqual(recovery.listSnapshot.lists.map(\.id), [localList.id])
+
+    model.restoreCloudSyncRecoverySnapshot(id: recovery.id)
+
+    XCTAssertEqual(Set(model.cardLists.map(\.name)), ["Existing Deck", "Favourites"])
+    XCTAssertEqual(model.statusMessage, "Restored lists from before iCloud sync.")
+    XCTAssertFalse(try database.pendingSyncChanges().isEmpty)
+    XCTAssertGreaterThan(model.cloudSyncRecoverySnapshots.count, 1)
+  }
+
+  private func waitUntil(
+    attempts: Int = 100,
+    condition: () -> Bool
+  ) async -> Bool {
+    for _ in 0..<attempts {
+      if condition() {
+        return true
+      }
+      try? await Task.sleep(for: .milliseconds(50))
+    }
+    return condition()
+  }
+
+  private func testCard() -> CardRecord {
+    CardRecord(
+      id: "alpha",
+      name: "Alpha",
+      setCode: "tst",
+      setName: "Test",
+      setType: "expansion",
+      collectorNumber: "1",
+      rarity: "common",
+      colorSortKey: 0,
+      layout: "normal",
+      typeLine: "Creature",
+      oracleText: ""
+    )
   }
 
   private func environment(

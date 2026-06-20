@@ -55,14 +55,12 @@ struct SearchResultCacheKey: Equatable, Sendable {
   var text: String
   var sortMode: SortMode
   var sortDirection: SearchSortDirection
-  var activeFilterValues: [String]
   var printingDisplayMode: PrintingDisplayMode
 
   init(request: CardSearchRequest) {
     text = GrimoraSearchHistoryStore.normalizedQuery(request.text)
     sortMode = request.sortMode
     sortDirection = request.sortDirection
-    activeFilterValues = request.activeFilters.map(\.rawValue).sorted()
     printingDisplayMode = request.printingDisplayMode
   }
 }

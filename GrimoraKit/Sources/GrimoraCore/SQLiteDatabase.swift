@@ -28,6 +28,7 @@ public final class SQLiteDatabase: @unchecked Sendable {
     public enum Storage: Equatable, Sendable {
         case inMemory
         case file(URL)
+        case readOnlyFile(URL)
     }
 
     private var handle: OpaquePointer?
@@ -43,14 +44,25 @@ public final class SQLiteDatabase: @unchecked Sendable {
                 withIntermediateDirectories: true
             )
             path = url.path
+        case .readOnlyFile(let url):
+            path = url.path
         }
 
-        let flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
+        let flags: Int32
+        switch storage {
+        case .readOnlyFile:
+            flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_URI
+        case .inMemory, .file:
+            flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_URI
+        }
         if sqlite3_open_v2(path, &handle, flags, nil) != SQLITE_OK {
             throw SQLiteError.openFailed(lastErrorMessage)
         }
 
         try execute("PRAGMA foreign_keys = ON")
+        if case .readOnlyFile = storage {
+            return
+        }
         try execute("PRAGMA journal_mode = WAL")
     }
 
@@ -64,6 +76,13 @@ public final class SQLiteDatabase: @unchecked Sendable {
             let message = errorMessage.map { String(cString: $0) } ?? lastErrorMessage
             sqlite3_free(errorMessage)
             throw SQLiteError.executionFailed(message)
+        }
+    }
+
+    public func execute(_ sql: String, interruptingAfter timeout: TimeInterval) throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        try withProgressHandler(shouldAbort: { Date() >= deadline }) {
+            try execute(sql)
         }
     }
 
@@ -89,11 +108,142 @@ public final class SQLiteDatabase: @unchecked Sendable {
         }
     }
 
+    public func attachReadOnlyDatabase(at url: URL, as schema: String) throws {
+        try Self.validateSchemaName(schema)
+        let statement = try prepare("ATTACH DATABASE ? AS \(schema)")
+        try statement.bind(url.absoluteString + "?mode=ro", at: 1)
+        try statement.step()
+    }
+
+    public func detachDatabase(named schema: String) throws {
+        try Self.validateSchemaName(schema)
+        try execute("DETACH DATABASE \(schema)")
+    }
+
+    public func attachedDatabaseNames() throws -> [String] {
+        let statement = try prepare("PRAGMA database_list")
+        var names: [String] = []
+        while try statement.step() {
+            if let name = statement.string(at: 1) {
+                names.append(name)
+            }
+        }
+        return names
+    }
+
+    public func quickCheck(schema: String = "main") throws -> String {
+        try Self.validateSchemaName(schema)
+        let statement = try prepare("PRAGMA \(schema).quick_check")
+        guard try statement.step() else {
+            throw SQLiteError.executionFailed("PRAGMA \(schema).quick_check returned no result")
+        }
+        return statement.string(at: 0) ?? ""
+    }
+
+    public static func backup(from sourceURL: URL, to destinationURL: URL) throws {
+        try FileManager.default.createDirectory(
+            at: destinationURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        var source: OpaquePointer?
+        var destination: OpaquePointer?
+        let sourceFlags = SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_URI
+        let destinationFlags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_URI
+
+        guard sqlite3_open_v2(sourceURL.path, &source, sourceFlags, nil) == SQLITE_OK else {
+            defer { sqlite3_close(source) }
+            throw SQLiteError.openFailed(source.map { String(cString: sqlite3_errmsg($0)) } ?? "source open failed")
+        }
+        defer { sqlite3_close(source) }
+
+        guard sqlite3_open_v2(destinationURL.path, &destination, destinationFlags, nil) == SQLITE_OK else {
+            defer { sqlite3_close(destination) }
+            throw SQLiteError.openFailed(
+                destination.map { String(cString: sqlite3_errmsg($0)) } ?? "destination open failed"
+            )
+        }
+        defer { sqlite3_close(destination) }
+
+        guard let backup = sqlite3_backup_init(destination, "main", source, "main") else {
+            throw SQLiteError.executionFailed(
+                destination.map { String(cString: sqlite3_errmsg($0)) } ?? "backup initialization failed"
+            )
+        }
+        defer { sqlite3_backup_finish(backup) }
+
+        let result = sqlite3_backup_step(backup, -1)
+        guard result == SQLITE_DONE else {
+            throw SQLiteError.executionFailed(
+                destination.map { String(cString: sqlite3_errmsg($0)) } ?? "backup failed"
+            )
+        }
+    }
+
+    var changedRowCount: Int {
+        guard let handle else {
+            return 0
+        }
+        return Int(sqlite3_changes(handle))
+    }
+
+    private func withProgressHandler(
+        instructionInterval: Int32 = 10_000,
+        shouldAbort: @escaping () -> Bool,
+        body: () throws -> Void
+    ) throws {
+        guard let handle else {
+            try body()
+            return
+        }
+
+        let box = SQLiteProgressHandlerBox(shouldAbort: shouldAbort)
+        sqlite3_progress_handler(
+            handle,
+            instructionInterval,
+            { context in
+                guard let context else {
+                    return 0
+                }
+
+                let box = Unmanaged<SQLiteProgressHandlerBox>
+                    .fromOpaque(context)
+                    .takeUnretainedValue()
+                return box.shouldAbort() ? 1 : 0
+            },
+            Unmanaged.passUnretained(box).toOpaque()
+        )
+        defer {
+            sqlite3_progress_handler(handle, 0, nil, nil)
+            withExtendedLifetime(box) {}
+        }
+
+        try body()
+    }
+
     fileprivate var lastErrorMessage: String {
         guard let handle else {
             return "database is closed"
         }
         return String(cString: sqlite3_errmsg(handle))
+    }
+
+    private static func validateSchemaName(_ schema: String) throws {
+        guard !schema.isEmpty,
+              schema.unicodeScalars.allSatisfy({
+                  CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_")).contains($0)
+              })
+        else {
+            throw SQLiteError.executionFailed("Invalid SQLite schema name: \(schema)")
+        }
+    }
+}
+
+private final class SQLiteProgressHandlerBox {
+    let shouldAbort: () -> Bool
+
+    init(shouldAbort: @escaping () -> Bool) {
+        self.shouldAbort = shouldAbort
     }
 }
 

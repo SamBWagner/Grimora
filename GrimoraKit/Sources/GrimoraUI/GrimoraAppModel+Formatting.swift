@@ -12,11 +12,7 @@ extension GrimoraAppModel {
   }
 
   func handleImportProgress(_ progress: ImportProgress, manifest: BulkDataManifest) {
-    if case .decodingCardData = progress {
-      startCardDataReadHeartbeat()
-    } else {
-      stopCardDataReadHeartbeat()
-    }
+    syncLibraryActivityHeartbeat(for: progress)
 
     switch progress {
     case .downloadingBulkData:
@@ -32,6 +28,8 @@ extension GrimoraAppModel {
       statusMessage = "Reading Scryfall card data... this can take a few minutes on first install."
     case .storingSearchIndex(let cardCount):
       statusMessage = "Writing offline search index for \(formatted(cardCount)) cards..."
+    case .storingSearchIndexProgress(let writeProgress):
+      statusMessage = cardDatabaseBuildStatusMessage(for: writeProgress)
     case .cardDataReady(let cardCount):
       updateManifest = nil
       statusMessage = "Finalizing offline library for \(formatted(cardCount)) cards..."
@@ -70,11 +68,18 @@ extension GrimoraAppModel {
         : "Downloading images \(formatted(completedCards)) of \(formatted(totalCards)). \(failedImageCount) failed so far."
     }
     updateLibraryActivity(message: statusMessage) { steps in
-      Self.applyImportProgress(progress, manifest: manifest, to: &steps)
+      Self.applyImportProgress(
+        progress,
+        manifest: manifest,
+        operation: self.libraryActivity?.operation,
+        to: &steps
+      )
     }
   }
 
   func handlePriceHistoryProgress(_ progress: ImportProgress) {
+    stopLibraryActivityHeartbeat()
+
     switch progress {
     case .downloadingPriceHistoryData:
       statusMessage = "Downloading MTGJSON current prices..."
@@ -127,6 +132,23 @@ extension GrimoraAppModel {
       }
     default:
       break
+    }
+  }
+
+  func syncLibraryActivityHeartbeat(for progress: ImportProgress) {
+    switch progress {
+    case .downloadingBulkData:
+      startLibraryActivityHeartbeat(stage: .downloadCardData)
+    case .decodingCardData:
+      startLibraryActivityHeartbeat(stage: .readCardData)
+    case .storingSearchIndex:
+      startLibraryActivityHeartbeat(stage: .buildCardLibrary)
+    case .cardDataReady:
+      break
+    case .storingSearchIndexProgress:
+      break
+    default:
+      stopLibraryActivityHeartbeat()
     }
   }
 
@@ -186,6 +208,56 @@ extension GrimoraAppModel {
       return "\(base)..."
     }
     return "\(base); \(suffix)."
+  }
+
+  func cardDatabaseBuildStatusMessage(for progress: CardDatabaseWriteProgress) -> String {
+    switch progress.phase {
+    case .preparingMetadata:
+      let completed = formatted(progress.completedUnitCount)
+      let total = formatted(progress.totalUnitCount ?? 0)
+      return "Preparing offline search fields for \(completed) of \(total) cards..."
+    case .preservingValueHistory:
+      return "Preserving existing value history before replacing cards..."
+    case .clearingValueHistoryCache:
+      if let totalUnitCount = progress.totalUnitCount {
+        return
+          "Clearing cached value rows \(formatted(progress.completedUnitCount)) of \(formatted(totalUnitCount))..."
+      }
+      return "Checking cached value rows before replacing cards..."
+    case .resettingCachedLibrary:
+      return "Resetting cached library tables..."
+    case .resettingSearchIndex:
+      return "Resetting offline search tables..."
+    case .clearingExistingLibrary:
+      if let totalUnitCount = progress.totalUnitCount {
+        return
+          "Clearing old card records \(formatted(progress.completedUnitCount)) of \(formatted(totalUnitCount))..."
+      }
+      return "Clearing old card records..."
+    case .writingCards:
+      return "Writing offline search index for \(formatted(progress.writtenCards)) of \(formatted(progress.totalCards)) cards..."
+    case .restoringValueHistory:
+      return "Restoring value history for refreshed cards..."
+    }
+  }
+
+  func libraryMaintenanceFailureMessage(fallback: String, error: Error) -> String {
+    guard let maintenanceError = error as? CardDatabaseMaintenanceError else {
+      return fallback
+    }
+
+    switch maintenanceError {
+    case .clearValueHistoryCacheStalled:
+      return "Library refresh stopped because cached value rows did not delete anything. Existing lists were preserved."
+    case .clearValueHistoryCacheTimedOut(_, _, let seconds):
+      return "Library refresh stopped because cached value rows made no progress for \(seconds)s. Existing lists were preserved."
+    case .clearExistingLibraryStalled:
+      return "Library refresh stopped because clearing old card records did not delete anything. Existing lists were preserved."
+    case .clearExistingLibraryTimedOut(_, _, let seconds):
+      return "Library refresh stopped because clearing old card records made no progress for \(seconds)s. Existing lists were preserved."
+    case .resetSearchIndexTimedOut(let seconds):
+      return "Library refresh stopped because resetting offline search tables made no progress for \(seconds)s. Existing lists were preserved."
+    }
   }
 
   func priceHistoryStatusSuffix(for status: PriceHistoryImportStatus) -> String {

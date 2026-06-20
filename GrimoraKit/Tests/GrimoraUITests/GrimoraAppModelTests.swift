@@ -668,7 +668,7 @@ private final class TestPlainTextSearchTranspiler: PlainTextSearchTranspiling, @
 
 @MainActor
 final class GrimoraAppModelTests: XCTestCase {
-  func testModelLoadsSearchesSortsAndTogglesFilters() async throws {
+  func testModelLoadsAllCardClassesSearchesAndSorts() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
     try markLibraryReady(database)
@@ -677,7 +677,10 @@ final class GrimoraAppModelTests: XCTestCase {
 
     XCTAssertTrue(model.hasLibrary)
     XCTAssertFalse(model.isSearchingCards)
-    XCTAssertFalse(model.cards.contains(where: { $0.name == "Digital Conjurer" }))
+    XCTAssertEqual(
+      Set(model.cards.map(\.name)),
+      Set(["Alpha Forest", "Beta Mage", "Digital Conjurer", "Soldier Token"])
+    )
 
     model.searchText = "forest"
     XCTAssertFalse(model.isSearchingCards)
@@ -693,10 +696,6 @@ final class GrimoraAppModelTests: XCTestCase {
     model.sortMode = .artistName
     await model.drainSearchForTesting()
     XCTAssertEqual(model.cards.first?.name, "Beta Mage")
-
-    model.toggleFilter(.realCards)
-    await model.drainSearchForTesting()
-    XCTAssertTrue(model.cards.contains(where: { $0.name == "Soldier Token" }))
   }
 
   func testModelWaitsForExplicitScryfallSubmit() async throws {
@@ -719,7 +718,7 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertNotEqual(model.cards.map(\.id), ["forest"])
 
     await model.drainSearchForTesting()
-    XCTAssertEqual(model.cards.map(\.id), ["forest", "beta"])
+    XCTAssertEqual(model.cards.map(\.id), ["forest", "beta", "alchemy", "token"])
 
     await model.submitSearch()
     XCTAssertTrue(model.isSearchingCards)
@@ -788,10 +787,10 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.searchText, "")
     XCTAssertEqual(model.submittedSearchText, "")
     XCTAssertFalse(model.hasUnsubmittedSearchText)
-    XCTAssertEqual(model.cards.map(\.id), ["forest", "beta"])
+    XCTAssertEqual(model.cards.map(\.id), ["forest", "beta", "alchemy", "token"])
   }
 
-  func testFiltersReloadUsingSubmittedQueryWhileDraftDiffers() async throws {
+  func testPrintingModeReloadUsesSubmittedQueryWhileDraftDiffers() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
     try markLibraryReady(database)
@@ -802,10 +801,10 @@ final class GrimoraAppModelTests: XCTestCase {
     await model.submitSearch()
     await model.drainSearchForTesting()
 
-    XCTAssertEqual(model.cards.map(\.id), ["forest", "beta"])
+    XCTAssertEqual(model.cards.map(\.id), ["forest", "beta", "alchemy", "token"])
 
     model.searchText = "beta"
-    model.toggleFilter(.realCards)
+    model.printingDisplayMode = .all
     await model.drainSearchForTesting()
 
     XCTAssertEqual(model.searchText, "beta")
@@ -1697,7 +1696,7 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertFalse(model.isSearchingCards)
     XCTAssertEqual(model.cards.map(\.id), ["forest"])
 
-    model.toggleFilter(.realCards)
+    model.sortDirection = .descending
     await model.drainSearchForTesting()
     XCTAssertEqual(model.cards.map(\.id), ["replacement-forest"])
   }
@@ -1957,18 +1956,170 @@ final class GrimoraAppModelTests: XCTestCase {
     var buildStep = try activityStep("build-card-library", in: model)
     XCTAssertEqual(updatedReadStep.state, .succeeded)
     XCTAssertEqual(buildStep.state, .running)
-    XCTAssertNil(buildStep.progress)
-    XCTAssertEqual(buildStep.detail, "Writing 42 cards")
+    XCTAssertEqual(buildStep.progress, 0)
+    XCTAssertEqual(buildStep.detail, "Starting 42 cards")
     XCTAssertEqual(model.statusMessage, "Writing offline search index for 42 cards...")
+
+    model.handleImportProgress(
+      .storingSearchIndexProgress(
+        CardDatabaseWriteProgress(
+          phase: .resettingCachedLibrary,
+          completedUnitCount: 2,
+          totalUnitCount: 4
+        )),
+      manifest: manifest
+    )
+
+    buildStep = try activityStep("build-card-library", in: model)
+    XCTAssertEqual(buildStep.state, .running)
+    XCTAssertEqual(buildStep.progress ?? -1, 0.5, accuracy: 0.001)
+    XCTAssertEqual(buildStep.detail, "Resetting cached library tables")
+    XCTAssertEqual(model.statusMessage, "Resetting cached library tables...")
+
+    model.handleImportProgress(
+      .storingSearchIndexProgress(
+        CardDatabaseWriteProgress(
+          phase: .clearingValueHistoryCache,
+          completedUnitCount: 50,
+          totalUnitCount: 100
+        )),
+      manifest: manifest
+    )
+
+    buildStep = try activityStep("build-card-library", in: model)
+    XCTAssertEqual(buildStep.state, .running)
+    XCTAssertEqual(buildStep.progress ?? -1, 0.5, accuracy: 0.001)
+    XCTAssertEqual(buildStep.detail, "Clearing cached values 50 of 100")
+    XCTAssertEqual(model.statusMessage, "Clearing cached value rows 50 of 100...")
+
+    model.handleImportProgress(
+      .storingSearchIndexProgress(CardDatabaseWriteProgress(writtenCards: 21, totalCards: 42)),
+      manifest: manifest
+    )
+
+    buildStep = try activityStep("build-card-library", in: model)
+    XCTAssertEqual(buildStep.state, .running)
+    XCTAssertEqual(buildStep.progress ?? -1, 0.5, accuracy: 0.001)
+    XCTAssertEqual(buildStep.detail, "Writing 21 of 42 cards")
+    XCTAssertEqual(model.statusMessage, "Writing offline search index for 21 of 42 cards...")
 
     model.handleImportProgress(.cardDataReady(cardCount: 42), manifest: manifest)
 
     buildStep = try activityStep("build-card-library", in: model)
-    let finalizeStep = try activityStep("finalize-card-library", in: model)
+    var finalizeStep = try activityStep("finalize-card-library", in: model)
     XCTAssertEqual(buildStep.state, .succeeded)
     XCTAssertEqual(buildStep.progress, 1)
+    XCTAssertEqual(finalizeStep.state, .pending)
+    XCTAssertEqual(finalizeStep.progress, 0)
+    XCTAssertNil(finalizeStep.detail)
+
+    model.finishLibraryActivity(message: "Imported 42 cards.", state: .succeeded)
+
+    finalizeStep = try activityStep("finalize-card-library", in: model)
     XCTAssertEqual(finalizeStep.state, .succeeded)
     XCTAssertEqual(finalizeStep.progress, 1)
+  }
+
+  func testDeleteAndRefreshKeepsImageDeletionQueuedWhileValueHistoryRuns() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    _ = model.beginLibraryActivity(
+      operation: .deleteAndRefreshDatabase,
+      title: "Deleting and Refreshing Database",
+      message: "Checking Scryfall card database..."
+    )
+    let manifest = BulkDataManifest(
+      id: "bulk-id",
+      type: "default_cards",
+      updatedAt: "2026-04-25T09:09:59.477+00:00",
+      name: "Default Cards",
+      size: 100,
+      downloadURI: URL(string: "https://example.test/default.json")!
+    )
+
+    model.handleImportProgress(.cardDataReady(cardCount: 42), manifest: manifest)
+
+    XCTAssertEqual(try activityStep("build-card-library", in: model).state, .succeeded)
+    var deleteImagesStep = try activityStep("delete-cached-images", in: model)
+    var finalizeStep = try activityStep("finalize-card-library", in: model)
+    XCTAssertEqual(deleteImagesStep.state, .pending)
+    XCTAssertEqual(deleteImagesStep.progress, 0)
+    XCTAssertEqual(finalizeStep.state, .pending)
+
+    model.handleImportProgress(.downloadingPriceHistoryData, manifest: manifest)
+
+    XCTAssertEqual(
+      model.libraryActivity?.steps.map(\.id),
+      [
+        "download-card-data",
+        "read-card-data",
+        "build-card-library",
+        "check-price-history",
+        "download-price-identifiers",
+        "download-prices",
+        "index-price-history",
+        "delete-cached-images",
+        "finalize-card-library",
+      ]
+    )
+    XCTAssertEqual(try activityStep("download-price-identifiers", in: model).state, .running)
+    deleteImagesStep = try activityStep("delete-cached-images", in: model)
+    finalizeStep = try activityStep("finalize-card-library", in: model)
+    XCTAssertEqual(deleteImagesStep.state, .pending)
+    XCTAssertEqual(finalizeStep.state, .pending)
+
+    model.handleImportProgress(
+      .buildingPriceIDMapProgress(scannedBytes: 62_900_000, totalBytes: 610_600_000, mappedCards: 12_239),
+      manifest: manifest
+    )
+
+    XCTAssertEqual(try activityStep("index-price-history", in: model).state, .running)
+    XCTAssertEqual(try activityStep("delete-cached-images", in: model).state, .pending)
+    XCTAssertEqual(try activityStep("finalize-card-library", in: model).state, .pending)
+  }
+
+  func testMaintenanceFailureMessagesDescribeStalledRefresh() throws {
+    let model = GrimoraAppModel(environment: environment(database: try CardDatabase(storage: .inMemory)))
+
+    XCTAssertEqual(
+      model.libraryMaintenanceFailureMessage(
+        fallback: "Refresh failed.",
+        error: CardDatabaseMaintenanceError.clearValueHistoryCacheStalled(table: "staging_card_price_points", remainingRows: 42)
+      ),
+      "Library refresh stopped because cached value rows did not delete anything. Existing lists were preserved."
+    )
+    XCTAssertEqual(
+      model.libraryMaintenanceFailureMessage(
+        fallback: "Refresh failed.",
+        error: CardDatabaseMaintenanceError.clearValueHistoryCacheTimedOut(
+          table: "staging_card_price_points",
+          remainingRows: 42,
+          seconds: 20
+        )
+      ),
+      "Library refresh stopped because cached value rows made no progress for 20s. Existing lists were preserved."
+    )
+    XCTAssertEqual(
+      model.libraryMaintenanceFailureMessage(
+        fallback: "Refresh failed.",
+        error: CardDatabaseMaintenanceError.clearExistingLibraryStalled(table: "cards", remainingRows: 42)
+      ),
+      "Library refresh stopped because clearing old card records did not delete anything. Existing lists were preserved."
+    )
+    XCTAssertEqual(
+      model.libraryMaintenanceFailureMessage(
+        fallback: "Refresh failed.",
+        error: CardDatabaseMaintenanceError.clearExistingLibraryTimedOut(table: "cards", remainingRows: 42, seconds: 20)
+      ),
+      "Library refresh stopped because clearing old card records made no progress for 20s. Existing lists were preserved."
+    )
+    XCTAssertEqual(
+      model.libraryMaintenanceFailureMessage(
+        fallback: "Refresh failed.",
+        error: CardDatabaseMaintenanceError.resetSearchIndexTimedOut(seconds: 20)
+      ),
+      "Library refresh stopped because resetting offline search tables made no progress for 20s. Existing lists were preserved."
+    )
   }
 
   func testRefreshCardValuesImportsPricingOnlyAndPreservesCurrentState() async throws {
@@ -2061,7 +2212,14 @@ final class GrimoraAppModelTests: XCTestCase {
 
     XCTAssertNil(model.valueHistoryBackgroundActivity)
     XCTAssertEqual(model.selectedCardValueGuide?.entries.first?.currentPrice, 4.00)
-    XCTAssertEqual(model.selectedCardValueGuide?.entries.first?.history.count, 2)
+    XCTAssertEqual(
+      model.selectedCardValueGuide?.entries.first?.history,
+      [
+        CardValueHistoryPoint(date: "2026-03-01", price: 2.00),
+        CardValueHistoryPoint(date: "2026-04-01", price: 3.25),
+        CardValueHistoryPoint(date: "2026-05-13", price: 4.00),
+      ]
+    )
   }
 
   func testRefreshCardValuesSkipsWhenValueHistoryIsCurrent() async throws {
@@ -2297,7 +2455,7 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.libraryActivity?.state, .succeeded)
   }
 
-  func testAutomaticUpdateCheckIsSkippedWhenAnyLocalCardDataExists() async throws {
+  func testAutomaticUpdateCheckRunsDailyWhenLocalCardDataExists() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards([uiRecords()[0]])
     let downloadURL = URL(string: "https://example.test/default.json")!
@@ -2315,7 +2473,7 @@ final class GrimoraAppModelTests: XCTestCase {
 
     let requests = await network.requests()
     XCTAssertFalse(model.hasLibrary)
-    XCTAssertTrue(requests.isEmpty)
+    XCTAssertEqual(requests.map(\.purpose), [.manifestCheck])
   }
 
   func testAutomaticUpdateCheckRunsWhenNoLocalCardDataExists() async throws {
@@ -2355,7 +2513,7 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.activeDefaultSearchText, "t:creature")
     XCTAssertEqual(model.sortMode, .releaseDate)
     XCTAssertEqual(model.sortDirection, .ascending)
-    XCTAssertEqual(model.cards.map(\.id), ["beta", "forest"])
+    XCTAssertEqual(model.cards.map(\.id), ["token", "alchemy", "beta", "forest"])
   }
 
   func testAlwaysIncludedSearchTextIsPrependedToDirectAndDefaultSearches() async throws {
@@ -2571,11 +2729,11 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertTrue(model.isDefaultSearchActive)
     XCTAssertEqual(model.sortMode, .releaseDate)
     XCTAssertEqual(model.sortDirection, .ascending)
-    XCTAssertEqual(model.cards.map(\.id), ["beta", "forest"])
+    XCTAssertEqual(model.cards.map(\.id), ["token", "alchemy", "beta", "forest"])
 
     model.sortDirection = .descending
     await model.drainSearchForTesting()
-    XCTAssertEqual(model.cards.map(\.id), ["forest", "beta"])
+    XCTAssertEqual(model.cards.map(\.id), ["forest", "beta", "alchemy", "token"])
     XCTAssertEqual(model.defaultSearchConfiguration.sortMode, .releaseDate)
     XCTAssertEqual(model.defaultSearchConfiguration.sortDirection, .ascending)
 
@@ -2583,13 +2741,13 @@ final class GrimoraAppModelTests: XCTestCase {
     model.sortDirection = .ascending
     await model.drainSearchForTesting()
     XCTAssertTrue(model.isDefaultSearchActive)
-    XCTAssertEqual(model.cards.map(\.id), ["beta", "forest"])
+    XCTAssertEqual(model.cards.map(\.id), ["beta", "forest", "alchemy", "token"])
 
     model.searchText = "t:creature"
     await model.submitSearch()
     await model.drainSearchForTesting()
     XCTAssertFalse(model.isDefaultSearchActive)
-    XCTAssertEqual(model.cards.map(\.id), ["beta", "forest"])
+    XCTAssertEqual(model.cards.map(\.id), ["beta", "forest", "alchemy", "token"])
 
     model.applySearchPreferences(
       GrimoraDefaultSearchConfiguration(
@@ -2600,12 +2758,12 @@ final class GrimoraAppModelTests: XCTestCase {
     await model.drainSearchForTesting()
     XCTAssertEqual(model.sortMode, .artistName)
     XCTAssertEqual(model.sortDirection, .ascending)
-    XCTAssertEqual(model.cards.map(\.id), ["beta", "forest"])
+    XCTAssertEqual(model.cards.map(\.id), ["beta", "forest", "alchemy", "token"])
 
     model.clearSearch()
     await model.drainSearchForTesting()
     XCTAssertTrue(model.isDefaultSearchActive)
-    XCTAssertEqual(model.cards.map(\.id), ["beta", "forest"])
+    XCTAssertEqual(model.cards.map(\.id), ["beta", "forest", "alchemy", "token"])
   }
 
   func testUnsupportedDefaultSearchShowsUnsupportedState() async throws {
@@ -2815,44 +2973,6 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertNil(model.libraryActivity)
     XCTAssertFalse(model.hasLibrary)
     XCTAssertFalse(model.hasLocalCardData)
-  }
-
-  func testRequiredSyncedDatabaseUpdateShowsDataLoadActivity() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    let downloadURL = URL(string: "https://example.test/synced-default.json")!
-    let requiredIdentity = LibraryIdentity(
-      defaultCardsUpdatedAt: "2026-05-01T00:00:00.000+00:00",
-      defaultCardsDownloadURI: downloadURL,
-      defaultCardsName: "Synced Default Cards",
-      defaultCardsSize: 123
-    )
-    let coordinator = CloudSyncCoordinator(
-      database: database,
-      transport: MemoryCloudSyncTransport(
-        state: CloudRemoteState(requiredLibraryIdentity: requiredIdentity)
-      )
-    )
-    let network = ModelTestNetworkClient(dataResponses: [
-      downloadURL: setupCardsJSON()
-    ])
-    let model = GrimoraAppModel(
-      environment: environment(
-        database: database,
-        network: network,
-        cloudSyncCoordinator: coordinator
-      ))
-
-    model.cloudSyncMode = .enabled
-    await model.startCloudSync()
-    await model.importRequiredCloudDatabaseUpdate()
-    await model.drainSearchForTesting()
-
-    XCTAssertEqual(model.libraryActivity?.operation, .updateSyncedDatabase)
-    XCTAssertEqual(model.libraryActivity?.title, "Updating Synced Database")
-    XCTAssertEqual(model.libraryActivity?.state, .succeeded)
-    XCTAssertEqual(model.statusMessage, "iCloud sync is ready.")
-    XCTAssertTrue(model.hasLibrary)
-    XCTAssertEqual(try database.cardCount(), 1)
   }
 
   func testAllPrintingsToggleExpandsDuplicateOracleResults() async throws {
@@ -3984,6 +4104,78 @@ final class GrimoraAppModelTests: XCTestCase {
     let jumpedWindowIDs = model.selectedListEntries[12..<16].map(\.cardID)
     let retainedWindowIDs = model.selectedListEntries[1..<4].map(\.cardID)
     XCTAssertEqual(startedIDs, [model.selectedListEntries[0].cardID] + jumpedWindowIDs + retainedWindowIDs)
+  }
+
+  func testListVisibleImageCachingSkipsEntriesFromCollapsedCategories() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let imageDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+      UUID().uuidString, isDirectory: true)
+    try database.replaceAllCards(
+      (0..<8).map { index in
+        CardRecord(
+          id: "collapsed-window-\(index)",
+          oracleID: "collapsed-window-\(index)",
+          name: "Collapsed Window Card \(index)",
+          releasedAt: "2024-01-01",
+          setCode: "set",
+          setName: "Set",
+          setType: "expansion",
+          collectorNumber: "\(index)",
+          collectorNumberNumber: index,
+          rarity: "common",
+          rarityRank: 0,
+          colorSortKey: index,
+          layout: "normal",
+          typeLine: "Creature",
+          oracleText: "Reach",
+          isRealCard: true,
+          smallImageURL: "https://example.test/collapsed-window-\(index)-small.jpg"
+        )
+      })
+    let list = try database.createCardList(named: "Collapsed Categories")
+    let visibleCategory = try database.createCardListCategory(inList: list.id, named: "Visible")
+    let collapsedCategory = try database.createCardListCategory(inList: list.id, named: "Collapsed")
+    for index in 0..<8 {
+      try database.appendCard(
+        "collapsed-window-\(index)",
+        toList: list.id,
+        categoryID: index.isMultiple(of: 2) ? visibleCategory.id : collapsedCategory.id
+      )
+    }
+    try markLibraryReady(database)
+
+    let resolver = DelayedModelImageResolver(rootDirectory: imageDirectory)
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        imageCache: CardImageCache(database: database, imageResolver: resolver),
+        imageDownloadConfiguration: GrimoraImageDownloadConfiguration(
+          visibleConcurrency: 1,
+          detailConcurrency: 1
+        ),
+        searchPerformanceConfiguration: GrimoraSearchPerformanceConfiguration(
+          textDebounceNanoseconds: 0,
+          prefetchesNextPage: false,
+          imageLookaheadCount: 20
+        )
+      ))
+    await model.drainSearchForTesting()
+    model.selectCardList(id: list.id)
+
+    let displayedEntries = model.selectedListEntries.filter {
+      $0.categoryID == visibleCategory.id
+    }
+    let firstDisplayedEntry = try XCTUnwrap(displayedEntries.first)
+    await model.cacheVisibleListEntryImages(
+      around: firstDisplayedEntry.id,
+      displayedEntries: displayedEntries
+    )
+    await resolver.waitForStartedCount(1)
+    await resolver.releaseAll()
+    await model.drainImageDownloadsForTesting()
+
+    let startedIDs = await resolver.startedIDs()
+    XCTAssertEqual(startedIDs, displayedEntries.map(\.cardID))
   }
 
   func testListVisibleImageWindowPrunesQueuedDownloadsAfterListReset() async throws {
@@ -5153,6 +5345,41 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.selectedListCategories.first?.entryCount, 4)
   }
 
+  func testRepeatedArchidektImportPreservesCategoryAndSectionIdentifiers() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let list = try XCTUnwrap(model.createCardList(named: "Stable Import", selectAfterCreate: true))
+    let source = """
+      1x Alpha Forest (abc) 1 [Ramp] ^Have,#37d67a^
+      1x Beta Mage (abc) 2 [Removal] ^Have,#37d67a^
+      """
+
+    let firstImport = await model.importArchidektCards(from: source, intoListID: list.id)
+    _ = try XCTUnwrap(firstImport)
+    let firstCategoryIDs = model.selectedListCategories.map(\.id)
+    let firstSectionIDs = CardListEntrySectionBuilder.sections(
+      entries: model.selectedListEntries,
+      categories: model.selectedListCategories
+    ).map(\.id)
+
+    let secondImport = await model.importArchidektCards(from: source, intoListID: list.id)
+    _ = try XCTUnwrap(secondImport)
+    let secondCategoryIDs = model.selectedListCategories.map(\.id)
+    let secondSectionIDs = CardListEntrySectionBuilder.sections(
+      entries: model.selectedListEntries,
+      categories: model.selectedListCategories
+    ).map(\.id)
+
+    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp", "Removal"])
+    XCTAssertEqual(secondCategoryIDs, firstCategoryIDs)
+    XCTAssertEqual(secondSectionIDs, firstSectionIDs)
+    XCTAssertEqual(secondSectionIDs, secondCategoryIDs)
+  }
+
   func testModelImportsArchidektCommanderZonesWithoutSideboard() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
@@ -5622,7 +5849,7 @@ final class GrimoraAppModelTests: XCTestCase {
   }
 
   private func cards(in database: CardDatabase, matching text: String) throws -> [CardRecord] {
-    let response = try database.search(CardSearchRequest(text: text, activeFilters: []))
+    let response = try database.search(CardSearchRequest(text: text))
     guard case .results(let cards, _) = response else {
       return []
     }

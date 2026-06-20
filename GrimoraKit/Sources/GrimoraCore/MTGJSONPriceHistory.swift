@@ -1,5 +1,5 @@
 import Foundation
-import zlib
+import CZlib
 
 public struct MTGJSONPriceHistoryMeta: Codable, Equatable, Sendable {
   public var date: String
@@ -217,6 +217,81 @@ public final class MTGJSONPriceHistoryImporter: Sendable {
     return summary
   }
 
+  public func importCompactHistory(
+    meta: MTGJSONPriceHistoryMeta,
+    allPrintingsGzipURL: URL,
+    allPricesGzipURL: URL,
+    temporaryDirectory: URL,
+    progress: (@Sendable (ImportProgress) async -> Void)? = nil
+  ) async throws -> MTGJSONPriceImportSummary {
+    let printingsJSONURL = temporaryDirectory
+      .appendingPathComponent("mtgjson-all-printings-\(meta.date.fileSafeComponent).json")
+    let pricesJSONURL = temporaryDirectory
+      .appendingPathComponent("mtgjson-all-prices-\(meta.date.fileSafeComponent).json")
+    try GzipArchive.decompressFile(at: allPrintingsGzipURL, to: printingsJSONURL)
+    try GzipArchive.decompressFile(at: allPricesGzipURL, to: pricesJSONURL)
+    defer {
+      try? FileManager.default.removeItem(at: printingsJSONURL)
+      try? FileManager.default.removeItem(at: pricesJSONURL)
+    }
+
+    await progress?(.buildingPriceIDMap)
+    await progress?(.importingPriceHistory)
+
+    let dates = try Self.compactHistoryDates(endingAt: meta.date, days: 90)
+    let summary = try database.replaceCompactCardValueHistory(
+      meta: meta,
+      importMappings: { insertMapping in
+        try MTGJSONAllPrintingsScanner.forEachMapping(
+          in: printingsJSONURL,
+          decoder: decoder,
+          body: insertMapping
+        )
+      },
+      importSeries: { cardIDForUUID, insertSeries in
+        try MTGJSONAllPricesScanner.forEachPriceObject(in: pricesJSONURL) { uuid, objectData in
+          guard let cardID = try cardIDForUUID(uuid) else {
+            return
+          }
+          #if canImport(Darwin)
+          let prices = try autoreleasepool {
+            try decoder.decode(MTGJSONPriceFormats.self, from: objectData)
+          }
+          #else
+          let prices = try decoder.decode(MTGJSONPriceFormats.self, from: objectData)
+          #endif
+          for finish in CardValueFinish.allCases {
+            let values = prices.tcgplayerRetailPrices(for: finish)
+            let encoded = dates.map { date -> Int32 in
+              guard let price = values[date], price >= 0 else {
+                return CompactCardValueSeries.missingPrice
+              }
+              let cents = (price * 100).rounded()
+              guard cents <= Double(Int32.max) else {
+                return CompactCardValueSeries.missingPrice
+              }
+              return Int32(cents)
+            }
+            guard encoded.contains(where: { $0 != CompactCardValueSeries.missingPrice }) else {
+              continue
+            }
+            try insertSeries(
+              CompactCardValueSeries(
+                cardID: cardID,
+                finish: finish,
+                startDate: dates[0],
+                endDate: dates[dates.count - 1],
+                pricesInCents: encoded
+              )
+            )
+          }
+        }
+      }
+    )
+    await progress?(.priceHistoryReady(pricePointCount: summary.importedPricePoints))
+    return summary
+  }
+
   public func importCurrentPrices(
     meta: MTGJSONPriceHistoryMeta,
     allPrintingsJSONURL: URL,
@@ -257,33 +332,43 @@ public final class MTGJSONPriceHistoryImporter: Sendable {
     await progress?(
       .importingPriceHistoryProgress(scannedBytes: 0, totalBytes: pricesSize, importedPricePoints: 0)
     )
-    let summary = try database.upsertCurrentCardValues(meta: meta, mappingsByMTGJSONUUID: mappingsByUUID) {
-      writer in
-      var importedPricePoints = 0
-      let wantedUUIDs = Set(mappingsByUUID.keys)
-      try MTGJSONAllPricesScanner.forEachPriceObject(in: allPricesTodayJSONURL, wantedUUIDs: wantedUUIDs) {
-        uuid,
-        objectData in
-        guard let cardID = mappingsByUUID[uuid] else {
-          return
+    var pricePoints: [CardValueImportPoint] = []
+    try await MTGJSONAllPricesScanner.forEachPriceObjectReportingProgress(
+      in: allPricesTodayJSONURL,
+      wantedUUIDs: Set(mappingsByUUID.keys)
+    ) { scannedBytes in
+      await progress?(
+        .importingPriceHistoryProgress(
+          scannedBytes: scannedBytes,
+          totalBytes: pricesSize,
+          importedPricePoints: pricePoints.count
+        )
+      )
+    } body: { uuid, objectData in
+      guard let cardID = mappingsByUUID[uuid] else {
+        return
+      }
+      let prices = try decoder.decode(MTGJSONPriceFormats.self, from: objectData)
+      for finish in CardValueFinish.allCases {
+        guard let current = Self.currentPricePoint(in: prices.tcgplayerRetailPrices(for: finish)) else {
+          continue
         }
-        let prices = try decoder.decode(MTGJSONPriceFormats.self, from: objectData)
-        for finish in CardValueFinish.allCases {
-          guard let current = Self.currentPricePoint(in: prices.tcgplayerRetailPrices(for: finish)) else {
-            continue
-          }
-          try writer.insert(
+        pricePoints.append(
+          CardValueImportPoint(
             cardID: cardID,
             provider: .tcgplayer,
             finish: finish,
             date: current.date,
             price: current.price
           )
-          importedPricePoints += 1
-        }
+        )
       }
-      return importedPricePoints
     }
+    let summary = try database.upsertCurrentCardValues(
+      meta: meta,
+      mappingsByMTGJSONUUID: mappingsByUUID,
+      pricePoints: pricePoints
+    )
     await progress?(
       .importingPriceHistoryProgress(
         scannedBytes: pricesSize ?? 0,
@@ -296,39 +381,19 @@ public final class MTGJSONPriceHistoryImporter: Sendable {
 
   public func importHistoryToStaging(
     meta: MTGJSONPriceHistoryMeta,
-    allPrintingsJSONURL: URL,
+    mappingsByMTGJSONUUID: [String: CardRecord.ID],
     allPricesJSONURL: URL,
     jobID: String,
     progress: (@Sendable (ImportProgress) async -> Void)? = nil
   ) async throws -> MTGJSONPriceImportSummary {
-    let localCardIDs = try database.localCardIDSet()
-    guard !localCardIDs.isEmpty else {
+    guard !mappingsByMTGJSONUUID.isEmpty else {
       try database.prepareValueHistoryStaging(jobID: jobID)
       return MTGJSONPriceImportSummary(mappedCards: 0, importedPricePoints: 0)
     }
 
-    await progress?(.buildingPriceIDMap)
-    let printingsSize = Self.fileSize(at: allPrintingsJSONURL)
-    await progress?(.buildingPriceIDMapProgress(scannedBytes: 0, totalBytes: printingsSize, mappedCards: 0))
-    let mappingsByUUID = try await MTGJSONAllPrintingsScanner.mappingsByMTGJSONUUID(
-      in: allPrintingsJSONURL,
-      localCardIDs: localCardIDs,
-      decoder: decoder
-    ) { scannedBytes, mappedCards in
-      await progress?(
-        .buildingPriceIDMapProgress(
-          scannedBytes: scannedBytes,
-          totalBytes: printingsSize,
-          mappedCards: mappedCards
-        )
-      )
-    }
-    await progress?(
-      .buildingPriceIDMapProgress(
-        scannedBytes: printingsSize ?? 0,
-        totalBytes: printingsSize,
-        mappedCards: mappingsByUUID.count
-      )
+    try database.prepareValueHistoryStaging(
+      jobID: jobID,
+      mappingsByMTGJSONUUID: mappingsByMTGJSONUUID
     )
 
     await progress?(.importingPriceHistory)
@@ -337,33 +402,50 @@ public final class MTGJSONPriceHistoryImporter: Sendable {
       .importingPriceHistoryProgress(scannedBytes: 0, totalBytes: pricesSize, importedPricePoints: 0)
     )
     let minimumDate = Self.minimumHistoryDate(for: meta.date, days: 90)
-    let summary = try database.stageCardValueHistory(jobID: jobID, mappingsByMTGJSONUUID: mappingsByUUID) {
-      writer in
-      var importedPricePoints = 0
-      let wantedUUIDs = Set(mappingsByUUID.keys)
-      try MTGJSONAllPricesScanner.forEachPriceObject(in: allPricesJSONURL, wantedUUIDs: wantedUUIDs) {
-        uuid,
-        objectData in
-        guard let cardID = mappingsByUUID[uuid] else {
-          return
-        }
-        let prices = try decoder.decode(MTGJSONPriceFormats.self, from: objectData)
-        for finish in CardValueFinish.allCases {
-          let points = prices.tcgplayerRetailPrices(for: finish)
-          for (date, price) in points where price >= 0 && Self.includesHistoryDate(date, minimumDate: minimumDate) {
-            try writer.insert(
+    var pendingPoints: [CardValueImportPoint] = []
+    var importedPricePoints = 0
+    try await MTGJSONAllPricesScanner.forEachPriceObjectReportingProgress(
+      in: allPricesJSONURL,
+      wantedUUIDs: Set(mappingsByMTGJSONUUID.keys)
+    ) { scannedBytes in
+      if !pendingPoints.isEmpty {
+        let batch = pendingPoints
+        pendingPoints.removeAll(keepingCapacity: true)
+        try self.database.appendStagedCardValuePoints(jobID: jobID, points: batch)
+        importedPricePoints += batch.count
+      }
+      await progress?(
+        .importingPriceHistoryProgress(
+          scannedBytes: scannedBytes,
+          totalBytes: pricesSize,
+          importedPricePoints: importedPricePoints
+        )
+      )
+    } body: { uuid, objectData in
+      guard let cardID = mappingsByMTGJSONUUID[uuid] else {
+        return
+      }
+      let prices = try decoder.decode(MTGJSONPriceFormats.self, from: objectData)
+      for finish in CardValueFinish.allCases {
+        let points = prices.tcgplayerRetailPrices(for: finish)
+        for (date, price) in points where price >= 0 && Self.includesHistoryDate(date, minimumDate: minimumDate) {
+          pendingPoints.append(
+            CardValueImportPoint(
               cardID: cardID,
               provider: .tcgplayer,
               finish: finish,
               date: date,
               price: price
             )
-            importedPricePoints += 1
-          }
+          )
         }
       }
-      return importedPricePoints
     }
+    if !pendingPoints.isEmpty {
+      try database.appendStagedCardValuePoints(jobID: jobID, points: pendingPoints)
+      importedPricePoints += pendingPoints.count
+    }
+    let summary = try database.stagedValueHistorySummary(jobID: jobID)
     await progress?(
       .importingPriceHistoryProgress(
         scannedBytes: pricesSize ?? 0,
@@ -411,6 +493,24 @@ public final class MTGJSONPriceHistoryImporter: Sendable {
       return nil
     }
     return size.int64Value
+  }
+
+  private static func compactHistoryDates(endingAt value: String, days: Int) throws -> [String] {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+    let formatter = DateFormatter()
+    formatter.calendar = calendar
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = calendar.timeZone
+    formatter.dateFormat = "yyyy-MM-dd"
+    guard let endDate = formatter.date(from: value),
+      let startDate = calendar.date(byAdding: .day, value: -days, to: endDate)
+    else {
+      throw CatalogStorageError.invalidCatalog("MTGJSON metadata date is invalid: \(value)")
+    }
+    return (0...days).compactMap { offset in
+      calendar.date(byAdding: .day, value: offset, to: startDate).map(formatter.string)
+    }
   }
 }
 
@@ -472,6 +572,31 @@ private struct MTGJSONRetailPrices: Decodable {
 }
 
 enum MTGJSONAllPrintingsScanner {
+  static func forEachMapping(
+    in url: URL,
+    decoder: JSONDecoder = JSONDecoder(),
+    body: (String, CardRecord.ID) throws -> Void
+  ) throws {
+    try MTGJSONDataObjectScanner.forEachObject(in: url) { objectKey, objectData in
+      if let card = try? decoder.decode(MTGJSONCardIdentifierPayload.self, from: objectData),
+        let scryfallID = card.identifiers?.scryfallID
+      {
+        try body(objectKey, scryfallID)
+        return
+      }
+
+      let set = try decoder.decode(MTGJSONSetCards.self, from: objectData)
+      for card in set.cards ?? [] {
+        guard let mtgjsonUUID = card.uuid,
+          let scryfallID = card.identifiers?.scryfallID
+        else {
+          continue
+        }
+        try body(mtgjsonUUID, scryfallID)
+      }
+    }
+  }
+
   static func mappingsByMTGJSONUUID(
     in url: URL,
     localCardIDs: Set<CardRecord.ID>,
@@ -582,12 +707,33 @@ enum MTGJSONAllPrintingsScanner {
 enum MTGJSONAllPricesScanner {
   static func forEachPriceObject(
     in url: URL,
+    body: (String, Data) throws -> Void
+  ) throws {
+    try MTGJSONDataObjectScanner.forEachObject(in: url, body: body)
+  }
+
+  static func forEachPriceObject(
+    in url: URL,
     wantedUUIDs: Set<String>,
     body: (String, Data) throws -> Void
   ) throws {
     try MTGJSONDataObjectScanner.forEachObject(
       in: url,
       wantedKeys: wantedUUIDs,
+      body: body
+    )
+  }
+
+  static func forEachPriceObjectReportingProgress(
+    in url: URL,
+    wantedUUIDs: Set<String>,
+    progress: ((Int64) async throws -> Void)? = nil,
+    body: (String, Data) throws -> Void
+  ) async throws {
+    try await MTGJSONDataObjectScanner.forEachObjectReportingProgress(
+      in: url,
+      wantedKeys: wantedUUIDs,
+      progress: progress,
       body: body
     )
   }
@@ -722,7 +868,7 @@ enum MTGJSONDataObjectScanner {
   static func forEachObjectReportingProgress(
     in url: URL,
     wantedKeys: Set<String>? = nil,
-    progress: ((Int64) async -> Void)? = nil,
+    progress: ((Int64) async throws -> Void)? = nil,
     body: (String, Data) throws -> Void
   ) async throws {
     let scanner = try JSONFileByteScanner(url: url)
@@ -920,7 +1066,7 @@ private final class JSONFileByteScanner {
   }
 
   func scanStringsAndBytes(
-    progress: ((Int64) async -> Void)?,
+    progress: ((Int64) async throws -> Void)?,
     _ body: (JSONScanEvent) throws -> Void
   ) async throws {
     var isInsideString = false
@@ -982,12 +1128,12 @@ private final class JSONFileByteScanner {
 
       if scannedBytes - lastProgressBytes >= progressIntervalBytes {
         lastProgressBytes = scannedBytes
-        await progress?(scannedBytes)
+        try await progress?(scannedBytes)
       }
     }
 
     if scannedBytes != lastProgressBytes {
-      await progress?(scannedBytes)
+      try await progress?(scannedBytes)
     }
   }
 }
@@ -1063,8 +1209,8 @@ private struct JSONSkipObjectCollector {
   }
 }
 
-enum MTGJSONGzip {
-  static func decompressFile(at source: URL, to destination: URL) throws {
+public enum GzipArchive {
+  public static func compressFile(at source: URL, to destination: URL) throws {
     try FileManager.default.createDirectory(
       at: destination.deletingLastPathComponent(),
       withIntermediateDirectories: true
@@ -1072,7 +1218,76 @@ enum MTGJSONGzip {
     if FileManager.default.fileExists(atPath: destination.path) {
       try FileManager.default.removeItem(at: destination)
     }
-    FileManager.default.createFile(atPath: destination.path, contents: nil)
+    _ = FileManager.default.createFile(atPath: destination.path, contents: nil)
+
+    let input = try FileHandle(forReadingFrom: source)
+    let output = try FileHandle(forWritingTo: destination)
+    defer {
+      try? input.close()
+      try? output.close()
+    }
+
+    var stream = z_stream()
+    let initStatus = deflateInit2_(
+      &stream,
+      Z_BEST_COMPRESSION,
+      Z_DEFLATED,
+      MAX_WBITS + 16,
+      MAX_MEM_LEVEL,
+      Z_DEFAULT_STRATEGY,
+      ZLIB_VERSION,
+      Int32(MemoryLayout<z_stream>.size)
+    )
+    guard initStatus == Z_OK else {
+      throw MTGJSONPriceHistoryError.gzipDeflateFailed(initStatus)
+    }
+    defer { deflateEnd(&stream) }
+
+    let inputChunkSize = 256 * 1024
+    let outputChunkSize = 256 * 1024
+    var finished = false
+    while !finished {
+      let inputData = try input.read(upToCount: inputChunkSize) ?? Data()
+      let flush = inputData.isEmpty ? Z_FINISH : Z_NO_FLUSH
+      try inputData.withUnsafeBytes { inputBuffer in
+        stream.next_in = UnsafeMutablePointer(
+          mutating: inputBuffer.bindMemory(to: Bytef.self).baseAddress
+        )
+        stream.avail_in = uInt(inputData.count)
+
+        repeat {
+          var outputBytes = [UInt8](repeating: 0, count: outputChunkSize)
+          let status = outputBytes.withUnsafeMutableBytes { outputBuffer -> Int32 in
+            stream.next_out = outputBuffer.bindMemory(to: Bytef.self).baseAddress
+            stream.avail_out = uInt(outputChunkSize)
+            let status = deflate(&stream, flush)
+            let produced = outputChunkSize - Int(stream.avail_out)
+            if produced > 0, let outputBase = outputBuffer.baseAddress {
+              output.write(Data(bytes: outputBase, count: produced))
+            }
+            return status
+          }
+          if status == Z_STREAM_END {
+            finished = true
+            break
+          }
+          guard status == Z_OK else {
+            throw MTGJSONPriceHistoryError.gzipDeflateFailed(status)
+          }
+        } while stream.avail_in > 0 || stream.avail_out == 0
+      }
+    }
+  }
+
+  public static func decompressFile(at source: URL, to destination: URL) throws {
+    try FileManager.default.createDirectory(
+      at: destination.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    if FileManager.default.fileExists(atPath: destination.path) {
+      try FileManager.default.removeItem(at: destination)
+    }
+    _ = FileManager.default.createFile(atPath: destination.path, contents: nil)
 
     let input = try FileHandle(forReadingFrom: source)
     let output = try FileHandle(forWritingTo: destination)
@@ -1140,9 +1355,17 @@ enum MTGJSONGzip {
   }
 }
 
+enum MTGJSONGzip {
+  static func decompressFile(at source: URL, to destination: URL) throws {
+    try GzipArchive.decompressFile(at: source, to: destination)
+  }
+}
+
 public enum MTGJSONPriceHistoryError: Error, Equatable, Sendable {
+  case gzipDeflateFailed(Int32)
   case gzipInflateFailed(Int32)
   case gzipStreamEndedEarly
+  case missingCurrentPriceMappings
 }
 
 private extension UInt8 {

@@ -175,6 +175,7 @@ extension GrimoraAppModel {
       searchHistory = updatedHistory
       searchHistoryStore.save(updatedHistory)
       scheduleSearchHistoryPreviewWarm()
+      durableCloudSyncPreferencesChanged()
     case .plainText(let prompt):
       guard searchInputMode == .plainText,
         GrimoraSearchHistoryStore.normalizedQuery(submittedSearchText) == prompt,
@@ -191,6 +192,7 @@ extension GrimoraAppModel {
 
       plainTextSearchHistory = updatedHistory
       plainTextSearchHistoryStore.save(updatedHistory)
+      durableCloudSyncPreferencesChanged()
     }
   }
 
@@ -213,7 +215,6 @@ extension GrimoraAppModel {
     let database = database
     let sortMode = sortMode
     let sortDirection = sortDirection
-    let activeFilters = activeFilters
     let printingDisplayMode = printingDisplayMode
     let resultLimit = imageDownloadConfiguration.historyWarmResultLimit
     let warmer = previewImageWarmer
@@ -230,7 +231,6 @@ extension GrimoraAppModel {
             text: query,
             sortMode: sortMode,
             sortDirection: sortDirection,
-            activeFilters: activeFilters,
             printingDisplayMode: printingDisplayMode,
             offset: 0,
             limit: resultLimit

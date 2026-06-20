@@ -248,6 +248,7 @@ public struct CardListEntryRecord: Identifiable, Codable, Equatable, Sendable {
     public var position: Int
     public var quantity: Int
     public var createdAt: Date
+    public var updatedAt: Date
     public var card: CardRecord?
 
     public init(
@@ -259,6 +260,7 @@ public struct CardListEntryRecord: Identifiable, Codable, Equatable, Sendable {
         position: Int,
         quantity: Int = 1,
         createdAt: Date,
+        updatedAt: Date? = nil,
         card: CardRecord? = nil
     ) {
         self.id = id
@@ -269,6 +271,7 @@ public struct CardListEntryRecord: Identifiable, Codable, Equatable, Sendable {
         self.position = position
         self.quantity = quantity
         self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
         self.card = card
     }
 
@@ -281,6 +284,7 @@ public struct CardListEntryRecord: Identifiable, Codable, Equatable, Sendable {
         case position
         case quantity
         case createdAt
+        case updatedAt
         case card
     }
 
@@ -294,6 +298,7 @@ public struct CardListEntryRecord: Identifiable, Codable, Equatable, Sendable {
         position = try container.decode(Int.self, forKey: .position)
         quantity = max(1, try container.decodeIfPresent(Int.self, forKey: .quantity) ?? 1)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
         card = try container.decodeIfPresent(CardRecord.self, forKey: .card)
     }
 
@@ -307,6 +312,7 @@ public struct CardListEntryRecord: Identifiable, Codable, Equatable, Sendable {
         try container.encode(position, forKey: .position)
         try container.encode(quantity, forKey: .quantity)
         try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(card, forKey: .card)
     }
 }

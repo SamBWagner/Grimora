@@ -12,7 +12,6 @@ struct SearchOptionsMenu: View {
 
     var body: some View {
         Menu {
-            filterMenu
             viewOptionsMenu
             libraryMenu
 
@@ -55,15 +54,6 @@ struct SearchOptionsMenu: View {
         Label("Search Options", systemImage: "ellipsis")
             .labelStyle(.iconOnly)
             .imageScale(.large)
-    }
-
-    private var filterMenu: some View {
-        Menu {
-            filterButtons
-        } label: {
-            Text("Filter")
-        }
-        .accessibilityIdentifier("search-filter-menu")
     }
 
     private var viewOptionsMenu: some View {
@@ -124,23 +114,6 @@ struct SearchOptionsMenu: View {
                 )
             }
             .accessibilityIdentifier("search-sort-direction-option-\(direction.rawValue)")
-        }
-    }
-
-    private var filterButtons: some View {
-        ForEach(FilterPreset.allCases) { filter in
-            Button {
-                feedbackTrigger += 1
-                model.toggleFilter(filter)
-            } label: {
-                HStack {
-                    Text(filter.title)
-                    if model.activeFilters.contains(filter) {
-                        Image(systemName: "checkmark")
-                    }
-                }
-            }
-            .accessibilityIdentifier(filter.accessibilityIdentifier)
         }
     }
 

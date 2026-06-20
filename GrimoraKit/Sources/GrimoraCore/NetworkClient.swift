@@ -1,8 +1,13 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 public enum NetworkPurpose: String, Equatable, Hashable, Sendable {
     case manifestCheck
     case bulkDownload
+    case automaticCatalogDownload
     case imageDownload
     case deckImport
     case priceHistoryDownload
@@ -59,7 +64,7 @@ public struct URLSessionNetworkClient: NetworkClient {
     }
 
     public func data(from url: URL, purpose: NetworkPurpose) async throws -> Data {
-        let (data, response) = try await session.data(for: request(for: url))
+        let (data, response) = try await session.data(for: request(for: url, purpose: purpose))
         try validate(response)
         return data
     }
@@ -70,7 +75,22 @@ public struct URLSessionNetworkClient: NetworkClient {
         purpose: NetworkPurpose,
         progress: (@Sendable (NetworkDownloadProgress) async -> Void)? = nil
     ) async throws {
-        let (bytes, response) = try await session.bytes(for: request(for: url))
+        #if os(Linux)
+        let (data, response) = try await session.data(for: request(for: url, purpose: purpose))
+        try validate(response)
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: destination, options: .atomic)
+        await progress?(
+            NetworkDownloadProgress(
+                completedBytes: Int64(data.count),
+                totalBytes: Int64(data.count)
+            )
+        )
+        #else
+        let (bytes, response) = try await session.bytes(for: request(for: url, purpose: purpose))
         try validate(response)
 
         try FileManager.default.createDirectory(
@@ -127,10 +147,17 @@ public struct URLSessionNetworkClient: NetworkClient {
 
         try FileManager.default.moveItem(at: temporaryURL, to: destination)
         await reportDownloadProgress(force: true)
+        #endif
     }
 
-    private func request(for url: URL) -> URLRequest {
+    private func request(for url: URL, purpose: NetworkPurpose) -> URLRequest {
         var request = URLRequest(url: url)
+        #if !os(Linux)
+        if purpose == .automaticCatalogDownload {
+            request.allowsExpensiveNetworkAccess = false
+            request.allowsConstrainedNetworkAccess = false
+        }
+        #endif
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("application/json;q=0.9,*/*;q=0.8", forHTTPHeaderField: "Accept")
         return request

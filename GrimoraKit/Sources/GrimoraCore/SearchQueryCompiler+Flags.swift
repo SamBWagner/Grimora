@@ -108,7 +108,7 @@ extension Compiler {
             return CompiledClause(sql: "is_base_printing = 1")
         case "atypical":
             return CompiledClause(sql: "is_base_printing = 0")
-        case "new":
+        case "new", "first-print":
             return CompiledClause(sql: "is_reprint = 0")
         case "old":
             return CompiledClause(sql: "is_reprint = 1")

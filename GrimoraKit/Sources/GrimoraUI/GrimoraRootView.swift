@@ -4,6 +4,7 @@ import SwiftUI
 
 public struct GrimoraRootView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: GrimoraAppModel
     @AppStorage(GrimoraSearchPreferences.defaultSearchTextKey)
     private var defaultSearchText = GrimoraSearchPreferences.defaultSearchText
@@ -18,34 +19,29 @@ public struct GrimoraRootView: View {
     private var searchInputModeRawValue = GrimoraSearchPreferences.defaultSearchInputMode.rawValue
     @AppStorage(GrimoraCloudSyncPreferences.modeKey)
     private var cloudSyncModeRawValue = GrimoraCloudSyncMode.undecided.rawValue
+    @AppStorage(GrimoraValuePreferences.displayCurrencyKey)
+    private var displayCurrencyRawValue = CardValueDisplayCurrency.usd.rawValue
 
     public init(environment: GrimoraEnvironment) {
         _model = StateObject(
-            wrappedValue: GrimoraAppModel(
-                environment: environment,
-                initialDefaultSearchConfiguration: GrimoraSearchPreferences.configuration(),
-                initialSearchInputMode: Self.effectiveSearchInputMode(
-                    GrimoraSearchPreferences.searchInputMode()
-                ),
-                initialCloudSyncMode: GrimoraCloudSyncMode(rawValue: UserDefaults.standard.string(
-                    forKey: GrimoraCloudSyncPreferences.modeKey
-                ) ?? "") ?? .undecided
-            )
+            wrappedValue: GrimoraAppModel.configuredForCurrentPreferences(environment: environment)
         )
+    }
+
+    public init(model: GrimoraAppModel) {
+        _model = StateObject(wrappedValue: model)
     }
 
     public var body: some View {
         ZStack {
-            root
-                .opacity(model.libraryActivity == nil ? 1 : 0)
-                .disabled(model.libraryActivity != nil)
-                .accessibilityHidden(model.libraryActivity != nil)
-
             if let activity = model.libraryActivity {
                 DataLoadScreen(activity: activity) {
                     model.dismissLibraryActivity()
                 }
                 .transition(.opacity)
+            } else {
+                root
+                    .transition(.opacity)
             }
         }
         .environmentObject(model)
@@ -54,7 +50,19 @@ public struct GrimoraRootView: View {
             GrimoraAppBackground(palette: palette)
                 .ignoresSafeArea()
         }
+        .overlay(alignment: .topLeading) {
+            if ProcessInfo.processInfo.environment["GRIMORA_SYNC_TEST_EXPOSE_STATUS"] == "1" {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("cloud-sync-test-status")
+                    .accessibilityLabel(model.statusMessage)
+            }
+        }
         .onAppear {
+            if cloudSyncModePreference == .undecided, model.cloudSyncMode == .enabled {
+                cloudSyncModeRawValue = GrimoraCloudSyncMode.enabled.rawValue
+            }
             model.applySearchPreferences(searchPreferenceConfiguration)
             applySearchInputModePreference(searchInputModePreference)
             model.applyCloudSyncModePreference(cloudSyncModePreference)
@@ -80,6 +88,14 @@ public struct GrimoraRootView: View {
         .onChange(of: model.cloudSyncMode) { _, newValue in
             if cloudSyncModeRawValue != newValue.rawValue {
                 cloudSyncModeRawValue = newValue.rawValue
+            }
+        }
+        .onChange(of: displayCurrencyRawValue) {
+            model.durableCloudSyncPreferencesChanged()
+        }
+        .onChange(of: scenePhase) { _, newValue in
+            if newValue == .active {
+                model.refreshCloudSyncWhenActive()
             }
         }
         .animation(.easeInOut(duration: 0.18), value: model.libraryActivity)

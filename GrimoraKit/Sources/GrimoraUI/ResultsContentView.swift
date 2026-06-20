@@ -176,7 +176,6 @@ struct ResultsContentView: View {
             submittedSearchText: model.submittedSearchText,
             sortMode: model.sortMode,
             sortDirection: model.sortDirection,
-            activeFilters: model.activeFilters,
             printingDisplayMode: model.printingDisplayMode
         )
     }
@@ -589,7 +588,6 @@ private struct SearchResultSelectionResetKey: Equatable {
     var submittedSearchText: String
     var sortMode: SortMode
     var sortDirection: SearchSortDirection
-    var activeFilters: Set<FilterPreset>
     var printingDisplayMode: PrintingDisplayMode
 }
 

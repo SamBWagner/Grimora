@@ -11,7 +11,7 @@ extension CardDatabase {
           card_lists.description_rtfd,
           card_lists.description_plain_text,
           card_lists.created_at,
-          card_lists.updated_at,
+          COALESCE(card_lists.sync_updated_at, card_lists.updated_at),
           card_lists.is_pinned,
           card_lists.pinned_at,
           card_lists.position,
@@ -44,7 +44,7 @@ extension CardDatabase {
           card_lists.description_rtfd,
           card_lists.description_plain_text,
           card_lists.created_at,
-          card_lists.updated_at,
+          COALESCE(card_lists.sync_updated_at, card_lists.updated_at),
           card_lists.is_pinned,
           card_lists.pinned_at,
           card_lists.position,
@@ -93,7 +93,7 @@ extension CardDatabase {
           card_lists.description_rtfd,
           card_lists.description_plain_text,
           card_lists.created_at,
-          card_lists.updated_at,
+          COALESCE(card_lists.sync_updated_at, card_lists.updated_at),
           card_lists.is_pinned,
           card_lists.pinned_at,
           card_lists.position,
@@ -128,7 +128,7 @@ extension CardDatabase {
           card_list_categories.name,
           card_list_categories.position,
           card_list_categories.created_at,
-          card_list_categories.updated_at,
+          COALESCE(card_list_categories.sync_updated_at, card_list_categories.updated_at),
           COALESCE(SUM(card_list_entries.quantity), 0) AS entry_count
       FROM card_list_categories
       LEFT JOIN card_list_entries ON card_list_entries.category_id = card_list_categories.id
@@ -155,7 +155,7 @@ extension CardDatabase {
           card_list_categories.name,
           card_list_categories.position,
           card_list_categories.created_at,
-          card_list_categories.updated_at,
+          COALESCE(card_list_categories.sync_updated_at, card_list_categories.updated_at),
           COALESCE(SUM(card_list_entries.quantity), 0) AS entry_count
       FROM card_list_categories
       LEFT JOIN card_list_entries ON card_list_entries.category_id = card_list_categories.id
@@ -181,7 +181,7 @@ extension CardDatabase {
           card_list_categories.name,
           card_list_categories.position,
           card_list_categories.created_at,
-          card_list_categories.updated_at,
+          COALESCE(card_list_categories.sync_updated_at, card_list_categories.updated_at),
           COALESCE(SUM(card_list_entries.quantity), 0) AS entry_count
       FROM card_list_categories
       LEFT JOIN card_list_entries ON card_list_entries.category_id = card_list_categories.id
@@ -200,7 +200,8 @@ extension CardDatabase {
   func cardListEntryUnlocked(id: String) throws -> CardListEntryRecord? {
     let statement = try database.prepare(
       """
-      SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at
+      SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
+          COALESCE(sync_updated_at, updated_at)
       FROM card_list_entries
       WHERE id = ?
       LIMIT 1
@@ -216,7 +217,8 @@ extension CardDatabase {
   func cardListEntriesUnlocked() throws -> [CardListEntryRecord] {
     let statement = try database.prepare(
       """
-      SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at
+      SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
+          COALESCE(sync_updated_at, updated_at)
       FROM card_list_entries
       ORDER BY list_id ASC, zone ASC, position ASC, created_at ASC, id ASC
       """)
@@ -239,7 +241,8 @@ extension CardDatabase {
     if let excludedID {
       statement = try database.prepare(
         """
-        SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at
+        SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
+            COALESCE(sync_updated_at, updated_at)
         FROM card_list_entries
         WHERE list_id = ? AND zone = ? AND category_id IS ? AND card_id = ? AND id != ?
         ORDER BY position ASC, created_at ASC, id ASC
@@ -253,7 +256,8 @@ extension CardDatabase {
     } else {
       statement = try database.prepare(
         """
-        SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at
+        SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
+            COALESCE(sync_updated_at, updated_at)
         FROM card_list_entries
         WHERE list_id = ? AND zone = ? AND category_id IS ? AND card_id = ?
         ORDER BY position ASC, created_at ASC, id ASC
@@ -420,7 +424,8 @@ extension CardDatabase {
       cardID: statement.string(at: 4) ?? "",
       position: statement.int(at: 5) ?? 0,
       quantity: max(1, statement.int(at: 6) ?? 1),
-      createdAt: Self.parseListDate(statement.string(at: 7))
+      createdAt: Self.parseListDate(statement.string(at: 7)),
+      updatedAt: Self.parseListDate(statement.string(at: 8))
     )
   }
 

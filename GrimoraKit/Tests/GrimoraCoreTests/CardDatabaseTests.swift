@@ -12,6 +12,93 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(try names(matching: "shadow", database: database), [])
     }
 
+    func testReplaceAllCardsReportsChunkedWriteProgress() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let records = (0..<1_001).map { index in
+            preferredTestCard(
+                id: "progress-\(index)",
+                oracleID: "progress-oracle-\(index)",
+                name: "Progress Card \(index)"
+            )
+        }
+        var progressEvents: [CardDatabaseWriteProgress] = []
+
+        try database.replaceAllCards(records) { progress in
+            progressEvents.append(progress)
+        }
+
+        let writeEvents = progressEvents.filter { $0.phase == .writingCards }
+        XCTAssertEqual(writeEvents.map(\.writtenCards), [1, 1_000, 1_001])
+        XCTAssertEqual(writeEvents.map(\.totalCards), [1_001, 1_001, 1_001])
+        XCTAssertEqual(writeEvents.last?.fraction ?? -1, 1, accuracy: 0.001)
+        XCTAssertEqual(progressEvents.first?.phase, .preparingMetadata)
+        XCTAssertTrue(progressEvents.contains { $0.phase == .resettingCachedLibrary })
+        XCTAssertEqual(try database.cardCount(), 1_001)
+
+        let clampedProgress = CardDatabaseWriteProgress(writtenCards: 1_005, totalCards: 1_001)
+        XCTAssertEqual(clampedProgress.writtenCards, 1_001)
+        XCTAssertEqual(clampedProgress.fraction, 1, accuracy: 0.001)
+    }
+
+    func testReplaceAllCardsClearsValueHistoryStagingBeforeCardRowsWhenPreservingValues() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let card = preferredTestCard(
+            id: "value-card",
+            oracleID: "value-oracle",
+            name: "Value Card"
+        )
+        try database.replaceAllCards([card])
+        _ = try database.replaceCardValueHistory(
+            meta: MTGJSONPriceHistoryMeta(date: "2026-05-01", version: "1.0.0"),
+            mappingsByMTGJSONUUID: ["uuid-value": card.id]
+        ) { writer in
+            try writer.insert(
+                cardID: card.id,
+                provider: .tcgplayer,
+                finish: .normal,
+                date: "2026-05-01",
+                price: 2.50
+            )
+            return 1
+        }
+        let job = try database.prepareValueHistoryBackgroundJob(
+            meta: MTGJSONPriceHistoryMeta(date: "2026-05-02", version: "1.0.0"),
+            cardDatabaseIdentity: try database.valueHistoryCardDatabaseIdentity()
+        )
+        _ = try database.stageCardValueHistory(
+            jobID: job.id,
+            mappingsByMTGJSONUUID: ["uuid-value": card.id]
+        ) { writer in
+            for date in ["2026-04-29", "2026-04-30", "2026-05-01"] {
+                try writer.insert(
+                    cardID: card.id,
+                    provider: .tcgplayer,
+                    finish: .normal,
+                    date: date,
+                    price: 2.00
+                )
+            }
+            return 3
+        }
+
+        XCTAssertEqual(try rowCount(in: "staging_card_price_points", database: database), 3)
+        XCTAssertEqual(try rowCount(in: "staging_card_value_mappings", database: database), 1)
+
+        var progressEvents: [CardDatabaseWriteProgress] = []
+        try database.replaceAllCards([card], preservesCardValueHistory: true) { progress in
+            progressEvents.append(progress)
+        }
+
+        let resetEvents = progressEvents.filter { $0.phase == .resettingCachedLibrary }
+        XCTAssertEqual(resetEvents.map(\.completedUnitCount), [0, 1, 2, 3, 4])
+        XCTAssertEqual(resetEvents.map(\.totalUnitCount), [4, 4, 4, 4, 4])
+        XCTAssertEqual(try rowCount(in: "staging_card_price_points", database: database), 0)
+        XCTAssertEqual(try rowCount(in: "staging_card_value_mappings", database: database), 0)
+        XCTAssertEqual(try database.incompleteValueHistoryBackgroundJob()?.id, job.id)
+        XCTAssertEqual(try database.valueGuide(forCardID: card.id).entries.first?.currentPrice, 2.50)
+        XCTAssertEqual(try database.cardCount(), 1)
+    }
+
     func testBareSearchDoesNotIncludeCardsWhoseNonNameTextMatches() throws {
         let database = try CardDatabase(storage: .inMemory)
         try database.replaceAllCards([
@@ -41,7 +128,7 @@ final class CardDatabaseTests: XCTestCase {
 
     func testExternalOnlySearchReturnsUnsupportedReasonWithoutQuerying() throws {
         let database = try Fixtures.database()
-        let response = try database.search(CardSearchRequest(text: "cube:vintage", activeFilters: []))
+        let response = try database.search(CardSearchRequest(text: "cube:vintage"))
 
         guard case .unsupported(let reason) = response else {
             return XCTFail("Expected unsupported response")
@@ -76,24 +163,21 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(card.name, "Special Spell")
     }
 
-    func testFiltersExcludeUniversesBeyondAlchemyAndNonRealCards() throws {
+    func testDefaultSearchIncludesAllCardClassesAndExplicitSyntaxStillFilters() throws {
         let database = try Fixtures.database()
 
-        let all = try names(matching: "", database: database, filters: [])
+        let all = try names(matching: "", database: database)
         XCTAssertTrue(all.contains("Beyond Hero"))
         XCTAssertTrue(all.contains("Digital Conjurer"))
         XCTAssertTrue(all.contains("Soldier Token"))
 
-        let withoutUB = try names(matching: "", database: database, filters: [.universesBeyond])
+        XCTAssertEqual(try names(matching: "is:universesbeyond", database: database), ["Beyond Hero"])
+        XCTAssertEqual(try names(matching: "is:alchemy", database: database), ["Digital Conjurer"])
+
+        let withoutUB = try names(matching: "prefer:notub", database: database)
         XCTAssertFalse(withoutUB.contains("Beyond Hero"))
-
-        let withoutAlchemy = try names(matching: "", database: database, filters: [.alchemy])
-        XCTAssertFalse(withoutAlchemy.contains("Digital Conjurer"))
-
-        let realOnly = try names(matching: "", database: database, filters: [.realCards])
-        XCTAssertFalse(realOnly.contains("Digital Conjurer"))
-        XCTAssertFalse(realOnly.contains("Soldier Token"))
-        XCTAssertTrue(realOnly.contains("Alpha Forest"))
+        XCTAssertTrue(withoutUB.contains("Digital Conjurer"))
+        XCTAssertTrue(withoutUB.contains("Soldier Token"))
     }
 
     func testScryfallSyntaxPredicatesSearchStoredBulkFields() throws {
@@ -108,6 +192,91 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(try names(matching: "r:mythic usd>=2 year=2021", database: database), ["Beta Mage"])
         XCTAssertEqual(try names(matching: "is:mdfc", database: database), ["Daybreak // Nightfall"])
         XCTAssertEqual(try names(matching: "include:extras t:token", database: database), ["Soldier Token"])
+    }
+
+    func testFirstPrintSearchUsesStoredReprintMetadataAcrossCardIdentityEdgeCases() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        try database.replaceAllCards([
+            preferredTestCard(
+                id: "shared-first",
+                oracleID: "shared-oracle",
+                name: "Shared Spell",
+                releasedAt: "2025-01-02",
+                setCode: "ncc",
+                collectorNumber: "1",
+                isReprint: false
+            ),
+            preferredTestCard(
+                id: "shared-reprint",
+                oracleID: "shared-oracle",
+                name: "Shared Spell",
+                releasedAt: "2024-01-01",
+                setCode: "ncc",
+                collectorNumber: "2",
+                isReprint: true
+            ),
+            preferredTestCard(
+                id: "missing-oracle-first",
+                oracleID: nil,
+                name: "Nameless Spark",
+                releasedAt: "2025-01-03",
+                setCode: "ncc",
+                collectorNumber: "3",
+                isReprint: false
+            ),
+            preferredTestCard(
+                id: "missing-oracle-reprint",
+                oracleID: nil,
+                name: "Nameless Spark",
+                releasedAt: "2024-01-01",
+                setCode: "ncc",
+                collectorNumber: "4",
+                isReprint: true
+            ),
+            preferredTestCard(
+                id: "same-date-first",
+                oracleID: "same-date-oracle",
+                name: "Same Date Spell",
+                releasedAt: "2024-06-01",
+                setCode: "ncc",
+                collectorNumber: "5",
+                isReprint: false
+            ),
+            preferredTestCard(
+                id: "same-date-reprint",
+                oracleID: "same-date-oracle",
+                name: "Same Date Spell",
+                releasedAt: "2024-06-01",
+                setCode: "ncc",
+                collectorNumber: "6",
+                isReprint: true
+            ),
+            preferredTestCard(
+                id: "other-set-first",
+                oracleID: "other-set-oracle",
+                name: "Other Set Spell",
+                setCode: "xyz",
+                collectorNumber: "7",
+                isReprint: false
+            )
+        ])
+
+        XCTAssertEqual(
+            Set(try cards(
+                matching: "set:ncc is:first-print",
+                database: database,
+                printingDisplayMode: .all
+            ).map(\.id)),
+            Set(["shared-first", "missing-oracle-first", "same-date-first"])
+        )
+        XCTAssertEqual(
+            Set(try cards(
+                matching: "set:ncc -is:first-print",
+                database: database,
+                printingDisplayMode: .all
+            ).map(\.id)),
+            Set(["shared-reprint", "missing-oracle-reprint", "same-date-reprint"])
+        )
     }
 
     func testSmartQuotedOracleSearchMatchesStoredText() throws {
@@ -314,7 +483,7 @@ final class CardDatabaseTests: XCTestCase {
         )
 
         let response = try database.search(
-            CardSearchRequest(text: "total", activeFilters: [.realCards], limit: 2)
+            CardSearchRequest(text: "total", limit: 2)
         )
 
         guard case .results(let cards, let totalCount) = response else {
@@ -337,7 +506,7 @@ final class CardDatabaseTests: XCTestCase {
         )
 
         let response = try database.search(
-            CardSearchRequest(text: "total", activeFilters: [.realCards], offset: 2, limit: 2)
+            CardSearchRequest(text: "total", offset: 2, limit: 2)
         )
 
         guard case .results(let cards, let totalCount) = response else {
@@ -366,7 +535,7 @@ final class CardDatabaseTests: XCTestCase {
         try database.replaceAllCards(records)
 
         let response = try database.search(
-            CardSearchRequest(text: "name:/^Regex Fixture/", activeFilters: [.realCards], limit: 2)
+            CardSearchRequest(text: "name:/^Regex Fixture/", limit: 2)
         )
 
         guard case .results(let cards, let totalCount) = response else {
@@ -398,7 +567,6 @@ final class CardDatabaseTests: XCTestCase {
         let response = try database.search(
             CardSearchRequest(
                 text: "name:/^Regex Fixture/",
-                activeFilters: [.realCards],
                 offset: 2,
                 limit: 2
             )
@@ -433,7 +601,7 @@ final class CardDatabaseTests: XCTestCase {
             preferredTestCard(id: "newer", oracleID: nil, name: "Mystery Bolt", releasedAt: "2024-01-01")
         ])
 
-        let preferred = try cards(matching: "mystery bolt", database: database, filters: [])
+        let preferred = try cards(matching: "mystery bolt", database: database)
         XCTAssertEqual(preferred.map(\.id), ["newer"])
     }
 
@@ -444,7 +612,7 @@ final class CardDatabaseTests: XCTestCase {
             preferredTestCard(id: "with-image", oracleID: "oracle", name: "Twin Bolt", releasedAt: "2024-01-01", smallImageURL: "https://example.test/twin-small.jpg")
         ])
 
-        let preferred = try cards(matching: "twin", database: database, filters: [])
+        let preferred = try cards(matching: "twin", database: database)
         XCTAssertEqual(preferred.map(\.id), ["with-image"])
     }
 
@@ -681,7 +849,7 @@ final class CardDatabaseTests: XCTestCase {
         ])
 
         let response = try database.search(
-            CardSearchRequest(text: "hydrated", activeFilters: [.realCards], limit: 2)
+            CardSearchRequest(text: "hydrated", limit: 2)
         )
 
         guard case .results(let cards, _) = response else {
@@ -869,7 +1037,7 @@ final class CardDatabaseTests: XCTestCase {
         ]
 
         for (sort, expectedFirst) in expectations {
-            let response = try database.search(CardSearchRequest(text: "", sortMode: sort, activeFilters: [.realCards], limit: 50))
+            let response = try database.search(CardSearchRequest(text: "", sortMode: sort, limit: 50))
             guard case .results(let cards, _) = response else {
                 return XCTFail("Expected results for \(sort)")
             }
@@ -903,7 +1071,7 @@ final class CardDatabaseTests: XCTestCase {
         card.artCropImagePath = "/tmp/updated-art-crop.jpg"
         try database.updateImagePaths(for: card)
 
-        let response = try database.search(CardSearchRequest(text: "forest", activeFilters: []))
+        let response = try database.search(CardSearchRequest(text: "forest"))
         guard case .results(let cards, _) = response else {
             return XCTFail("Expected results")
         }
@@ -948,7 +1116,7 @@ final class CardDatabaseTests: XCTestCase {
         )
         try database.replaceAllCards([card])
 
-        let stored = try cards(matching: "split", database: database, filters: []).first
+        let stored = try cards(matching: "split", database: database).first
         XCTAssertEqual(stored?.smallImageURL, "https://example.test/card-small.jpg")
         XCTAssertEqual(stored?.artCropImageURL, "https://example.test/card-art-crop.jpg")
         XCTAssertEqual(stored?.faces.first?.smallImageURL, "https://example.test/face-small.jpg")
@@ -961,7 +1129,7 @@ final class CardDatabaseTests: XCTestCase {
         card.mtgoID = 12345
         try database.replaceAllCards([card])
 
-        let stored = try cards(matching: card.name, database: database, filters: []).first
+        let stored = try cards(matching: card.name, database: database).first
         XCTAssertEqual(stored?.mtgoID, 12345)
     }
 
@@ -1804,10 +1972,9 @@ final class CardDatabaseTests: XCTestCase {
 
     private func names(
         matching text: String,
-        database: CardDatabase,
-        filters: Set<FilterPreset> = [.realCards]
+        database: CardDatabase
     ) throws -> [String] {
-        try cards(matching: text, database: database, filters: filters).map(\.name)
+        try cards(matching: text, database: database).map(\.name)
     }
 
     private func assertNames(
@@ -1829,12 +1996,10 @@ final class CardDatabaseTests: XCTestCase {
     private func cards(
         matching text: String,
         database: CardDatabase,
-        filters: Set<FilterPreset> = [.realCards],
         printingDisplayMode: PrintingDisplayMode = .preferred
     ) throws -> [CardRecord] {
         let request = CardSearchRequest(
             text: text,
-            activeFilters: filters,
             printingDisplayMode: printingDisplayMode,
             limit: 50
         )
@@ -1921,6 +2086,7 @@ final class CardDatabaseTests: XCTestCase {
         collectorNumber: String = "1",
         isPromo: Bool = false,
         isUniversesBeyond: Bool = false,
+        isReprint: Bool = false,
         isVariation: Bool = false,
         isBoosterFun: Bool = false,
         layout: String = "normal",
@@ -1960,9 +2126,16 @@ final class CardDatabaseTests: XCTestCase {
             isPromo: isPromo,
             isVariation: isVariation,
             isBoosterFun: isBoosterFun,
+            isReprint: isReprint,
             normalImagePath: normalImagePath,
             smallImageURL: smallImageURL,
             faces: faces
         )
+    }
+
+    private func rowCount(in tableName: String, database: CardDatabase) throws -> Int {
+        let statement = try database.database.prepare("SELECT COUNT(*) FROM \(tableName)")
+        _ = try statement.step()
+        return statement.int(at: 0) ?? 0
     }
 }

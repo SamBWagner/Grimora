@@ -13,7 +13,7 @@ struct CloudSyncSetupView: View {
         GrimoraLogoView(size: 72)
       }
     } description: {
-      Text("Download the card database, then choose whether lists and search settings sync with iCloud on your devices.")
+      Text("Download the card database, then choose whether lists, favourites, and search settings sync with iCloud on your devices.")
     } actions: {
       VStack(spacing: 10) {
         Button {
@@ -53,12 +53,12 @@ struct CloudSyncSetupView: View {
         }
       case .unavailable(let message), .failed(let message):
         Text(message)
-      case .waitingForDatabaseUpdate:
-        Text("The card database will be matched to your synced library.")
       case .needsAppUpdate:
         Text("Update Grimora to continue syncing.")
       case .resolving:
         Text("Choose the data to sync.")
+      case .accountChangeRequiresResolution:
+        Text("The iCloud account changed. Choose how to protect the local library.")
       case .disabled, .ready, .appliedRemoteSnapshot:
         EmptyView()
       }
@@ -198,29 +198,53 @@ struct CloudSyncStatusSection: View {
   var body: some View {
     Section("iCloud Sync") {
       switch model.cloudSyncStatus {
-      case .waitingForDatabaseUpdate(let identity):
-        VStack(alignment: .leading, spacing: 8) {
-          Text("A newer synced card database is required before lists can sync.")
-          if let manifest = identity.manifest {
-            Text(manifest.name)
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-          Button {
-            Task { await model.importRequiredCloudDatabaseUpdate() }
-          } label: {
-            Text("Update Card Database")
-          }
-          .disabled(model.isWorking)
-        }
       case .needsAppUpdate:
         Label("Update Grimora to continue syncing.", systemImage: "exclamationmark.triangle")
       case .resolving:
         Label("Choose which device data to sync.", systemImage: "icloud.and.arrow.up")
+      case .accountChangeRequiresResolution:
+        VStack(alignment: .leading, spacing: 8) {
+          Label(
+            "The iCloud account changed. Grimora paused before uploading any local data.",
+            systemImage: "person.crop.circle.badge.exclamationmark"
+          )
+          Button("Use This iCloud Account") {
+            model.useCurrentICloudAccount()
+          }
+          .buttonStyle(.borderedProminent)
+          .accessibilityIdentifier("accept-current-icloud-account-button")
+
+          Button("Keep This Device Separate") {
+            model.keepDeviceSeparate()
+          }
+          .buttonStyle(.bordered)
+          .accessibilityIdentifier("separate-current-icloud-account-button")
+
+          Text("Sign back into the previous iCloud account in System Settings to continue without changing accounts.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
       case .unavailable(let message), .failed(let message):
         Label(message, systemImage: "icloud.slash")
       case .ready, .appliedRemoteSnapshot:
-        Label("Sync is ready.", systemImage: "icloud")
+        VStack(alignment: .leading, spacing: 6) {
+          Label("Sync is ready.", systemImage: "icloud")
+          if model.cloudSyncPendingChangeCount > 0 {
+            Text("\(model.cloudSyncPendingChangeCount) local changes waiting to upload")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          if let lastUpload = model.cloudSyncLastUploadAt {
+            Text("Last upload: \(lastUpload.formatted(date: .abbreviated, time: .shortened))")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          if let lastDownload = model.cloudSyncLastDownloadAt {
+            Text("Last download: \(lastDownload.formatted(date: .abbreviated, time: .shortened))")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
       case .preparing, .syncing:
         HStack {
           ProgressView()

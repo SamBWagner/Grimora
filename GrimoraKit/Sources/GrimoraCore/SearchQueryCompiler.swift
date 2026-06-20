@@ -90,7 +90,6 @@ struct Compiler {
 
         if field == "include" {
             if ["extras", "extra", "multilingual", "variations"].contains(normalizedValue) {
-                displayOptions.includeExtras = true
                 return CompiledClause()
             }
             throw QueryError.unsupported(query: query, token: original)

@@ -5,7 +5,7 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
     func testDatabaseSearchCoversArtDisplayMode() throws {
         let database = try Fixtures.database()
         let response = try database.search(
-            CardSearchRequest(text: "", activeFilters: [], printingDisplayMode: .art, limit: 10)
+            CardSearchRequest(text: "", printingDisplayMode: .art, limit: 10)
         )
 
         guard case .results(let cards, let totalCount) = response else {

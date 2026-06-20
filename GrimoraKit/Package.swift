@@ -11,7 +11,24 @@ let package = Package(
     ],
     products: [
         .library(name: "GrimoraCore", targets: ["GrimoraCore"]),
-        .library(name: "GrimoraUI", targets: ["GrimoraUI"])
+        .library(name: "GrimoraUI", targets: ["GrimoraUI"]),
+        .library(name: "GrimoraDataPipeline", targets: ["GrimoraDataPipeline"]),
+        .executable(name: "grimora-data-engine", targets: ["GrimoraDataEngine"]),
+        .executable(name: "grimora-data-api", targets: ["GrimoraDataAPI"])
+    ],
+    dependencies: [
+        .package(
+            url: "https://github.com/hummingbird-project/hummingbird.git",
+            from: "2.25.0"
+        ),
+        .package(
+            url: "https://github.com/soto-project/soto.git",
+            from: "7.14.0"
+        ),
+        .package(
+            url: "https://github.com/apple/swift-crypto.git",
+            from: "4.5.0"
+        )
     ],
     targets: [
         .target(
@@ -22,8 +39,19 @@ let package = Package(
             ]
         ),
         .target(
+            name: "CZlib",
+            publicHeadersPath: "include",
+            linkerSettings: [
+                .linkedLibrary("z")
+            ]
+        ),
+        .target(
             name: "GrimoraCore",
-            dependencies: ["CSQLite"],
+            dependencies: [
+                "CSQLite",
+                "CZlib",
+                .product(name: "Crypto", package: "swift-crypto")
+            ],
             linkerSettings: [
                 .linkedLibrary("z")
             ]
@@ -35,9 +63,48 @@ let package = Package(
                 .process("Resources")
             ]
         ),
+        .target(
+            name: "GrimoraDataPipeline",
+            dependencies: ["GrimoraCore"]
+        ),
+        .executableTarget(
+            name: "GrimoraDataEngine",
+            dependencies: [
+                "GrimoraCore",
+                "GrimoraDataPipeline",
+                .product(name: "SotoS3", package: "soto")
+            ],
+            linkerSettings: [
+                .linkedFramework("Security")
+            ]
+        ),
+        .executableTarget(
+            name: "GrimoraDataAPI",
+            dependencies: [
+                "GrimoraCore",
+                .product(name: "Hummingbird", package: "hummingbird"),
+                .product(name: "SotoS3", package: "soto")
+            ]
+        ),
         .testTarget(
             name: "GrimoraCoreTests",
             dependencies: ["GrimoraCore"]
+        ),
+        .testTarget(
+            name: "GrimoraDataPipelineTests",
+            dependencies: ["GrimoraCore", "GrimoraDataPipeline"]
+        ),
+        .testTarget(
+            name: "GrimoraDataAPITests",
+            dependencies: [
+                "GrimoraCore",
+                "GrimoraDataAPI",
+                .product(name: "HummingbirdTesting", package: "hummingbird")
+            ]
+        ),
+        .testTarget(
+            name: "GrimoraDataEngineTests",
+            dependencies: ["GrimoraCore", "GrimoraDataEngine"]
         ),
         .testTarget(
             name: "GrimoraUITests",

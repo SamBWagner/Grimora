@@ -132,12 +132,29 @@ extension GrimoraAppModel {
     quality: CardImageQuality = .small,
     forceRefresh: Bool = false
   ) async {
-    guard let entryIndex = selectedListEntries.firstIndex(where: { $0.id == entryID }) else {
+    await cacheVisibleListEntryImages(
+      around: entryID,
+      displayedEntries: selectedListEntries,
+      quality: quality,
+      forceRefresh: forceRefresh
+    )
+  }
+
+  func cacheVisibleListEntryImages(
+    around entryID: CardListEntryRecord.ID,
+    displayedEntries: [CardListEntryRecord],
+    quality: CardImageQuality = .small,
+    forceRefresh: Bool = false
+  ) async {
+    guard let entryIndex = displayedEntries.firstIndex(where: { $0.id == entryID }) else {
       return
     }
 
     let windowStart = listVisibleImageWindowTracker.windowStart(for: entryIndex)
-    let windowEntries = visibleListImageWindow(startingAt: windowStart)
+    let windowEntries = visibleListImageWindow(
+      startingAt: windowStart,
+      entries: displayedEntries
+    )
     let windowIdentity = windowEntries.map { entry in
       "\(entry.id):\(entry.card?.id ?? entry.cardID)"
     }
@@ -176,6 +193,38 @@ extension GrimoraAppModel {
     )
   }
 
+  func refreshVisibleListEntryImages(
+    displayedEntries: [CardListEntryRecord],
+    around entryID: CardListEntryRecord.ID?,
+    quality: CardImageQuality
+  ) async {
+    listVisibleImageWindowTracker.reset()
+    resetListVisibleImageRequests()
+
+    guard let entryID else {
+      await previewImageWarmer.scheduleVisible(paths: [])
+      await imageDownloadCoordinator.replaceVisibleWindow(
+        cards: [],
+        quality: quality,
+        generation: visibleImageDownloadGeneration,
+        onStart: { [weak self] start in
+          self?.handleImageDownloadStart(start)
+        },
+        onComplete: { [weak self] completion in
+          self?.handleImageDownloadCompletion(completion)
+        }
+      )
+      return
+    }
+
+    await cacheVisibleListEntryImages(
+      around: entryID,
+      displayedEntries: displayedEntries,
+      quality: quality,
+      forceRefresh: true
+    )
+  }
+
   func visibleImageWindow(startingAt startIndex: Int) -> [CardRecord] {
     guard !cards.isEmpty else {
       return []
@@ -189,17 +238,20 @@ extension GrimoraAppModel {
     return Array(cards[safeStart..<endIndex])
   }
 
-  func visibleListImageWindow(startingAt startIndex: Int) -> [CardListEntryRecord] {
-    guard !selectedListEntries.isEmpty else {
+  func visibleListImageWindow(
+    startingAt startIndex: Int,
+    entries: [CardListEntryRecord]
+  ) -> [CardListEntryRecord] {
+    guard !entries.isEmpty else {
       return []
     }
 
-    let safeStart = min(max(0, startIndex), selectedListEntries.count - 1)
+    let safeStart = min(max(0, startIndex), entries.count - 1)
     let endIndex = min(
-      selectedListEntries.count,
+      entries.count,
       safeStart + max(1, searchPerformance.imageLookaheadCount) + 1
     )
-    return Array(selectedListEntries[safeStart..<endIndex])
+    return Array(entries[safeStart..<endIndex])
   }
 
   func shouldCacheDisplayImage(

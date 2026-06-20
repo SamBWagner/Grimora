@@ -266,6 +266,50 @@ final class MTGJSONPriceHistoryTests: XCTestCase {
         )
     }
 
+    func testCurrentPriceImportReportsProgressWhileScanningLargePriceFile() async throws {
+        let database = try CardDatabase(storage: .inMemory)
+        try database.replaceAllCards([testCard(id: "scry-one", name: "Value Spell")])
+
+        let prices = largeAllPricesJSON(uuid: "uuid-one")
+        let fixtures = try writePriceFixtures(
+            printings: allIdentifiersJSON(cardID: "scry-one", uuid: "uuid-one"),
+            prices: prices
+        )
+        let pricesSize = Int64(prices.count)
+        let recorder = PriceMappingProgressRecorder()
+
+        let summary = try await MTGJSONPriceHistoryImporter(database: database).importCurrentPrices(
+            meta: MTGJSONPriceHistoryMeta(date: "2026-05-14", version: "5.2.2"),
+            allPrintingsJSONURL: fixtures.printingsURL,
+            allPricesTodayJSONURL: fixtures.pricesURL
+        ) { progress in
+            if case .importingPriceHistoryProgress(
+                let scannedBytes,
+                let totalBytes,
+                let importedPricePoints
+            ) = progress {
+                await recorder.record(
+                    scannedBytes: scannedBytes,
+                    totalBytes: totalBytes,
+                    mappedCards: importedPricePoints
+                )
+            }
+        }
+        let priceProgress = await recorder.events()
+
+        XCTAssertEqual(summary, MTGJSONPriceImportSummary(mappedCards: 1, importedPricePoints: 1))
+        XCTAssertTrue(
+            priceProgress.contains {
+                $0.scannedBytes > 0 && $0.scannedBytes < pricesSize && $0.mappedCards == 0
+            }
+        )
+        XCTAssertTrue(
+            priceProgress.contains {
+                $0.scannedBytes == pricesSize && $0.totalBytes == pricesSize && $0.mappedCards == 1
+            }
+        )
+    }
+
     func testCurrentPriceImportFallsBackToScryfallSnapshotWhenTodayPriceIsMissing() async throws {
         let database = try CardDatabase(storage: .inMemory)
         try database.replaceAllCards([testCard(id: "scry-one", name: "Value Spell", priceUSD: 1.25)])
@@ -288,17 +332,17 @@ final class MTGJSONPriceHistoryTests: XCTestCase {
         XCTAssertEqual(guide.entries.first?.currentPrice, 1.25)
     }
 
-    func testBackgroundStagingDoesNotChangeActivePricesUntilCommit() async throws {
+    func testBackgroundCommitPreservesNewerCurrentPricesAndCleansStaging() async throws {
         let database = try CardDatabase(storage: .inMemory)
         try database.replaceAllCards([testCard(id: "scry-one", name: "Value Spell")])
         let importer = MTGJSONPriceHistoryImporter(database: database)
 
         let currentFixtures = try writePriceFixtures(
             printings: singleCardPrintingsJSON(cardID: "scry-one", uuid: "uuid-one"),
-            prices: replacementPricesJSON(uuid: "uuid-one", date: "2026-05-14", price: 3.00)
+            prices: replacementPricesJSON(uuid: "uuid-one", date: "2026-05-15", price: 3.00)
         )
         _ = try await importer.importCurrentPrices(
-            meta: MTGJSONPriceHistoryMeta(date: "2026-05-14", version: "5.2.2"),
+            meta: MTGJSONPriceHistoryMeta(date: "2026-05-15", version: "5.2.3"),
             allPrintingsJSONURL: currentFixtures.printingsURL,
             allPricesTodayJSONURL: currentFixtures.pricesURL
         )
@@ -314,7 +358,7 @@ final class MTGJSONPriceHistoryTests: XCTestCase {
         )
         let staged = try await importer.importHistoryToStaging(
             meta: job.meta,
-            allPrintingsJSONURL: historyFixtures.printingsURL,
+            mappingsByMTGJSONUUID: try database.valueMappingsByMTGJSONUUID(),
             allPricesJSONURL: historyFixtures.pricesURL,
             jobID: job.id
         )
@@ -323,15 +367,82 @@ final class MTGJSONPriceHistoryTests: XCTestCase {
         XCTAssertEqual(try database.valueGuide(forCardID: "scry-one").entries.first?.currentPrice, 3.00)
 
         let committed = try database.commitStagedValueHistory(jobID: job.id, meta: job.meta)
-        XCTAssertEqual(committed.importedPricePoints, 2)
+        XCTAssertEqual(committed.importedPricePoints, 3)
         let guide = try database.valueGuide(forCardID: "scry-one")
-        XCTAssertEqual(guide.entries.first?.currentPrice, 4.00)
+        XCTAssertEqual(guide.entries.first?.currentPrice, 3.00)
         XCTAssertEqual(
             guide.entries.first?.history,
             [
                 CardValueHistoryPoint(date: "2026-03-01", price: 2.00),
-                CardValueHistoryPoint(date: "2026-05-14", price: 4.00)
+                CardValueHistoryPoint(date: "2026-05-14", price: 4.00),
+                CardValueHistoryPoint(date: "2026-05-15", price: 3.00)
             ]
+        )
+        XCTAssertEqual(
+            try database.metadataValue(forKey: MetadataKey.mtgjsonCurrentPricesDate.rawValue),
+            "2026-05-15"
+        )
+        XCTAssertEqual(try countRows(in: database, table: "staging_card_value_mappings"), 0)
+        XCTAssertEqual(try countRows(in: database, table: "staging_card_price_points"), 0)
+    }
+
+    func testBackgroundHistoryImportReportsIncrementalProgressForLargePriceFile() async throws {
+        let database = try CardDatabase(storage: .inMemory)
+        try database.replaceAllCards([testCard(id: "scry-one", name: "Value Spell")])
+        let importer = MTGJSONPriceHistoryImporter(database: database)
+
+        let currentFixtures = try writePriceFixtures(
+            printings: allIdentifiersJSON(cardID: "scry-one", uuid: "uuid-one"),
+            prices: replacementPricesJSON(uuid: "uuid-one", date: "2026-05-14", price: 3.00)
+        )
+        _ = try await importer.importCurrentPrices(
+            meta: MTGJSONPriceHistoryMeta(date: "2026-05-14", version: "5.2.2"),
+            allPrintingsJSONURL: currentFixtures.printingsURL,
+            allPricesTodayJSONURL: currentFixtures.pricesURL
+        )
+
+        let job = try database.prepareValueHistoryBackgroundJob(
+            meta: MTGJSONPriceHistoryMeta(date: "2026-05-14", version: "5.2.2"),
+            cardDatabaseIdentity: try database.valueHistoryCardDatabaseIdentity()
+        )
+        let prices = largeAllPricesJSON(uuid: "uuid-one")
+        let fixtures = try writePriceFixtures(
+            printings: Data(),
+            prices: prices
+        )
+        let pricesSize = Int64(prices.count)
+        let recorder = PriceMappingProgressRecorder()
+
+        let summary = try await importer.importHistoryToStaging(
+            meta: job.meta,
+            mappingsByMTGJSONUUID: try database.valueMappingsByMTGJSONUUID(),
+            allPricesJSONURL: fixtures.pricesURL,
+            jobID: job.id
+        ) { progress in
+            if case .importingPriceHistoryProgress(
+                let scannedBytes,
+                let totalBytes,
+                let importedPricePoints
+            ) = progress {
+                await recorder.record(
+                    scannedBytes: scannedBytes,
+                    totalBytes: totalBytes,
+                    mappedCards: importedPricePoints
+                )
+            }
+        }
+        let priceProgress = await recorder.events()
+
+        XCTAssertEqual(summary, MTGJSONPriceImportSummary(mappedCards: 1, importedPricePoints: 1))
+        XCTAssertTrue(
+            priceProgress.contains {
+                $0.scannedBytes > 0 && $0.scannedBytes < pricesSize && $0.mappedCards == 0
+            }
+        )
+        XCTAssertTrue(
+            priceProgress.contains {
+                $0.scannedBytes == pricesSize && $0.totalBytes == pricesSize && $0.mappedCards == 1
+            }
         )
     }
 
@@ -469,6 +580,48 @@ final class MTGJSONPriceHistoryTests: XCTestCase {
                 atPath: directory.appendingPathComponent("mtgjson-all-prices-2026-05-13.json").path
             )
         )
+    }
+
+    func testCompactGzipImportStreamsMappingsAndSkipsUnknownCards() async throws {
+        let database = try CardDatabase(storage: .inMemory)
+        try database.replaceAllCards([testCard(id: "scry-one", name: "Value Spell")])
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let printingsGzipURL = directory.appendingPathComponent("AllIdentifiers.json.gz")
+        let pricesGzipURL = directory.appendingPathComponent("AllPrices.json.gz")
+        let printings = Data(
+            """
+            {"data":{
+              "uuid-one":{"identifiers":{"scryfallId":"scry-one"}},
+              "uuid-missing":{"identifiers":{"scryfallId":"not-local"}}
+            }}
+            """.utf8
+        )
+        let prices = Data(
+            """
+            {"data":{
+              "uuid-one":{"paper":{"tcgplayer":{"retail":{"normal":{"2026-06-14":2.5}}}}},
+              "uuid-missing":{"paper":{"tcgplayer":{"retail":{"normal":{"2026-06-14":99.0}}}}}
+            }}
+            """.utf8
+        )
+        try gzipData(printings).write(to: printingsGzipURL)
+        try gzipData(prices).write(to: pricesGzipURL)
+
+        let summary = try await MTGJSONPriceHistoryImporter(database: database).importCompactHistory(
+            meta: MTGJSONPriceHistoryMeta(date: "2026-06-14", version: "5.3.0"),
+            allPrintingsGzipURL: printingsGzipURL,
+            allPricesGzipURL: pricesGzipURL,
+            temporaryDirectory: directory
+        )
+
+        XCTAssertEqual(summary.mappedCards, 1)
+        XCTAssertEqual(try countRows(in: database, table: "card_value_mappings"), 1)
+        XCTAssertEqual(try database.valueGuide(forCardID: "scry-one").entries.first?.currentPrice, 2.50)
     }
 
     func testLiveMTGJSONKnownCardsHaveUsableCurrentAndHistoryPricesWhenEnabled() async throws {
@@ -677,6 +830,16 @@ final class MTGJSONPriceHistoryTests: XCTestCase {
             json += #""ignored-\#(index)":{"identifiers":{"scryfallId":"not-local-\#(index)"},"pad":"\#(padding)"},"#
         }
         json += #""\#(uuid)":{"identifiers":{"scryfallId":"\#(cardID)"}}}}"#
+        return Data(json.utf8)
+    }
+
+    private func largeAllPricesJSON(uuid: String) -> Data {
+        let padding = String(repeating: "x", count: 480)
+        var json = #"{"data":{"#
+        for index in 0..<9_000 {
+            json += #""ignored-\#(index)":{"paper":{"tcgplayer":{"retail":{"normal":{"2026-05-14":1.0}}}},"pad":"\#(padding)"},"#
+        }
+        json += #""\#(uuid)":{"paper":{"tcgplayer":{"retail":{"normal":{"2026-05-14":3.0}}}}}}}"#
         return Data(json.utf8)
     }
 

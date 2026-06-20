@@ -36,7 +36,7 @@ enum LibraryMaintenanceConfirmation: Identifiable {
         case .deleteImages:
             "This removes cached card images and clears image paths from the card database. Your lists are kept."
         case .deleteAndRefreshDatabase:
-            "This downloads fresh Scryfall card data and removes the cached image files. Your lists are kept."
+            "This downloads a fresh Grimora catalog and removes the cached image files. Your lists are kept."
         }
     }
 
@@ -92,13 +92,15 @@ struct LibraryMaintenanceMenuItems: View {
             .accessibilityIdentifier("refresh-card-database-button")
             .disabled(model.isWorking)
 
-            Button {
-                Task { await model.refreshCardValues() }
-            } label: {
-                Text("Refresh Card Values")
+            if !model.usesManagedCatalog {
+                Button {
+                    Task { await model.refreshCardValues() }
+                } label: {
+                    Text("Refresh Card Values")
+                }
+                .accessibilityIdentifier("refresh-card-values-button")
+                .disabled(model.isWorking || !model.hasLibrary)
             }
-            .accessibilityIdentifier("refresh-card-values-button")
-            .disabled(model.isWorking || !model.hasLibrary)
         }
 
         Section("Storage") {
@@ -199,10 +201,12 @@ public struct GrimoraLibraryCommands: Commands {
             }
             .disabled(model?.isWorking != false)
 
-            Button("Refresh Card Values") {
-                Task { await model?.refreshCardValues() }
+            if model?.usesManagedCatalog == false {
+                Button("Refresh Card Values") {
+                    Task { await model?.refreshCardValues() }
+                }
+                .disabled(model?.isWorking != false || model?.hasLibrary != true)
             }
-            .disabled(model?.isWorking != false || model?.hasLibrary != true)
 
             Divider()
 

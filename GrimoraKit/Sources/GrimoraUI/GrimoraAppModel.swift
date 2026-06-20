@@ -45,10 +45,6 @@ public final class GrimoraAppModel: ObservableObject {
     }
   }
 
-  @Published public var activeFilters: Set<FilterPreset> = [.realCards] {
-    didSet { reloadSearch() }
-  }
-
   @Published public var printingDisplayMode: PrintingDisplayMode = .preferred {
     didSet { reloadSearch() }
   }
@@ -106,6 +102,12 @@ public final class GrimoraAppModel: ObservableObject {
   @Published public internal(set) var canUndoListAction = false
   @Published public internal(set) var cloudSyncMode: GrimoraCloudSyncMode = .undecided
   @Published public internal(set) var cloudSyncStatus: CloudSyncStatus = .disabled
+  @Published public internal(set) var cloudSyncRecoverySnapshots: [CloudSyncRecoverySnapshot] = []
+  @Published public internal(set) var cloudSyncPendingChangeCount = 0
+  @Published public internal(set) var cloudSyncLastDownloadAt: Date?
+  @Published public internal(set) var cloudSyncLastUploadAt: Date?
+  @Published public internal(set) var managedCatalogMigrationStatus:
+    ManagedCatalogMigrationStatus?
 
   public var hasLibrary: Bool {
     libraryState == .ready
@@ -211,6 +213,10 @@ public final class GrimoraAppModel: ObservableObject {
     (try? database.cardCount()) ?? 0 > 0
   }
 
+  public var usesManagedCatalog: Bool {
+    database.usesExternalCatalog || managedCatalogMigrationService != nil
+  }
+
   let database: CardDatabase
   let updateService: LibraryUpdateService
   let importer: LibraryImporter
@@ -230,23 +236,30 @@ public final class GrimoraAppModel: ObservableObject {
   let cloudSyncCoordinator: CloudSyncCoordinator
   let canOfferInitialCloudSync: Bool
   let currencyExchangeRateClient: any CurrencyExchangeRateClient
+  let managedCatalogMigrationService: ManagedCatalogMigrationService?
   let cloudSyncDeviceID: String
   let cloudSyncDeviceName: String
+  var cloudSyncSearchSettingsUpdatedAt: Date
   var searchTask: Task<Void, Never>?
   var searchDebounceTask: Task<Void, Never>?
   var plainTextSearchTask: Task<Void, Never>?
   var nextPagePrefetchTask: Task<Void, Never>?
   var searchHistoryRecordTask: Task<Void, Never>?
   var cloudSyncTask: Task<Void, Never>?
+  var cloudSyncMonitorTask: Task<Void, Never>?
+  var cloudSyncPushTask: Task<Void, Never>?
+  var didApplyCloudSyncTestActions = false
   var valueHistoryRefreshTask: Task<Void, Never>?
   var valueHistoryBackgroundTask: Task<Void, Never>?
   var libraryActivityDismissTask: Task<Void, Never>?
-  var cardDataReadHeartbeatTask: Task<Void, Never>?
+  var libraryActivityHeartbeatTask: Task<Void, Never>?
+  var managedCatalogMigrationTask: Task<Void, Never>?
   var searchGeneration: UInt64 = 0
   var currentSearchCacheKey: SearchResultCacheKey?
   var isUpdatingCurrentSort = false
   var isUpdatingSearchInputMode = false
   var isUpdatingSelectedCardSource = false
+  var isApplyingCloudSyncState = false
   var searchResultCache: SearchResultCache
   var searchPageCache: SearchPageCache
   var searchVisibleImageWindowTracker = SearchVisibleImageWindowTracker()
@@ -268,7 +281,10 @@ public final class GrimoraAppModel: ObservableObject {
     initialDefaultSearchConfiguration: GrimoraDefaultSearchConfiguration =
       GrimoraDefaultSearchConfiguration(),
     initialSearchInputMode: SearchInputMode = GrimoraSearchPreferences.defaultSearchInputMode,
-    initialCloudSyncMode: GrimoraCloudSyncMode = .undecided
+    initialCloudSyncMode: GrimoraCloudSyncMode = .undecided,
+    cloudSyncDeviceID: String? = nil,
+    cloudSyncDeviceName: String = "Grimora Device",
+    initialCloudSyncSearchSettingsUpdatedAt: Date? = nil
   ) {
     self.database = environment.database
     self.updateService = environment.updateService
@@ -299,8 +315,12 @@ public final class GrimoraAppModel: ObservableObject {
     self.cloudSyncCoordinator = environment.cloudSyncCoordinator
     self.canOfferInitialCloudSync = environment.canOfferInitialCloudSync
     self.currencyExchangeRateClient = environment.currencyExchangeRateClient
-    self.cloudSyncDeviceID = GrimoraCloudSyncPreferences.deviceID()
-    self.cloudSyncDeviceName = "Grimora Device"
+    self.managedCatalogMigrationService = environment.managedCatalogMigrationService
+    self.managedCatalogMigrationStatus = environment.initialManagedCatalogMigrationStatus
+    self.cloudSyncDeviceID = cloudSyncDeviceID ?? GrimoraCloudSyncPreferences.deviceID()
+    self.cloudSyncDeviceName = cloudSyncDeviceName
+    self.cloudSyncSearchSettingsUpdatedAt =
+      initialCloudSyncSearchSettingsUpdatedAt ?? GrimoraCloudSyncPreferences.searchSettingsUpdatedAt()
     self.cloudSyncMode = initialCloudSyncMode
     self.cloudSyncStatus = initialCloudSyncMode == .enabled ? .preparing : .disabled
     self.searchResultCache = SearchResultCache(
@@ -333,6 +353,8 @@ public final class GrimoraAppModel: ObservableObject {
     searchHistory = environment.searchHistoryStore.load()
     plainTextSearchHistory = environment.plainTextSearchHistoryStore.load()
     reloadCardLists()
+    reloadCloudSyncRecoverySnapshots()
+    reloadCloudSyncDiagnostics()
     refreshLibraryState()
 
     if hasLibrary {
@@ -341,12 +363,47 @@ public final class GrimoraAppModel: ObservableObject {
       startValueHistoryBackgroundImportIfNeeded()
     }
 
-    if autoUpdateChecksEnabled && !hasLocalCardData {
-      Task { await checkForUpdates(manual: false) }
+    let managedCatalogMigrationPreviouslyFailed: Bool
+    if case .failed? = managedCatalogMigrationStatus {
+      managedCatalogMigrationPreviouslyFailed = true
+    } else {
+      managedCatalogMigrationPreviouslyFailed = false
+    }
+
+    if managedCatalogMigrationService != nil {
+      if !managedCatalogMigrationPreviouslyFailed {
+        Task {
+          await self.stageManagedCatalogMigration(manual: false)
+        }
+      }
+    } else if autoUpdateChecksEnabled {
+      Task {
+        await self.checkForUpdates(manual: false)
+        if self.usesManagedCatalog,
+          self.hasLocalCardData,
+          self.updateManifest != nil
+        {
+          await self.importAvailableUpdate(automatic: true)
+        }
+      }
     }
 
     if initialCloudSyncMode == .enabled {
       Task { await startCloudSync() }
     }
+  }
+
+  public static func configuredForCurrentPreferences(
+    environment: GrimoraEnvironment
+  ) -> GrimoraAppModel {
+    let storedInputMode = GrimoraSearchPreferences.searchInputMode()
+    let inputMode =
+      GrimoraSearchPreferences.isPlainTextSearchInterfaceEnabled ? storedInputMode : .scryfall
+    return GrimoraAppModel(
+      environment: environment,
+      initialDefaultSearchConfiguration: GrimoraSearchPreferences.configuration(),
+      initialSearchInputMode: inputMode,
+      initialCloudSyncMode: GrimoraCloudSyncPreferences.resolvedMode()
+    )
   }
 }

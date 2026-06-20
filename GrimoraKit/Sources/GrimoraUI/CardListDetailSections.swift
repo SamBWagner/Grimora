@@ -11,14 +11,19 @@ extension CardListDetailView {
         GrimoraPalette(colorScheme: colorScheme)
     }
 
-    var entryCountText: String {
+    func makeListDetailSnapshot() -> CardListDetailSnapshot {
+        let visibleEntries = model.searchedSelectedListEntries ?? model.selectedListEntries
         let totalCount = model.selectedList?.entryCount ?? model.selectedListEntries.reduce(0) { $0 + $1.quantity }
-        guard isListSearchActive else {
-            return Self.cardCountText(totalCount)
-        }
-
-        let visibleCount = visibleListEntries.reduce(0) { $0 + $1.quantity }
-        return "\(Self.cardCountText(visibleCount)) of \(Self.cardCountText(totalCount))"
+        return CardListDetailSnapshot(
+            entries: visibleEntries,
+            categories: model.selectedListCategories,
+            ruleset: model.selectedList?.ruleset ?? .none,
+            displaySortMode: model.selectedList?.displaySortMode,
+            displaySortDirection: model.selectedList?.displaySortDirection ?? .ascending,
+            collapsedSectionIDs: collapsedListCategoryIDs,
+            isSearchActive: isListSearchActive,
+            totalEntryCount: totalCount
+        )
     }
 
     var selectedListEntryCountText: String {
@@ -26,30 +31,8 @@ extension CardListDetailView {
         return "\(count.formatted()) selected"
     }
 
-    var entrySections: [CardListEntrySection] {
-        let sections = CardListEntrySectionBuilder.sections(
-            entries: visibleListEntries,
-            categories: model.selectedListCategories,
-            ruleset: model.selectedList?.ruleset ?? .none,
-            displaySortMode: model.selectedList?.displaySortMode,
-            displaySortDirection: model.selectedList?.displaySortDirection ?? .ascending
-        )
-        guard isListSearchActive else {
-            return sections
-        }
-        return sections.filter { !$0.entries.isEmpty }
-    }
-
-    var visibleListEntries: [CardListEntryRecord] {
-        model.searchedSelectedListEntries ?? model.selectedListEntries
-    }
-
     var isListSearchActive: Bool {
         !GrimoraSearchHistoryStore.normalizedQuery(model.selectedListSearchText).isEmpty
-    }
-
-    var hasListSearchResults: Bool {
-        !visibleListEntries.isEmpty
     }
 
     var listSearchUnsupportedMessage: String? {
@@ -60,19 +43,8 @@ extension CardListDetailView {
         return model.selectedListSearchUnsupportedMessage
     }
 
-    var visibleListEntryIDs: [CardListEntryRecord.ID] {
-        entrySections.flatMap { section in
-            isSectionCollapsed(section) ? [] : section.entries.map(\.id)
-        }
-    }
-
     func isSectionCollapsed(_ section: CardListEntrySection) -> Bool {
         collapsedListCategoryIDs.contains(section.id)
-    }
-
-    static func cardCountText(_ count: Int) -> String {
-        let noun = count == 1 ? "card" : "cards"
-        return "\(count.formatted()) \(noun)"
     }
 
     func toggleCollapsedSection(_ section: CardListEntrySection) {
@@ -83,8 +55,8 @@ extension CardListDetailView {
         }
     }
 
-    func collapseAllSections() {
-        collapsedListCategoryIDs = Set(entrySections.map(\.id))
+    func collapseAllSections(_ snapshot: CardListDetailSnapshot) {
+        collapsedListCategoryIDs = Set(snapshot.sections.map(\.id))
     }
 
     func unfoldAllSections() {
@@ -105,8 +77,11 @@ extension CardListDetailView {
     }
 
     @ViewBuilder
-    func listEntryView(_ entry: CardListEntryRecord) -> some View {
-        listEntryContent(entry)
+    func listEntryView(
+        _ entry: CardListEntryRecord,
+        displayedEntries: [CardListEntryRecord]
+    ) -> some View {
+        listEntryContent(entry, displayedEntries: displayedEntries)
             .modifier(
                 CardListEntryFrameReportingModifier(
                     isEnabled: isSelectingListEntries,
@@ -130,7 +105,10 @@ extension CardListDetailView {
     }
 
     @ViewBuilder
-    func listEntryContent(_ entry: CardListEntryRecord) -> some View {
+    func listEntryContent(
+        _ entry: CardListEntryRecord,
+        displayedEntries: [CardListEntryRecord]
+    ) -> some View {
         if let card = entry.card {
             let imageQuality = gridZoom.visibleImageQuality
             let dragEntryIDs = bulkTargetEntryIDs(for: entry)
@@ -199,7 +177,8 @@ extension CardListDetailView {
                 CardListVisibleImageCachingModifier(
                     entryID: entry.id,
                     card: card,
-                    quality: imageQuality
+                    quality: imageQuality,
+                    displayedEntries: displayedEntries
                 )
             )
         } else {
@@ -297,7 +276,7 @@ extension CardListDetailView {
     }
 
     func keepLandscapeArtworkEntriesVisible() {
-        landscapeArtworkEntryIDs.formIntersection(Set(visibleListEntryIDs))
+        landscapeArtworkEntryIDs.formIntersection(Set(renderedListEntryIDs))
     }
 
     func isDetailActive(for entry: CardListEntryRecord, card: CardRecord?) -> Bool {

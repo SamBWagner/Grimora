@@ -12,6 +12,7 @@ final class SearchQueryTests: XCTestCase {
     func testScryfallOperatorsCompile() throws {
         XCTAssertNil(SearchQuery.unsupportedReason(for: "is:commander"))
         XCTAssertNil(SearchQuery.unsupportedReason(for: "-is:ub"))
+        XCTAssertNil(SearchQuery.unsupportedReason(for: "is:first-print"))
         XCTAssertNil(SearchQuery.unsupportedReason(for: "pow>3"))
         XCTAssertNil(SearchQuery.unsupportedReason(for: "usd<=1"))
         XCTAssertNil(SearchQuery.unsupportedReason(for: "pt>=5"))
@@ -23,6 +24,23 @@ final class SearchQueryTests: XCTestCase {
         XCTAssertNil(SearchQuery.unsupportedReason(for: "ci>=3"))
         XCTAssertNil(SearchQuery.unsupportedReason(for: "legal:commander"))
         XCTAssertNil(SearchQuery.unsupportedReason(for: "legal:pauper"))
+    }
+
+    func testFirstPrintFlagCompilesAndNegatesUsingStoredReprintMetadata() throws {
+        guard case .success(let firstPrint) = SearchQuery.compile("is:first-print") else {
+            return XCTFail("Expected first-print query to compile")
+        }
+        XCTAssertEqual(firstPrint.whereSQL, "is_reprint = 0")
+
+        guard case .success(let notFirstPrint) = SearchQuery.compile("-is:first-print") else {
+            return XCTFail("Expected negated first-print query to compile")
+        }
+        XCTAssertEqual(notFirstPrint.whereSQL, "NOT (is_reprint = 0)")
+
+        XCTAssertEqual(
+            SearchQuery.unsupportedReason(for: "is:firstprinting")?.token,
+            "is:firstprinting"
+        )
     }
 
     func testBooleanGroupingAndDisplayKeywordsCompile() throws {

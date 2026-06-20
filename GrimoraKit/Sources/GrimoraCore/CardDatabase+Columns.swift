@@ -1,5 +1,39 @@
 import Foundation
 
+private struct CardDerivedMetadataSummary {
+  var printCount: Int
+  var setCount: Int
+  var paperPrintCount: Int
+  var paperSetCount: Int
+  var artistCount: Int
+  var illustrationCount: Int
+}
+
+private struct CardDerivedMetadata {
+  var summary: CardDerivedMetadataSummary
+  var isNewArt: Bool
+  var isNewArtist: Bool
+  var isNewFlavor: Bool
+  var isNewRarity: Bool
+  var isNewFrame: Bool
+  var isNewLanguage: Bool
+
+  func apply(to card: inout CardRecord) {
+    card.printCount = summary.printCount
+    card.setCount = summary.setCount
+    card.paperPrintCount = summary.paperPrintCount
+    card.paperSetCount = summary.paperSetCount
+    card.artistCount = summary.artistCount
+    card.illustrationCount = summary.illustrationCount
+    card.isNewArt = isNewArt
+    card.isNewArtist = isNewArtist
+    card.isNewFlavor = isNewFlavor
+    card.isNewRarity = isNewRarity
+    card.isNewFrame = isNewFrame
+    card.isNewLanguage = isNewLanguage
+  }
+}
+
 extension CardDatabase {
   static let insertCardColumns: [String] = [
     "id", "oracle_id", "name", "name_key", "display_name_key", "lang", "released_at",
@@ -140,34 +174,89 @@ extension CardDatabase {
     return clauses.joined(separator: ",\n    ")
   }
 
-  static func cardsByAddingDerivedMetadata(_ cards: [CardRecord]) -> [CardRecord] {
+  static func cardsByAddingDerivedMetadata(
+    _ cards: [CardRecord],
+    progress: ((CardDatabaseWriteProgress) -> Void)? = nil
+  ) -> [CardRecord] {
+    let totalCards = cards.count
+    progress?(
+      CardDatabaseWriteProgress(
+        phase: .preparingMetadata,
+        completedUnitCount: 0,
+        totalUnitCount: totalCards
+      ))
+
     let groups = Dictionary(grouping: cards) { card in
       card.oracleID ?? card.name.sortKey
     }
 
-    return cards.map { card in
-      guard let group = groups[card.oracleID ?? card.name.sortKey] else {
-        return card
+    var metadataByCardID: [String: CardDerivedMetadata] = [:]
+    metadataByCardID.reserveCapacity(cards.count)
+    var processedCards = 0
+
+    for group in groups.values {
+      for (cardID, metadata) in derivedMetadataByCardID(for: group) {
+        metadataByCardID[cardID] = metadata
       }
 
-      var updated = card
-      let paperPrints = group.filter { containsValue("paper", in: $0.games) }
-      updated.printCount = group.count
-      updated.setCount = Set(group.map { $0.setCode.lowercased() }).count
-      updated.paperPrintCount = paperPrints.count
-      updated.paperSetCount = Set(paperPrints.map { $0.setCode.lowercased() }).count
-      updated.artistCount = Set(group.compactMap { $0.artist?.sortKey }).count
-      updated.illustrationCount = Set(group.compactMap(\.illustrationID)).count
+      processedCards += group.count
+      if shouldReportCardWriteProgress(writtenCards: processedCards, totalCards: totalCards) {
+        progress?(
+          CardDatabaseWriteProgress(
+            phase: .preparingMetadata,
+            completedUnitCount: processedCards,
+            totalUnitCount: totalCards
+          ))
+      }
+    }
 
-      let earlierCards = group.filter { isEarlier($0, than: card) }
-      updated.isNewArt = isFirstNonEmpty(card.illustrationID, before: earlierCards.map(\.illustrationID))
-      updated.isNewArtist = isFirstNonEmpty(card.artist?.sortKey, before: earlierCards.map { $0.artist?.sortKey })
-      updated.isNewFlavor = isFirstNonEmpty(card.flavorText?.sortKey, before: earlierCards.map { $0.flavorText?.sortKey })
-      updated.isNewRarity = isFirstNonEmpty(card.rarity.sortKey, before: earlierCards.map { $0.rarity.sortKey })
-      updated.isNewFrame = isFirstNonEmpty(card.frame?.sortKey, before: earlierCards.map { $0.frame?.sortKey })
-      updated.isNewLanguage = isFirstNonEmpty(card.language?.sortKey, before: earlierCards.map { $0.language?.sortKey })
+    return cards.map { card in
+      var updated = card
+      metadataByCardID[card.id]?.apply(to: &updated)
       return updated
     }
+  }
+
+  private static func derivedMetadataByCardID(for group: [CardRecord]) -> [String: CardDerivedMetadata] {
+    let paperPrints = group.filter { containsValue("paper", in: $0.games) }
+    let summary = CardDerivedMetadataSummary(
+      printCount: group.count,
+      setCount: Set(group.map { $0.setCode.lowercased() }).count,
+      paperPrintCount: paperPrints.count,
+      paperSetCount: Set(paperPrints.map { $0.setCode.lowercased() }).count,
+      artistCount: Set(group.compactMap { $0.artist?.sortKey }).count,
+      illustrationCount: Set(group.compactMap(\.illustrationID)).count
+    )
+
+    var seenIllustrations = Set<String>()
+    var seenArtists = Set<String>()
+    var seenFlavorTexts = Set<String>()
+    var seenRarities = Set<String>()
+    var seenFrames = Set<String>()
+    var seenLanguages = Set<String>()
+    var metadataByCardID: [String: CardDerivedMetadata] = [:]
+    metadataByCardID.reserveCapacity(group.count)
+
+    for card in group.sorted(by: isEarlier) {
+      metadataByCardID[card.id] = CardDerivedMetadata(
+        summary: summary,
+        isNewArt: isFirstNonEmpty(card.illustrationID, before: seenIllustrations),
+        isNewArtist: isFirstNonEmpty(card.artist?.sortKey, before: seenArtists),
+        isNewFlavor: isFirstNonEmpty(card.flavorText?.sortKey, before: seenFlavorTexts),
+        isNewRarity: isFirstNonEmpty(card.rarity.sortKey, before: seenRarities),
+        isNewFrame: isFirstNonEmpty(card.frame?.sortKey, before: seenFrames),
+        isNewLanguage: isFirstNonEmpty(card.language?.sortKey, before: seenLanguages)
+      )
+
+      insertNonEmpty(card.illustrationID, into: &seenIllustrations)
+      insertNonEmpty(card.artist?.sortKey, into: &seenArtists)
+      insertNonEmpty(card.flavorText?.sortKey, into: &seenFlavorTexts)
+      insertNonEmpty(card.rarity.sortKey, into: &seenRarities)
+      insertNonEmpty(card.frame?.sortKey, into: &seenFrames)
+      insertNonEmpty(card.language?.sortKey, into: &seenLanguages)
+    }
+
+    return metadataByCardID
   }
 
   static func isEarlier(_ lhs: CardRecord, than rhs: CardRecord) -> Bool {
@@ -199,6 +288,20 @@ extension CardDatabase {
       return false
     }
     return !previousValues.compactMap { $0 }.contains(value)
+  }
+
+  static func isFirstNonEmpty(_ value: String?, before previousValues: Set<String>) -> Bool {
+    guard let value, !value.isEmpty else {
+      return false
+    }
+    return !previousValues.contains(value)
+  }
+
+  static func insertNonEmpty(_ value: String?, into values: inout Set<String>) {
+    guard let value, !value.isEmpty else {
+      return
+    }
+    values.insert(value)
   }
 
   static func joinedTypeText(_ card: CardRecord) -> String {

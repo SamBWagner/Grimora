@@ -35,35 +35,54 @@ final class VisionNavigationUITests: XCTestCase {
     }
 
     @MainActor
-    func testVisionSearchOptionsFilterSortAndOpenDetail() throws {
+    func testVisionSearchOptionsSortAndOpenDetailWithoutLegacyFilters() throws {
         let app = try launchSeededApp()
 
         XCTAssertTrue(firstElement(app, identifier: "open-card-beta-mage").waitForExistence(timeout: 8))
         let total = app.staticTexts["search-results-total"]
         XCTAssertTrue(total.waitForExistence(timeout: 3))
-        XCTAssertTrue(waitForValue(of: total, toEqual: "2 cards"))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+        XCTAssertTrue(firstElement(app, identifier: "open-card-token-mage").exists)
         XCTAssertTrue(card("beta-mage", appearsBefore: "alpha-mage", in: app))
 
         try activateMenuItem(app: app, menuIdentifier: "search-options-menu", itemIdentifier: "search-view-options-menu")
         activate(firstElement(app, identifier: "search-sort-direction-option-descending"))
         XCTAssertTrue(card("alpha-mage", appearsBefore: "beta-mage", in: app))
 
-        try activateMenuItem(app: app, menuIdentifier: "search-options-menu", itemIdentifier: "search-filter-menu")
-        activate(firstElement(app, identifier: "filter-real-cards"))
-        XCTAssertTrue(firstElement(app, identifier: "open-card-token-mage").waitForExistence(timeout: 3))
-        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+        activate(firstElement(app, identifier: "search-options-menu"))
+        XCTAssertTrue(firstElement(app, identifier: "search-view-options-menu").waitForExistence(timeout: 3))
+        XCTAssertFalse(firstElement(app, identifier: "search-filter-menu").exists)
+        XCTAssertFalse(firstElement(app, identifier: "filter-universes-beyond").exists)
+        XCTAssertFalse(firstElement(app, identifier: "filter-alchemy").exists)
+        XCTAssertFalse(firstElement(app, identifier: "filter-real-cards").exists)
 
-        activate(firstElement(app, identifier: "open-card-beta-mage"))
-        XCTAssertTrue(firstElement(app, identifier: "card-detail").waitForExistence(timeout: 5))
-        XCTAssertTrue(waitForHittable(firstElement(app, identifier: "open-card-alpha-mage")))
-        XCTAssertTrue(firstElement(app, identifier: "card-detail-add-to-list-button").waitForExistence(timeout: 3))
-        XCTAssertTrue(firstElement(app, identifier: "card-share-button").exists)
-        XCTAssertTrue(firstElement(app, identifier: "card-value-section").exists)
-        XCTAssertTrue(firstElement(app, identifier: "card-printings").exists)
-        attachScreenshot(app, named: "Vision Card Detail")
+        app.terminate()
+        let detailApp = try launchSeededApp()
+        let betaCard = firstElement(detailApp, identifier: "open-card-beta-mage")
+        XCTAssertTrue(betaCard.waitForExistence(timeout: 8))
+        activate(betaCard)
+        XCTAssertTrue(firstElement(detailApp, identifier: "card-detail").waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForHittable(firstElement(detailApp, identifier: "open-card-alpha-mage")))
+        XCTAssertTrue(firstElement(detailApp, identifier: "card-detail-add-to-list-button").waitForExistence(timeout: 3))
+        XCTAssertTrue(firstElement(detailApp, identifier: "card-share-button").exists)
+        XCTAssertTrue(firstElement(detailApp, identifier: "card-value-section").exists)
+        XCTAssertTrue(firstElement(detailApp, identifier: "card-printings").exists)
+        attachScreenshot(detailApp, named: "Vision Card Detail")
 
-        activate(firstElement(app, identifier: "card-detail-close-button"))
-        XCTAssertTrue(waitForNonExistence(of: firstElement(app, identifier: "card-detail")))
+        activate(firstElement(detailApp, identifier: "card-detail-close-button"))
+        XCTAssertTrue(waitForNonExistence(of: firstElement(detailApp, identifier: "card-detail")))
+    }
+
+    @MainActor
+    func testVisionSearchSupportsFirstPrintSyntax() throws {
+        let app = try launchSeededApp(defaultSearchText: "is:first-print")
+        let total = app.staticTexts["search-results-total"]
+
+        XCTAssertTrue(total.waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "2 cards"))
+        XCTAssertTrue(firstElement(app, identifier: "open-card-alpha-mage").exists)
+        XCTAssertTrue(firstElement(app, identifier: "open-card-token-mage").exists)
+        XCTAssertFalse(firstElement(app, identifier: "open-card-beta-mage").exists)
     }
 
     @MainActor
@@ -201,6 +220,16 @@ final class VisionNavigationUITests: XCTestCase {
         try moveFirstListEntry(app: app, fromSectionNamed: "Mana", toCategoryNamed: "Uncategorized")
         XCTAssertTrue(firstElement(app, identifier: "list-category-section-Uncategorized").waitForExistence(timeout: 3))
 
+        let collapseButton = firstElement(app, identifier: "toggle-list-category-collapse-Mana")
+        XCTAssertTrue(collapseButton.waitForExistence(timeout: 3))
+        XCTAssertGreaterThanOrEqual(collapseButton.frame.width, 43)
+        XCTAssertGreaterThanOrEqual(collapseButton.frame.height, 43)
+        XCTAssertTrue(waitForValue(of: collapseButton, toEqual: "Expanded"))
+        activate(collapseButton)
+        XCTAssertTrue(waitForValue(of: collapseButton, toEqual: "Collapsed"))
+        activate(collapseButton)
+        XCTAssertTrue(waitForValue(of: collapseButton, toEqual: "Expanded"))
+
         try activateMenuItem(
             app: app,
             menuIdentifier: "list-detail-actions-menu",
@@ -247,11 +276,11 @@ final class VisionNavigationUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchSeededApp() throws -> XCUIApplication {
+    private func launchSeededApp(defaultSearchText: String = "mage") throws -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments += [
             "-\(DefaultSearchPreferenceKeys.text)",
-            "mage",
+            defaultSearchText,
             "-\(DefaultSearchPreferenceKeys.alwaysIncludedText)",
             "",
             "-\(DefaultSearchPreferenceKeys.sortMode)",
@@ -264,6 +293,9 @@ final class VisionNavigationUITests: XCTestCase {
             "disabled"
         ]
         let fixtureData = try JSONEncoder().encode(Self.fixtureCards)
+        app.launchEnvironment["GRIMORA_TEST_DATABASE_PATH"] =
+            temporaryDirectory.appendingPathComponent("vision-search-fixture.sqlite").path
+        app.launchEnvironment["GRIMORA_TEST_RESET_DATABASE"] = "1"
         app.launchEnvironment["GRIMORA_TEST_FIXTURE_CARDS_JSON"] = String(decoding: fixtureData, as: Unicode.UTF8.self)
         app.launchEnvironment["GRIMORA_TEST_IMAGE_DIR"] = temporaryDirectory.appendingPathComponent("Images", isDirectory: true).path
         app.launchEnvironment["GRIMORA_TEST_USER_DEFAULTS_SUITE"] = "GrimoraVisionUITests-\(UUID().uuidString)"
@@ -629,7 +661,8 @@ private extension VisionNavigationUITests {
                 oracleText: "Draw two cards.",
                 artist: "Vision Artist",
                 priceUSD: 4.5,
-                isRealCard: true
+                isRealCard: true,
+                isReprint: true
             ),
             mageCard(
                 id: "alpha-mage",
@@ -671,7 +704,8 @@ private extension VisionNavigationUITests {
         oracleText: String,
         artist: String,
         priceUSD: Double?,
-        isRealCard: Bool
+        isRealCard: Bool,
+        isReprint: Bool = false
     ) -> CardRecord {
         CardRecord(
             id: id,
@@ -697,7 +731,8 @@ private extension VisionNavigationUITests {
             oracleText: oracleText,
             games: ["paper"],
             finishes: ["nonfoil"],
-            isRealCard: isRealCard
+            isRealCard: isRealCard,
+            isReprint: isReprint
         )
     }
 }

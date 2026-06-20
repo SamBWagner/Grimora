@@ -26,7 +26,7 @@ final class LibraryImporterTests: XCTestCase {
         XCTAssertEqual(try database.metadataValue(forKey: MetadataKey.defaultCardsUpdatedAt.rawValue), manifest.updatedAt)
         XCTAssertEqual(try database.metadataValue(forKey: MetadataKey.requiredImagesCached.rawValue), "true")
 
-        let response = try database.search(CardSearchRequest(text: "dawn", activeFilters: []))
+        let response = try database.search(CardSearchRequest(text: "dawn"))
         guard case .results(let cards, _) = response else {
             return XCTFail("Expected imported cards")
         }
@@ -134,7 +134,7 @@ final class LibraryImporterTests: XCTestCase {
         let calls = await resolver.recordedCalls()
         XCTAssertTrue(calls.isEmpty)
 
-        let response = try database.search(CardSearchRequest(text: "forest", activeFilters: []))
+        let response = try database.search(CardSearchRequest(text: "forest"))
         guard case .results(let cards, _) = response else {
             return XCTFail("Expected imported cards")
         }
@@ -161,10 +161,22 @@ final class LibraryImporterTests: XCTestCase {
         XCTAssertTrue(recording.sawSearchableCardData)
         XCTAssertTrue(recording.events.contains(.decodingCardData))
         XCTAssertTrue(recording.events.contains(.storingSearchIndex(cardCount: 2)))
+        XCTAssertTrue(recording.events.contains(.storingSearchIndexProgress(
+            CardDatabaseWriteProgress(writtenCards: 1, totalCards: 2)
+        )))
+        XCTAssertTrue(recording.events.contains(.storingSearchIndexProgress(
+            CardDatabaseWriteProgress(writtenCards: 2, totalCards: 2)
+        )))
         XCTAssertTrue(recording.events.contains(.cardDataReady(cardCount: 2)))
+        XCTAssertLessThan(
+            try XCTUnwrap(recording.events.firstIndex(of: .storingSearchIndexProgress(
+                CardDatabaseWriteProgress(writtenCards: 2, totalCards: 2)
+            ))),
+            try XCTUnwrap(recording.events.firstIndex(of: .cardDataReady(cardCount: 2)))
+        )
         XCTAssertEqual(summary.importedCards, 2)
 
-        let response = try database.search(CardSearchRequest(text: "forest", activeFilters: []))
+        let response = try database.search(CardSearchRequest(text: "forest"))
         guard case .results(let cards, _) = response else {
             return XCTFail("Expected searchable card data")
         }
@@ -178,7 +190,6 @@ final class LibraryImporterTests: XCTestCase {
     ) throws -> [CardRecord] {
         let response = try database.search(CardSearchRequest(
             text: text,
-            activeFilters: [],
             printingDisplayMode: mode,
             limit: 20
         ))
@@ -381,7 +392,7 @@ private actor ImportProgressRecorder {
             guard try database.cardCount() == 2 else {
                 return
             }
-            let response = try database.search(CardSearchRequest(text: "forest", activeFilters: []))
+            let response = try database.search(CardSearchRequest(text: "forest"))
             guard case .results(let cards, _) = response,
                   cards.first?.name == "JSON Forest",
                   cards.first?.normalImagePath == nil else {

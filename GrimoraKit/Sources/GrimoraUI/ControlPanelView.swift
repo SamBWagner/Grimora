@@ -93,7 +93,9 @@ struct ControlPanelView: View {
                 )
             }
 
-            if let manifest = model.updateManifest {
+            if let status = model.managedCatalogMigrationStatus {
+                ManagedCatalogMigrationCallout(status: status, palette: palette)
+            } else if let manifest = model.updateManifest {
                 UpdateCalloutView(manifest: manifest, palette: palette)
             }
 
@@ -126,6 +128,79 @@ struct ControlPanelView: View {
 
     private var palette: GrimoraPalette {
         GrimoraPalette(colorScheme: colorScheme)
+    }
+}
+
+private struct ManagedCatalogMigrationCallout: View {
+    @EnvironmentObject private var model: GrimoraAppModel
+
+    var status: ManagedCatalogMigrationStatus
+    var palette: GrimoraPalette
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(palette.primaryText.color)
+
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(palette.secondaryText.color)
+
+            if case .failed = status {
+                Button("Retry Catalog Download") {
+                    Task { await model.stageManagedCatalogMigration() }
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.isManagedCatalogMigrationInProgress)
+                .accessibilityIdentifier("retry-catalog-migration-button")
+            }
+        }
+        .padding(10)
+        .background(palette.cardSurface.color, in: RoundedRectangle(cornerRadius: 10))
+        .accessibilityIdentifier("catalog-migration-callout")
+    }
+
+    private var title: String {
+        switch status {
+        case .checking, .downloading, .validating:
+            "Preparing Grimora 1.2"
+        case .restartRequired:
+            "Upgrade Ready"
+        case .failed:
+            "Upgrade Paused"
+        }
+    }
+
+    private var symbol: String {
+        switch status {
+        case .checking, .downloading, .validating:
+            "arrow.down.circle"
+        case .restartRequired:
+            "arrow.clockwise.circle"
+        case .failed:
+            "exclamationmark.triangle"
+        }
+    }
+
+    private var message: String {
+        switch status {
+        case .checking:
+            return "Checking for the managed card catalog. Your current library remains available."
+        case .downloading(let completedBytes, let totalBytes):
+            if let totalBytes, totalBytes > 0 {
+                let completed = ByteCountFormatter.string(fromByteCount: completedBytes, countStyle: .file)
+                let total = ByteCountFormatter.string(fromByteCount: totalBytes, countStyle: .file)
+                return "Downloading \(completed) of \(total). You can keep using Grimora."
+            }
+            return "Downloading the managed catalog. You can keep using Grimora."
+        case .validating:
+            return "Checking the downloaded catalog before it can be activated."
+        case .restartRequired:
+            return "Quit and reopen Grimora to finish upgrading. Your lists remain available until then."
+        case .failed(let message):
+            return message
+        }
     }
 }
 

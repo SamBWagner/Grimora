@@ -44,12 +44,14 @@ struct CardListCategorySectionView: View {
 
             Button(action: onToggleCollapsed) {
                 Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                    .frame(width: 26, height: 26)
+                    .frame(width: collapseControlSize, height: collapseControlSize)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(palette.secondaryText.color)
             .help(isCollapsed ? "Show Category" : "Collapse Category")
             .accessibilityLabel(isCollapsed ? "Show Category" : "Collapse Category")
+            .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
             .accessibilityIdentifier("toggle-list-category-collapse-\(section.title)")
 
             if let category = section.category {
@@ -76,6 +78,14 @@ struct CardListCategorySectionView: View {
             return true
         }
         .grimoraDropSuccessFeedback(trigger: dropFeedbackTrigger)
+        #endif
+    }
+
+    private var collapseControlSize: CGFloat {
+        #if os(macOS)
+        26
+        #else
+        44
         #endif
     }
 }

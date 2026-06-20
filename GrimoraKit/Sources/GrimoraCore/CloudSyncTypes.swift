@@ -2,7 +2,15 @@ import Foundation
 
 public enum GrimoraCloudSyncConstants {
   public static let containerIdentifier = "iCloud.com.samwagner.Grimora"
-  public static let currentSyncSchemaVersion = 1
+  public static let currentSyncSchemaVersion = 4
+}
+
+public enum CloudSyncTransportEvent: Equatable, Sendable {
+  case remoteChangesAvailable
+  case accountChanged(CloudSyncAccountChange)
+  case didDownload(Date)
+  case didUpload(Date)
+  case failed(String)
 }
 
 public enum CloudSyncStatus: Equatable, Sendable {
@@ -12,10 +20,23 @@ public enum CloudSyncStatus: Equatable, Sendable {
   case ready
   case appliedRemoteSnapshot(DeviceSyncSnapshot)
   case syncing
-  case waitingForDatabaseUpdate(LibraryIdentity)
   case needsAppUpdate(requiredSyncSchemaVersion: Int)
   case resolving([DeviceSyncSnapshot])
+  case accountChangeRequiresResolution(CloudSyncAccountChange)
   case failed(String)
+}
+
+public struct CloudSyncAccountChange: Equatable, Sendable {
+  public var previousAccountIdentifier: String?
+  public var currentAccountIdentifier: String?
+
+  public init(
+    previousAccountIdentifier: String?,
+    currentAccountIdentifier: String?
+  ) {
+    self.previousAccountIdentifier = previousAccountIdentifier
+    self.currentAccountIdentifier = currentAccountIdentifier
+  }
 }
 
 public struct LibraryIdentity: Codable, Equatable, Sendable {
@@ -25,6 +46,7 @@ public struct LibraryIdentity: Codable, Equatable, Sendable {
   public var defaultCardsSize: Int
   public var searchSchemaVersion: String
   public var syncSchemaVersion: Int
+  public var catalogSchemaVersion: Int?
 
   public init(
     defaultCardsUpdatedAt: String? = nil,
@@ -32,7 +54,8 @@ public struct LibraryIdentity: Codable, Equatable, Sendable {
     defaultCardsName: String = "Default Cards",
     defaultCardsSize: Int = 0,
     searchSchemaVersion: String = CardDatabase.currentSearchSchemaVersion,
-    syncSchemaVersion: Int = GrimoraCloudSyncConstants.currentSyncSchemaVersion
+    syncSchemaVersion: Int = GrimoraCloudSyncConstants.currentSyncSchemaVersion,
+    catalogSchemaVersion: Int? = nil
   ) {
     self.defaultCardsUpdatedAt = defaultCardsUpdatedAt
     self.defaultCardsDownloadURI = defaultCardsDownloadURI
@@ -40,6 +63,7 @@ public struct LibraryIdentity: Codable, Equatable, Sendable {
     self.defaultCardsSize = defaultCardsSize
     self.searchSchemaVersion = searchSchemaVersion
     self.syncSchemaVersion = syncSchemaVersion
+    self.catalogSchemaVersion = catalogSchemaVersion
   }
 
   public var requiresNewerApp: Bool {
@@ -54,14 +78,7 @@ public struct LibraryIdentity: Codable, Equatable, Sendable {
     if requiresNewerApp {
       return .needsAppUpdate(requiredSyncSchemaVersion: syncSchemaVersion)
     }
-
-    guard defaultCardsUpdatedAt != localIdentity.defaultCardsUpdatedAt
-      || searchSchemaVersion != localIdentity.searchSchemaVersion
-    else {
-      return .satisfied
-    }
-
-    return .needsDatabaseUpdate(self)
+    return .satisfied
   }
 
   public var manifest: BulkDataManifest? {
@@ -84,7 +101,6 @@ public struct LibraryIdentity: Codable, Equatable, Sendable {
 
 public enum LibraryIdentityRequirement: Equatable, Sendable {
   case satisfied
-  case needsDatabaseUpdate(LibraryIdentity)
   case needsAppUpdate(requiredSyncSchemaVersion: Int)
 }
 
@@ -94,6 +110,9 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
   public var defaultSortModeRawValue: String
   public var defaultSortDirectionRawValue: String
   public var searchInputModeRawValue: String
+  public var displayCurrencyRawValue: String
+  public var searchHistory: [String]
+  public var plainTextSearchHistory: [String]
   public var updatedAt: Date
 
   public init(
@@ -102,6 +121,9 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
     defaultSortModeRawValue: String = SortMode.releaseDate.rawValue,
     defaultSortDirectionRawValue: String = "ascending",
     searchInputModeRawValue: String = "scryfall",
+    displayCurrencyRawValue: String = "USD",
+    searchHistory: [String] = [],
+    plainTextSearchHistory: [String] = [],
     updatedAt: Date = Date()
   ) {
     self.defaultSearchText = defaultSearchText
@@ -109,7 +131,82 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
     self.defaultSortModeRawValue = defaultSortModeRawValue
     self.defaultSortDirectionRawValue = defaultSortDirectionRawValue
     self.searchInputModeRawValue = searchInputModeRawValue
+    self.displayCurrencyRawValue = displayCurrencyRawValue
+    self.searchHistory = Self.normalizedHistory(searchHistory)
+    self.plainTextSearchHistory = Self.normalizedHistory(plainTextSearchHistory)
     self.updatedAt = updatedAt
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case defaultSearchText
+    case alwaysIncludedSearchText
+    case defaultSortModeRawValue
+    case defaultSortDirectionRawValue
+    case searchInputModeRawValue
+    case displayCurrencyRawValue
+    case searchHistory
+    case plainTextSearchHistory
+    case updatedAt
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    defaultSearchText = try container.decodeIfPresent(String.self, forKey: .defaultSearchText) ?? ""
+    alwaysIncludedSearchText =
+      try container.decodeIfPresent(String.self, forKey: .alwaysIncludedSearchText) ?? ""
+    defaultSortModeRawValue =
+      try container.decodeIfPresent(String.self, forKey: .defaultSortModeRawValue)
+      ?? SortMode.releaseDate.rawValue
+    defaultSortDirectionRawValue =
+      try container.decodeIfPresent(String.self, forKey: .defaultSortDirectionRawValue)
+      ?? "ascending"
+    searchInputModeRawValue =
+      try container.decodeIfPresent(String.self, forKey: .searchInputModeRawValue)
+      ?? "scryfall"
+    displayCurrencyRawValue =
+      try container.decodeIfPresent(String.self, forKey: .displayCurrencyRawValue)
+      ?? "USD"
+    searchHistory = Self.normalizedHistory(
+      try container.decodeIfPresent([String].self, forKey: .searchHistory) ?? []
+    )
+    plainTextSearchHistory = Self.normalizedHistory(
+      try container.decodeIfPresent([String].self, forKey: .plainTextSearchHistory) ?? []
+    )
+    updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+  }
+
+  public static func merged(_ settings: [SyncSearchSettings]) -> SyncSearchSettings {
+    guard let newest = settings.max(by: { $0.updatedAt < $1.updatedAt }) else {
+      return SyncSearchSettings(updatedAt: .distantPast)
+    }
+
+    var result = newest
+    result.searchHistory = mergedHistory(settings.map { ($0.searchHistory, $0.updatedAt) })
+    result.plainTextSearchHistory = mergedHistory(
+      settings.map { ($0.plainTextSearchHistory, $0.updatedAt) }
+    )
+    return result
+  }
+
+  private static func mergedHistory(_ candidates: [([String], Date)]) -> [String] {
+    var history: [String] = []
+    for candidate in candidates.sorted(by: { $0.1 > $1.1 }) {
+      for query in candidate.0 {
+        let normalized = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty, !history.contains(normalized) else {
+          continue
+        }
+        history.append(normalized)
+        if history.count == 10 {
+          return history
+        }
+      }
+    }
+    return history
+  }
+
+  private static func normalizedHistory(_ history: [String]) -> [String] {
+    mergedHistory([(history, .distantPast)])
   }
 }
 
@@ -120,6 +217,8 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
   public var libraryIdentity: LibraryIdentity
   public var searchSettings: SyncSearchSettings
   public var listSnapshot: CardListLibrarySnapshot
+  public var deletedLists: [SyncListDeletion]
+  public var deletedEntities: [SyncTombstone]
 
   public init(
     id: String,
@@ -127,7 +226,9 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
     capturedAt: Date = Date(),
     libraryIdentity: LibraryIdentity,
     searchSettings: SyncSearchSettings,
-    listSnapshot: CardListLibrarySnapshot
+    listSnapshot: CardListLibrarySnapshot,
+    deletedLists: [SyncListDeletion] = [],
+    deletedEntities: [SyncTombstone] = []
   ) {
     self.id = id
     self.deviceName = deviceName
@@ -135,6 +236,32 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
     self.libraryIdentity = libraryIdentity
     self.searchSettings = searchSettings
     self.listSnapshot = listSnapshot
+    self.deletedLists = deletedLists
+    self.deletedEntities = deletedEntities
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case id
+    case deviceName
+    case capturedAt
+    case libraryIdentity
+    case searchSettings
+    case listSnapshot
+    case deletedLists
+    case deletedEntities
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    deviceName = try container.decode(String.self, forKey: .deviceName)
+    capturedAt = try container.decode(Date.self, forKey: .capturedAt)
+    libraryIdentity = try container.decode(LibraryIdentity.self, forKey: .libraryIdentity)
+    searchSettings = try container.decode(SyncSearchSettings.self, forKey: .searchSettings)
+    listSnapshot = try container.decode(CardListLibrarySnapshot.self, forKey: .listSnapshot)
+    deletedLists = try container.decodeIfPresent([SyncListDeletion].self, forKey: .deletedLists) ?? []
+    deletedEntities =
+      try container.decodeIfPresent([SyncTombstone].self, forKey: .deletedEntities) ?? []
   }
 
   public var listCount: Int {
@@ -149,6 +276,8 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
     hasNoUserListContent
       && searchSettings.defaultSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && searchSettings.alwaysIncludedSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      && searchSettings.searchHistory.isEmpty
+      && searchSettings.plainTextSearchHistory.isEmpty
   }
 
   private var hasNoUserListContent: Bool {
@@ -169,6 +298,337 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
     default:
       return false
     }
+  }
+}
+
+public struct SyncListDeletion: Codable, Equatable, Identifiable, Sendable {
+  public var id: CardListRecord.ID
+  public var deletedAt: Date
+
+  public init(id: CardListRecord.ID, deletedAt: Date) {
+    self.id = id
+    self.deletedAt = deletedAt
+  }
+}
+
+public struct CloudSyncRecoverySnapshot: Codable, Equatable, Identifiable, Sendable {
+  public var id: String
+  public var createdAt: Date
+  public var reason: String
+  public var libraryIdentity: LibraryIdentity
+  public var listSnapshot: CardListLibrarySnapshot
+  public var deletedLists: [SyncListDeletion]
+
+  public init(
+    id: String = UUID().uuidString.lowercased(),
+    createdAt: Date = Date(),
+    reason: String,
+    libraryIdentity: LibraryIdentity,
+    listSnapshot: CardListLibrarySnapshot,
+    deletedLists: [SyncListDeletion]
+  ) {
+    self.id = id
+    self.createdAt = createdAt
+    self.reason = reason
+    self.libraryIdentity = libraryIdentity
+    self.listSnapshot = listSnapshot
+    self.deletedLists = deletedLists
+  }
+}
+
+public enum CloudSyncRecoveryPolicy {
+  public static let minimumRevisionCount = 20
+  public static let retentionDuration: TimeInterval = 30 * 24 * 60 * 60
+
+  public static func retained(
+    _ snapshots: [CloudSyncRecoverySnapshot],
+    now: Date = Date()
+  ) -> [CloudSyncRecoverySnapshot] {
+    var uniqueByID: [CloudSyncRecoverySnapshot.ID: CloudSyncRecoverySnapshot] = [:]
+    for snapshot in snapshots {
+      if let current = uniqueByID[snapshot.id], current.createdAt >= snapshot.createdAt {
+        continue
+      }
+      uniqueByID[snapshot.id] = snapshot
+    }
+
+    let sorted = uniqueByID.values.sorted {
+      if $0.createdAt != $1.createdAt {
+        return $0.createdAt > $1.createdAt
+      }
+      return $0.id > $1.id
+    }
+    let cutoff = now.addingTimeInterval(-retentionDuration)
+    return sorted.enumerated().compactMap { index, snapshot in
+      index < minimumRevisionCount || snapshot.createdAt >= cutoff ? snapshot : nil
+    }
+  }
+}
+
+public enum CloudSyncSnapshotValidationError: Error, Equatable, Sendable {
+  case duplicateListID(String)
+  case duplicateCategoryID(String)
+  case duplicateEntryID(String)
+  case missingListForCategory(categoryID: String, listID: String)
+  case missingListForEntry(entryID: String, listID: String)
+  case missingCategoryForEntry(entryID: String, categoryID: String)
+  case categoryListMismatch(entryID: String, categoryID: String)
+}
+
+extension DeviceSyncSnapshot {
+  public func validateForApplication() throws {
+    try listSnapshot.validateForApplication()
+  }
+}
+
+extension CardListLibrarySnapshot {
+  public func validateForApplication() throws {
+    var listIDs: Set<CardListRecord.ID> = []
+    for list in lists where !listIDs.insert(list.id).inserted {
+      throw CloudSyncSnapshotValidationError.duplicateListID(list.id)
+    }
+
+    var categoriesByID: [CardListCategoryRecord.ID: CardListCategoryRecord] = [:]
+    for category in categories {
+      guard categoriesByID[category.id] == nil else {
+        throw CloudSyncSnapshotValidationError.duplicateCategoryID(category.id)
+      }
+      guard listIDs.contains(category.listID) else {
+        throw CloudSyncSnapshotValidationError.missingListForCategory(
+          categoryID: category.id,
+          listID: category.listID
+        )
+      }
+      categoriesByID[category.id] = category
+    }
+
+    var entryIDs: Set<CardListEntryRecord.ID> = []
+    for entry in entries {
+      guard entryIDs.insert(entry.id).inserted else {
+        throw CloudSyncSnapshotValidationError.duplicateEntryID(entry.id)
+      }
+      guard listIDs.contains(entry.listID) else {
+        throw CloudSyncSnapshotValidationError.missingListForEntry(
+          entryID: entry.id,
+          listID: entry.listID
+        )
+      }
+      guard let categoryID = entry.categoryID else {
+        continue
+      }
+      guard let category = categoriesByID[categoryID] else {
+        throw CloudSyncSnapshotValidationError.missingCategoryForEntry(
+          entryID: entry.id,
+          categoryID: categoryID
+        )
+      }
+      guard category.listID == entry.listID else {
+        throw CloudSyncSnapshotValidationError.categoryListMismatch(
+          entryID: entry.id,
+          categoryID: categoryID
+        )
+      }
+    }
+  }
+}
+
+extension DeviceSyncSnapshot {
+  public static func merged(
+    snapshots: [DeviceSyncSnapshot],
+    deviceID: String,
+    deviceName: String,
+    libraryIdentity: LibraryIdentity,
+    capturedAt: Date = Date()
+  ) -> DeviceSyncSnapshot {
+    let candidates = snapshots.sorted { lhs, rhs in
+      if lhs.capturedAt != rhs.capturedAt {
+        return lhs.capturedAt < rhs.capturedAt
+      }
+      return lhs.id < rhs.id
+    }
+
+    var winningLists: [CardListRecord.ID: (snapshot: DeviceSyncSnapshot, list: CardListRecord)] = [:]
+    var winningDeletions: [CardListRecord.ID: (snapshot: DeviceSyncSnapshot, deletion: SyncListDeletion)] = [:]
+
+    for snapshot in candidates {
+      for list in snapshot.listSnapshot.lists {
+        let candidate = (snapshot: snapshot, list: list)
+        if let current = winningLists[list.id], !isNewer(candidate, than: current) {
+          continue
+        }
+        winningLists[list.id] = candidate
+      }
+
+      for deletion in snapshot.deletedLists {
+        let candidate = (snapshot: snapshot, deletion: deletion)
+        if let current = winningDeletions[deletion.id], !isNewer(candidate, than: current) {
+          continue
+        }
+        winningDeletions[deletion.id] = candidate
+      }
+    }
+
+    var lists: [CardListRecord] = []
+    var categories: [CardListCategoryRecord] = []
+    var entries: [CardListEntryRecord] = []
+    var deletedLists: [SyncListDeletion] = []
+    let allListIDs = Set(winningLists.keys).union(winningDeletions.keys)
+
+    for listID in allListIDs.sorted() {
+      let listCandidate = winningLists[listID]
+      let deletionCandidate = winningDeletions[listID]
+
+      if let deletionCandidate {
+        guard let listCandidate else {
+          deletedLists.append(deletionCandidate.deletion)
+          continue
+        }
+        if isNewer(deletionCandidate, than: listCandidate) {
+          deletedLists.append(deletionCandidate.deletion)
+          continue
+        }
+      }
+
+      guard let listCandidate else {
+        continue
+      }
+
+      lists.append(listCandidate.list)
+      categories.append(
+        contentsOf: listCandidate.snapshot.listSnapshot.categories.filter { $0.listID == listID }
+      )
+      entries.append(
+        contentsOf: listCandidate.snapshot.listSnapshot.entries
+          .filter { $0.listID == listID }
+          .map { entry in
+            var entry = entry
+            entry.card = nil
+            return entry
+          }
+      )
+
+      if let deletionCandidate {
+        deletedLists.append(deletionCandidate.deletion)
+      }
+    }
+
+    lists = normalizedListPositions(lists)
+    let searchSettings = SyncSearchSettings.merged(candidates.map(\.searchSettings))
+    var latestDeletedEntities: [String: SyncTombstone] = [:]
+    for tombstone in candidates.flatMap(\.deletedEntities) {
+      let key = "\(tombstone.entityType.rawValue):\(tombstone.recordID)"
+      if let current = latestDeletedEntities[key], current.deletedAt >= tombstone.deletedAt {
+        continue
+      }
+      latestDeletedEntities[key] = tombstone
+    }
+
+    return DeviceSyncSnapshot(
+      id: deviceID,
+      deviceName: deviceName,
+      capturedAt: capturedAt,
+      libraryIdentity: libraryIdentity,
+      searchSettings: searchSettings,
+      listSnapshot: CardListLibrarySnapshot(
+        lists: lists,
+        categories: categories,
+        entries: entries
+      ),
+      deletedLists: deletedLists.sorted {
+        if $0.deletedAt != $1.deletedAt {
+          return $0.deletedAt < $1.deletedAt
+        }
+        return $0.id < $1.id
+      },
+      deletedEntities: latestDeletedEntities.values.sorted {
+        if $0.deletedAt != $1.deletedAt {
+          return $0.deletedAt < $1.deletedAt
+        }
+        if $0.entityType != $1.entityType {
+          return $0.entityType.rawValue < $1.entityType.rawValue
+        }
+        return $0.recordID < $1.recordID
+      }
+    )
+  }
+
+  private static func isNewer(
+    _ candidate: (snapshot: DeviceSyncSnapshot, list: CardListRecord),
+    than current: (snapshot: DeviceSyncSnapshot, list: CardListRecord)
+  ) -> Bool {
+    compare(
+      timestamp: candidate.list.updatedAt,
+      snapshot: candidate.snapshot,
+      toTimestamp: current.list.updatedAt,
+      snapshot: current.snapshot
+    ) == .orderedDescending
+  }
+
+  private static func isNewer(
+    _ candidate: (snapshot: DeviceSyncSnapshot, deletion: SyncListDeletion),
+    than current: (snapshot: DeviceSyncSnapshot, deletion: SyncListDeletion)
+  ) -> Bool {
+    compare(
+      timestamp: candidate.deletion.deletedAt,
+      snapshot: candidate.snapshot,
+      toTimestamp: current.deletion.deletedAt,
+      snapshot: current.snapshot
+    ) == .orderedDescending
+  }
+
+  private static func isNewer(
+    _ deletion: (snapshot: DeviceSyncSnapshot, deletion: SyncListDeletion),
+    than list: (snapshot: DeviceSyncSnapshot, list: CardListRecord)
+  ) -> Bool {
+    compare(
+      timestamp: deletion.deletion.deletedAt,
+      snapshot: deletion.snapshot,
+      toTimestamp: list.list.updatedAt,
+      snapshot: list.snapshot
+    ) == .orderedDescending
+  }
+
+  private static func compare(
+    timestamp: Date,
+    snapshot: DeviceSyncSnapshot,
+    toTimestamp otherTimestamp: Date,
+    snapshot otherSnapshot: DeviceSyncSnapshot
+  ) -> ComparisonResult {
+    if timestamp != otherTimestamp {
+      return timestamp < otherTimestamp ? .orderedAscending : .orderedDescending
+    }
+    if snapshot.capturedAt != otherSnapshot.capturedAt {
+      return snapshot.capturedAt < otherSnapshot.capturedAt ? .orderedAscending : .orderedDescending
+    }
+    if snapshot.id == otherSnapshot.id {
+      return .orderedSame
+    }
+    return snapshot.id < otherSnapshot.id ? .orderedAscending : .orderedDescending
+  }
+
+  private static func normalizedListPositions(_ lists: [CardListRecord]) -> [CardListRecord] {
+    var normalized: [CardListRecord] = []
+    for isPinned in [true, false] {
+      let section = lists
+        .filter { $0.isPinned == isPinned }
+        .sorted {
+          if $0.position != $1.position {
+            return $0.position < $1.position
+          }
+          if $0.createdAt != $1.createdAt {
+            return $0.createdAt < $1.createdAt
+          }
+          return $0.id < $1.id
+        }
+      normalized.append(
+        contentsOf: section.enumerated().map { position, list in
+          var list = list
+          list.position = position
+          return list
+        }
+      )
+    }
+    return normalized
   }
 }
 
@@ -193,6 +653,14 @@ public struct SyncResolutionPlan: Codable, Equatable, Sendable {
     var usedListIDs = Set(listSnapshot.lists.map(\.id))
     var usedCategoryIDs = Set(listSnapshot.categories.map(\.id))
     var usedEntryIDs = Set(listSnapshot.entries.map(\.id))
+    var usedListNames = Set(
+      listSnapshot.lists
+        .filter {
+          !(CloudSyncEntityCodec.isFavouritesListName($0.name)
+            || $0.id == CloudSyncEntityCodec.favouritesListID)
+        }
+        .map(\.name)
+    )
 
     for snapshot in snapshots where snapshot.id != sourceSnapshotID {
       let selectedListIDs = importedListIDsBySnapshotID[snapshot.id] ?? []
@@ -203,9 +671,25 @@ public struct SyncResolutionPlan: Codable, Equatable, Sendable {
       for sourceList in snapshot.listSnapshot.lists where selectedListIDs.contains(sourceList.id) {
         var list = sourceList
         let originalListID = sourceList.id
+        let isFavouritesList =
+          CloudSyncEntityCodec.isFavouritesListName(sourceList.name)
+          || sourceList.id == CloudSyncEntityCodec.favouritesListID
         if usedListIDs.contains(list.id) {
           list.id = UUID().uuidString.lowercased()
-          list.name = "\(list.name) (Imported)"
+        }
+        if !isFavouritesList {
+          // Genuinely different lists that share a name keep the first occurrence's
+          // name; later duplicates become "Name 2", "Name 3", ... Favourites are
+          // excluded here and collapsed into the single canonical list below.
+          let baseName = sourceList.name
+          if usedListNames.contains(list.name) {
+            var suffix = 2
+            while usedListNames.contains("\(baseName) \(suffix)") {
+              suffix += 1
+            }
+            list.name = "\(baseName) \(suffix)"
+          }
+          usedListNames.insert(list.name)
         }
         list.position = listSnapshot.lists.filter { $0.isPinned == list.isPinned }.count
         usedListIDs.insert(list.id)
@@ -247,7 +731,10 @@ public struct SyncResolutionPlan: Codable, Equatable, Sendable {
 
     resolved.listSnapshot = listSnapshot
     resolved.capturedAt = Date()
-    return resolved
+    // Collapse every device's "Favourites" into the single canonical favourites
+    // list (merging their cards) so multi-device users never end up with
+    // duplicate or "(Imported)" favourites lists.
+    return CloudSyncEntityCodec.canonicalizedSnapshot(resolved)
   }
 }
 
@@ -314,15 +801,37 @@ public struct SyncTombstone: Codable, Equatable, Identifiable, Sendable {
   }
 }
 
-public struct CloudRemoteState: Equatable, Sendable {
+public struct CloudRemoteState: Codable, Equatable, Sendable {
   public var requiredLibraryIdentity: LibraryIdentity?
   public var snapshots: [DeviceSyncSnapshot]
+  public var recoverySnapshots: [CloudSyncRecoverySnapshot]
 
   public init(
     requiredLibraryIdentity: LibraryIdentity? = nil,
-    snapshots: [DeviceSyncSnapshot] = []
+    snapshots: [DeviceSyncSnapshot] = [],
+    recoverySnapshots: [CloudSyncRecoverySnapshot] = []
   ) {
     self.requiredLibraryIdentity = requiredLibraryIdentity
     self.snapshots = snapshots
+    self.recoverySnapshots = recoverySnapshots
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case requiredLibraryIdentity
+    case snapshots
+    case recoverySnapshots
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    requiredLibraryIdentity =
+      try container.decodeIfPresent(LibraryIdentity.self, forKey: .requiredLibraryIdentity)
+    snapshots =
+      try container.decodeIfPresent([DeviceSyncSnapshot].self, forKey: .snapshots) ?? []
+    recoverySnapshots =
+      try container.decodeIfPresent(
+        [CloudSyncRecoverySnapshot].self,
+        forKey: .recoverySnapshots
+      ) ?? []
   }
 }

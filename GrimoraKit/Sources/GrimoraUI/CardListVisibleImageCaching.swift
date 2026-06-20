@@ -12,6 +12,7 @@ struct CardListVisibleImageCachingModifier: ViewModifier {
     var entryID: CardListEntryRecord.ID
     var card: CardRecord
     var quality: CardImageQuality
+    var displayedEntries: [CardListEntryRecord]
 
     func body(content: Content) -> some View {
         content
@@ -19,7 +20,11 @@ struct CardListVisibleImageCachingModifier: ViewModifier {
                 guard await VisibleImageCacheTaskDeferral.waitBeforeStarting() else {
                     return
                 }
-                await model.cacheVisibleListEntryImages(around: entryID, quality: quality)
+                await model.cacheVisibleListEntryImages(
+                    around: entryID,
+                    displayedEntries: displayedEntries,
+                    quality: quality
+                )
             }
     }
 }

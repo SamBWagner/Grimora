@@ -73,7 +73,7 @@ final class SearchAndSyntaxCoverageTests: XCTestCase {
             "is:gamechanger", "is:newinpauper", "is:reserved", "is:digital", "is:alchemy",
             "is:rebalanced", "is:promo", "is:spotlight", "is:scryfallpreview", "is:full",
             "is:foil", "is:nonfoil", "is:etched", "is:glossy", "is:hires", "is:default",
-            "is:new", "is:old", "is:unique", "is:hybrid", "is:phyrexian", "is:colorshifted",
+            "is:new", "is:first-print", "is:old", "is:unique", "is:hybrid", "is:phyrexian", "is:colorshifted",
             "is:azorius", "is:white", "is:fetchland",
             "t:/dragon/", "o:/draw/", "flavor:/storm/",
             "c!=wu", "c>wu", "c>=wu", "c<wu", "c<=wubrg", "c:multicolor", "c:2",

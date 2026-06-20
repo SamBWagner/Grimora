@@ -33,6 +33,7 @@ struct CardListDetailView: View {
     @State var listMoveFeedbackTrigger = 0
     @State var landscapeArtworkEntryIDs: Set<CardListEntryRecord.ID> = []
     @State var listJumpToTopState = JumpToTopScrollState.top
+    @State var renderedListEntryIDs: [CardListEntryRecord.ID] = []
 
     var onSelect: (CardRecord) -> Void
     var onCreateListForCard: (CardRecord) -> Void
@@ -43,11 +44,12 @@ struct CardListDetailView: View {
 
     static let entrySelectionCoordinateSpace = "card-list-entry-selection-space"
     static let listDetailTopAnchorID = "card-list-detail-top-anchor"
-    private static let initialVisibleImageCacheIdentityCount = 48
     static let listEntryOpenDelayNanoseconds: UInt64 = 1_000_000_000
 
     var body: some View {
-        content
+        let snapshot = makeListDetailSnapshot()
+
+        content(snapshot: snapshot)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background {
                 GrimoraAppBackground(palette: palette)
@@ -55,7 +57,7 @@ struct CardListDetailView: View {
             .grimoraSuccessFeedback(trigger: listMoveFeedbackTrigger)
         #if os(macOS)
         .toolbar {
-            macListToolbar
+            macListToolbar(snapshot: snapshot)
         }
         .searchable(
             text: listSearchTextBinding,
@@ -64,7 +66,7 @@ struct CardListDetailView: View {
         )
         #elseif os(iOS)
         .toolbar {
-            touchListToolbar
+            touchListToolbar(snapshot: snapshot)
         }
         .searchable(
             text: listSearchTextBinding,
@@ -73,7 +75,7 @@ struct CardListDetailView: View {
         )
         #elseif os(visionOS)
         .toolbar {
-            touchListToolbar
+            touchListToolbar(snapshot: snapshot)
         }
         .searchable(
             text: listSearchTextBinding,
@@ -108,21 +110,28 @@ struct CardListDetailView: View {
         }
         .onAppear {
             syncDescriptionDraftIfNeeded()
-            syncListEntrySelectionVisibleIDs()
+            renderedListEntryIDs = snapshot.expandedEntryIDs
+            syncListEntrySelectionVisibleIDs(snapshot.expandedEntryIDs)
         }
-        .task(id: initialVisibleListImageCacheTaskID) {
+        .task(id: visibleListImageRefreshTaskID(snapshot: snapshot)) {
+            let imageQuality = gridZoom.visibleImageQuality
             guard isGridViewMode else {
+                await model.refreshVisibleListEntryImages(
+                    displayedEntries: [],
+                    around: nil,
+                    quality: imageQuality
+                )
                 return
             }
-            guard let entryID = firstVisibleListEntryID,
+            guard let entryID = snapshot.expandedEntryIDs.first,
                   await VisibleImageCacheTaskDeferral.waitBeforeStarting()
             else {
                 return
             }
-            await model.cacheVisibleListEntryImages(
+            await model.refreshVisibleListEntryImages(
+                displayedEntries: snapshot.expandedEntries,
                 around: entryID,
-                quality: gridZoom.visibleImageQuality,
-                forceRefresh: true
+                quality: imageQuality
             )
         }
         .onChange(of: model.selectedListID) { oldValue, _ in
@@ -146,8 +155,9 @@ struct CardListDetailView: View {
         .onChange(of: model.selectedListEntries.map(\.id)) { _, _ in
             pruneSelectedListEntryIDs()
         }
-        .onChange(of: visibleListEntryIDs) { _, _ in
-            syncListEntrySelectionVisibleIDs()
+        .onChange(of: snapshot.expandedEntryIDs) { _, entryIDs in
+            renderedListEntryIDs = entryIDs
+            syncListEntrySelectionVisibleIDs(entryIDs)
             keepLandscapeArtworkEntriesVisible()
         }
         .onDisappear {
@@ -174,21 +184,19 @@ struct CardListDetailView: View {
         }
     }
 
-    private var firstVisibleListEntryID: CardListEntryRecord.ID? {
-        visibleListEntryIDs.first
-    }
-
-    private var initialVisibleListImageCacheTaskID: InitialVisibleListImageCacheTaskID {
-        InitialVisibleListImageCacheTaskID(
+    private func visibleListImageRefreshTaskID(
+        snapshot: CardListDetailSnapshot
+    ) -> VisibleListImageRefreshTaskID {
+        VisibleListImageRefreshTaskID(
             listID: model.selectedListID,
             viewMode: model.selectedList?.viewMode ?? .grid,
-            entryIDs: Array(visibleListEntryIDs.prefix(Self.initialVisibleImageCacheIdentityCount)),
+            entryIDs: snapshot.expandedEntryIDs,
             quality: gridZoom.visibleImageQuality
         )
     }
 }
 
-private struct InitialVisibleListImageCacheTaskID: Equatable {
+private struct VisibleListImageRefreshTaskID: Equatable {
     var listID: CardListRecord.ID?
     var viewMode: CardListViewMode
     var entryIDs: [CardListEntryRecord.ID]

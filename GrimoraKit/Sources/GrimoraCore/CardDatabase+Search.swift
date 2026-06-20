@@ -20,22 +20,8 @@ extension CardDatabase {
         whereClauses.append(whereSQL)
       }
 
-      var activeFilters = request.activeFilters
-      if plan.displayOptions.includeExtras {
-        activeFilters.remove(.realCards)
-      }
-
-      if activeFilters.contains(.universesBeyond)
-        || plan.displayOptions.preferences.contains(.notUniversesBeyond) {
+      if plan.displayOptions.preferences.contains(.notUniversesBeyond) {
         whereClauses.append("is_universes_beyond = 0")
-      }
-
-      if activeFilters.contains(.alchemy) {
-        whereClauses.append("is_alchemy = 0")
-      }
-
-      if activeFilters.contains(.realCards) {
-        whereClauses.append("is_real_card = 1")
       }
 
       let whereSQL = whereClauses.isEmpty ? "" : "WHERE " + whereClauses.joined(separator: " AND ")

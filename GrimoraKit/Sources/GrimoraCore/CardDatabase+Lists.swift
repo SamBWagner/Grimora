@@ -100,86 +100,94 @@ extension CardDatabase {
 
   public func cardListLibrarySnapshot() throws -> CardListLibrarySnapshot {
     try withDatabaseLock {
-      try CardListLibrarySnapshot(
-        lists: cardListsUnlocked(),
-        categories: cardListCategoriesUnlocked(),
-        entries: cardListEntriesUnlocked()
-      )
+      try cardListLibrarySnapshotUnlocked()
     }
   }
 
   public func restoreCardListLibrarySnapshot(_ snapshot: CardListLibrarySnapshot) throws {
     try withDatabaseLock {
       try database.transaction {
-        try database.execute("DELETE FROM card_list_entries")
-        try database.execute("DELETE FROM card_list_categories")
-        try database.execute("DELETE FROM card_lists")
-
-        let listInsert = try database.prepare(
-          """
-          INSERT INTO card_lists (
-              id, name, ruleset, description_rtfd, description_plain_text, created_at, updated_at,
-              is_pinned, pinned_at, position, shows_dashboard, dashboard_includes_lands,
-              display_sort_mode, display_sort_direction, view_mode
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          """)
-        for list in snapshot.lists {
-          try listInsert.bind(list.id, at: 1)
-          try listInsert.bind(list.name, at: 2)
-          try listInsert.bind(list.ruleset.rawValue, at: 3)
-          try listInsert.bind(list.descriptionRTFDData, at: 4)
-          try listInsert.bind(list.descriptionPlainText, at: 5)
-          try listInsert.bind(Self.formattedListDate(list.createdAt), at: 6)
-          try listInsert.bind(Self.formattedListDate(list.updatedAt), at: 7)
-          try listInsert.bind(list.isPinned, at: 8)
-          try listInsert.bind(list.pinnedAt.map(Self.formattedListDate), at: 9)
-          try listInsert.bind(list.position, at: 10)
-          try listInsert.bind(list.showsDashboard, at: 11)
-          try listInsert.bind(list.dashboardIncludesLands, at: 12)
-          try listInsert.bind(list.displaySortMode?.rawValue, at: 13)
-          try listInsert.bind(list.displaySortDirection.rawValue, at: 14)
-          try listInsert.bind(list.viewMode.rawValue, at: 15)
-          try listInsert.step()
-          try listInsert.reset()
-        }
-
-        let categoryInsert = try database.prepare(
-          """
-          INSERT INTO card_list_categories (id, list_id, zone, name, position, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          """)
-        for category in snapshot.categories {
-          try categoryInsert.bind(category.id, at: 1)
-          try categoryInsert.bind(category.listID, at: 2)
-          try categoryInsert.bind(category.zone.rawValue, at: 3)
-          try categoryInsert.bind(category.name, at: 4)
-          try categoryInsert.bind(category.position, at: 5)
-          try categoryInsert.bind(Self.formattedListDate(category.createdAt), at: 6)
-          try categoryInsert.bind(Self.formattedListDate(category.updatedAt), at: 7)
-          try categoryInsert.step()
-          try categoryInsert.reset()
-        }
-
-        let entryInsert = try database.prepare(
-          """
-          INSERT INTO card_list_entries (
-              id, list_id, zone, category_id, card_id, position, quantity, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          """)
-        for entry in snapshot.entries {
-          try entryInsert.bind(entry.id, at: 1)
-          try entryInsert.bind(entry.listID, at: 2)
-          try entryInsert.bind(entry.zone.rawValue, at: 3)
-          try entryInsert.bind(entry.categoryID, at: 4)
-          try entryInsert.bind(entry.cardID, at: 5)
-          try entryInsert.bind(entry.position, at: 6)
-          try entryInsert.bind(max(1, entry.quantity), at: 7)
-          try entryInsert.bind(Self.formattedListDate(entry.createdAt), at: 8)
-          try entryInsert.bind(Self.formattedListDate(entry.createdAt), at: 9)
-          try entryInsert.step()
-          try entryInsert.reset()
-        }
+        try restoreCardListLibrarySnapshotUnlocked(snapshot)
       }
+    }
+  }
+
+  func cardListLibrarySnapshotUnlocked() throws -> CardListLibrarySnapshot {
+    try CardListLibrarySnapshot(
+      lists: cardListsUnlocked(),
+      categories: cardListCategoriesUnlocked(),
+      entries: cardListEntriesUnlocked()
+    )
+  }
+
+  func restoreCardListLibrarySnapshotUnlocked(_ snapshot: CardListLibrarySnapshot) throws {
+    try database.execute("DELETE FROM card_list_entries")
+    try database.execute("DELETE FROM card_list_categories")
+    try database.execute("DELETE FROM card_lists")
+
+    let listInsert = try database.prepare(
+      """
+      INSERT INTO card_lists (
+          id, name, ruleset, description_rtfd, description_plain_text, created_at, updated_at,
+          is_pinned, pinned_at, position, shows_dashboard, dashboard_includes_lands,
+          display_sort_mode, display_sort_direction, view_mode
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      """)
+    for list in snapshot.lists {
+      try listInsert.bind(list.id, at: 1)
+      try listInsert.bind(list.name, at: 2)
+      try listInsert.bind(list.ruleset.rawValue, at: 3)
+      try listInsert.bind(list.descriptionRTFDData, at: 4)
+      try listInsert.bind(list.descriptionPlainText, at: 5)
+      try listInsert.bind(Self.formattedListDate(list.createdAt), at: 6)
+      try listInsert.bind(Self.formattedListDate(list.updatedAt), at: 7)
+      try listInsert.bind(list.isPinned, at: 8)
+      try listInsert.bind(list.pinnedAt.map(Self.formattedListDate), at: 9)
+      try listInsert.bind(list.position, at: 10)
+      try listInsert.bind(list.showsDashboard, at: 11)
+      try listInsert.bind(list.dashboardIncludesLands, at: 12)
+      try listInsert.bind(list.displaySortMode?.rawValue, at: 13)
+      try listInsert.bind(list.displaySortDirection.rawValue, at: 14)
+      try listInsert.bind(list.viewMode.rawValue, at: 15)
+      try listInsert.step()
+      try listInsert.reset()
+    }
+
+    let categoryInsert = try database.prepare(
+      """
+      INSERT INTO card_list_categories (id, list_id, zone, name, position, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      """)
+    for category in snapshot.categories {
+      try categoryInsert.bind(category.id, at: 1)
+      try categoryInsert.bind(category.listID, at: 2)
+      try categoryInsert.bind(category.zone.rawValue, at: 3)
+      try categoryInsert.bind(category.name, at: 4)
+      try categoryInsert.bind(category.position, at: 5)
+      try categoryInsert.bind(Self.formattedListDate(category.createdAt), at: 6)
+      try categoryInsert.bind(Self.formattedListDate(category.updatedAt), at: 7)
+      try categoryInsert.step()
+      try categoryInsert.reset()
+    }
+
+    let entryInsert = try database.prepare(
+      """
+      INSERT INTO card_list_entries (
+          id, list_id, zone, category_id, card_id, position, quantity, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      """)
+    for entry in snapshot.entries {
+      try entryInsert.bind(entry.id, at: 1)
+      try entryInsert.bind(entry.listID, at: 2)
+      try entryInsert.bind(entry.zone.rawValue, at: 3)
+      try entryInsert.bind(entry.categoryID, at: 4)
+      try entryInsert.bind(entry.cardID, at: 5)
+      try entryInsert.bind(entry.position, at: 6)
+      try entryInsert.bind(max(1, entry.quantity), at: 7)
+      try entryInsert.bind(Self.formattedListDate(entry.createdAt), at: 8)
+      try entryInsert.bind(Self.formattedListDate(entry.updatedAt), at: 9)
+      try entryInsert.step()
+      try entryInsert.reset()
     }
   }
 
@@ -999,7 +1007,12 @@ extension CardDatabase {
           let delete = try database.prepare("DELETE FROM card_list_entries WHERE id = ?")
           try delete.bind(id, at: 1)
           try delete.step()
-          try insertSyncTombstoneUnlocked(entityType: .cardListEntry, recordID: id, deletedAt: now)
+          let recordID = try cloudSyncEntryRecordIDUnlocked(for: entry)
+          try insertSyncTombstoneUnlocked(
+            entityType: .cardListEntry,
+            recordID: recordID,
+            deletedAt: now
+          )
         }
 
         try touchCardListUnlocked(id: entry.listID, date: Self.formattedListDate(now))
@@ -1083,10 +1096,27 @@ extension CardDatabase {
         let delete = try database.prepare("DELETE FROM card_list_entries WHERE id = ?")
         try delete.bind(id, at: 1)
         try delete.step()
-        try insertSyncTombstoneUnlocked(entityType: .cardListEntry, recordID: id, deletedAt: now)
+        let recordID = try cloudSyncEntryRecordIDUnlocked(for: entry)
+        try insertSyncTombstoneUnlocked(
+          entityType: .cardListEntry,
+          recordID: recordID,
+          deletedAt: now
+        )
         try touchCardListUnlocked(id: entry.listID, date: Self.formattedListDate(now))
       }
     }
+  }
+
+  private func cloudSyncEntryRecordIDUnlocked(
+    for entry: CardListEntryRecord
+  ) throws -> CardListEntryRecord.ID {
+    guard let list = try cardListUnlocked(id: entry.listID),
+      CloudSyncEntityCodec.isFavouritesListName(list.name)
+        || list.id == CloudSyncEntityCodec.favouritesListID
+    else {
+      return entry.id
+    }
+    return CloudSyncEntityCodec.favouriteEntryID(cardID: entry.cardID)
   }
 
   func normalizeCardListZonesForRulesetsUnlocked() throws {

@@ -148,8 +148,8 @@ extension CardDatabase {
     try database.execute(
       """
       CREATE TABLE IF NOT EXISTS card_value_mappings (
-          card_id TEXT PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
-          mtgjson_uuid TEXT NOT NULL UNIQUE
+          card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+          mtgjson_uuid TEXT PRIMARY KEY
       )
       """)
 
@@ -183,6 +183,20 @@ extension CardDatabase {
 
     try database.execute(
       """
+      CREATE TABLE IF NOT EXISTS card_value_series (
+          card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL,
+          finish TEXT NOT NULL,
+          start_date TEXT NOT NULL,
+          end_date TEXT NOT NULL,
+          day_count INTEGER NOT NULL,
+          prices_cents BLOB NOT NULL,
+          PRIMARY KEY (card_id, provider, finish)
+      )
+      """)
+
+    try database.execute(
+      """
       CREATE TABLE IF NOT EXISTS value_history_background_jobs (
           id TEXT PRIMARY KEY,
           mtgjson_date TEXT NOT NULL,
@@ -208,8 +222,7 @@ extension CardDatabase {
           job_id TEXT NOT NULL REFERENCES value_history_background_jobs(id) ON DELETE CASCADE,
           card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
           mtgjson_uuid TEXT NOT NULL,
-          PRIMARY KEY (job_id, card_id),
-          UNIQUE (job_id, mtgjson_uuid)
+          PRIMARY KEY (job_id, mtgjson_uuid)
       )
       """)
 
@@ -256,6 +269,38 @@ extension CardDatabase {
           deleted_at TEXT NOT NULL
       )
       """)
+
+    try database.execute(
+      """
+      CREATE TABLE IF NOT EXISTS cloud_sync_recovery_snapshots (
+          id TEXT PRIMARY KEY,
+          created_at TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          payload BLOB NOT NULL
+      )
+      """)
+
+    try database.execute(
+      """
+      CREATE TABLE IF NOT EXISTS cloud_sync_records (
+          record_type TEXT NOT NULL,
+          record_id TEXT NOT NULL,
+          system_fields BLOB NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (record_type, record_id)
+      )
+      """)
+
+    try database.execute(
+      """
+      CREATE TABLE IF NOT EXISTS sync_list_revision (
+          singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+          revision INTEGER NOT NULL
+      )
+      """)
+    try database.execute(
+      "INSERT OR IGNORE INTO sync_list_revision (singleton, revision) VALUES (1, 0)"
+    )
 
     try database.execute(
       """
@@ -428,7 +473,18 @@ extension CardDatabase {
       column: "sync_updated_at",
       definition: "sync_updated_at TEXT"
     )
+    try migrateCardValueMappingTablesIfNeeded()
 
+    try database.execute(
+      """
+      CREATE INDEX IF NOT EXISTS idx_card_value_mappings_card
+      ON card_value_mappings(card_id)
+      """)
+    try database.execute(
+      """
+      CREATE INDEX IF NOT EXISTS idx_staging_card_value_mappings_job_card
+      ON staging_card_value_mappings(job_id, card_id)
+      """)
     try database.execute(
       """
       CREATE INDEX IF NOT EXISTS idx_card_price_points_card_finish_date
@@ -439,6 +495,11 @@ extension CardDatabase {
       """
       CREATE INDEX IF NOT EXISTS idx_card_value_summaries_current_price
       ON card_value_summaries(provider, finish, current_price)
+      """)
+    try database.execute(
+      """
+      CREATE INDEX IF NOT EXISTS idx_card_value_series_card_finish
+      ON card_value_series(card_id, provider, finish)
       """)
     try database.execute(
       """
@@ -511,35 +572,127 @@ extension CardDatabase {
       "CREATE INDEX IF NOT EXISTS idx_sync_tombstones_record ON sync_tombstones(entity_type, record_id)"
     )
     try database.execute(
+      "CREATE INDEX IF NOT EXISTS idx_cloud_sync_recovery_created ON cloud_sync_recovery_snapshots(created_at)"
+    )
+    try database.execute(
+      "CREATE INDEX IF NOT EXISTS idx_cloud_sync_records_updated ON cloud_sync_records(updated_at)"
+    )
+    try database.execute("DROP TRIGGER IF EXISTS trg_card_lists_sync_updated_at")
+    try database.execute(
       """
-      CREATE TRIGGER IF NOT EXISTS trg_card_lists_sync_updated_at
+      CREATE TRIGGER trg_card_lists_sync_updated_at
       AFTER UPDATE OF updated_at ON card_lists
       WHEN NEW.sync_updated_at IS OLD.sync_updated_at
+      BEGIN
+          UPDATE card_lists
+          SET sync_updated_at = CASE
+              WHEN OLD.sync_updated_at IS NULL OR NEW.updated_at > OLD.sync_updated_at
+              THEN NEW.updated_at
+              ELSE strftime(
+                  '%Y-%m-%dT%H:%M:%fZ',
+                  julianday(OLD.sync_updated_at) + (0.001 / 86400.0)
+              )
+          END
+          WHERE id = NEW.id;
+      END
+      """)
+    try database.execute("DROP TRIGGER IF EXISTS trg_card_list_categories_sync_updated_at")
+    try database.execute(
+      """
+      CREATE TRIGGER trg_card_list_categories_sync_updated_at
+      AFTER UPDATE OF updated_at ON card_list_categories
+      WHEN NEW.sync_updated_at IS OLD.sync_updated_at
+      BEGIN
+          UPDATE card_list_categories
+          SET sync_updated_at = CASE
+              WHEN OLD.sync_updated_at IS NULL OR NEW.updated_at > OLD.sync_updated_at
+              THEN NEW.updated_at
+              ELSE strftime(
+                  '%Y-%m-%dT%H:%M:%fZ',
+                  julianday(OLD.sync_updated_at) + (0.001 / 86400.0)
+              )
+          END
+          WHERE id = NEW.id;
+      END
+      """)
+    try database.execute("DROP TRIGGER IF EXISTS trg_card_list_entries_updated_at")
+    try database.execute(
+      """
+      CREATE TRIGGER trg_card_list_entries_updated_at
+      AFTER UPDATE ON card_list_entries
+      WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL
+      BEGIN
+          UPDATE card_list_entries
+          SET updated_at = CASE
+                  WHEN OLD.sync_updated_at IS NULL
+                    OR COALESCE(NEW.updated_at, '') > OLD.sync_updated_at
+                  THEN COALESCE(
+                      NEW.updated_at,
+                      strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                  )
+                  ELSE strftime(
+                      '%Y-%m-%dT%H:%M:%fZ',
+                      julianday(OLD.sync_updated_at) + (0.001 / 86400.0)
+                  )
+              END,
+              sync_updated_at = CASE
+                  WHEN OLD.sync_updated_at IS NULL
+                    OR COALESCE(NEW.updated_at, '') > OLD.sync_updated_at
+                  THEN COALESCE(
+                      NEW.updated_at,
+                      strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                  )
+                  ELSE strftime(
+                      '%Y-%m-%dT%H:%M:%fZ',
+                      julianday(OLD.sync_updated_at) + (0.001 / 86400.0)
+                  )
+              END
+          WHERE id = NEW.id;
+      END
+      """)
+    try database.execute(
+      """
+      CREATE TRIGGER IF NOT EXISTS trg_card_lists_sync_timestamp_insert
+      AFTER INSERT ON card_lists
+      WHEN NEW.sync_updated_at IS NULL
       BEGIN
           UPDATE card_lists SET sync_updated_at = NEW.updated_at WHERE id = NEW.id;
       END
       """)
     try database.execute(
       """
-      CREATE TRIGGER IF NOT EXISTS trg_card_list_categories_sync_updated_at
-      AFTER UPDATE OF updated_at ON card_list_categories
-      WHEN NEW.sync_updated_at IS OLD.sync_updated_at
+      CREATE TRIGGER IF NOT EXISTS trg_card_list_categories_sync_timestamp_insert
+      AFTER INSERT ON card_list_categories
+      WHEN NEW.sync_updated_at IS NULL
       BEGIN
           UPDATE card_list_categories SET sync_updated_at = NEW.updated_at WHERE id = NEW.id;
       END
       """)
     try database.execute(
       """
-      CREATE TRIGGER IF NOT EXISTS trg_card_list_entries_updated_at
-      AFTER UPDATE ON card_list_entries
-      WHEN NEW.updated_at IS OLD.updated_at OR NEW.updated_at IS NULL
+      CREATE TRIGGER IF NOT EXISTS trg_card_list_entries_sync_timestamp_insert
+      AFTER INSERT ON card_list_entries
+      WHEN NEW.sync_updated_at IS NULL
       BEGIN
           UPDATE card_list_entries
-          SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
-              sync_updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+          SET sync_updated_at = COALESCE(NEW.updated_at, NEW.created_at)
           WHERE id = NEW.id;
       END
       """)
+    for table in ["card_lists", "card_list_categories", "card_list_entries"] {
+      for operation in ["INSERT", "UPDATE", "DELETE"] {
+        try database.execute(
+          """
+          CREATE TRIGGER IF NOT EXISTS trg_\(table)_sync_revision_\(operation.lowercased())
+          AFTER \(operation) ON \(table)
+          BEGIN
+              UPDATE sync_list_revision
+              SET revision = revision + 1
+              WHERE singleton = 1;
+          END
+          """)
+      }
+    }
     try rebuildNameSearchIndexIfNeeded()
   }
 
@@ -559,6 +712,68 @@ extension CardDatabase {
 
     try database.execute("ALTER TABLE \(table) ADD COLUMN \(definition)")
     return true
+  }
+
+  private func migrateCardValueMappingTablesIfNeeded() throws {
+    let mappingPrimaryKey = try primaryKeyColumns(in: "card_value_mappings")
+    if mappingPrimaryKey != ["mtgjson_uuid"] {
+      try database.transaction {
+        try database.execute(
+          """
+          CREATE TABLE card_value_mappings_v2 (
+              card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+              mtgjson_uuid TEXT PRIMARY KEY
+          )
+          """)
+        try database.execute(
+          """
+          INSERT OR IGNORE INTO card_value_mappings_v2 (card_id, mtgjson_uuid)
+          SELECT card_id, mtgjson_uuid
+          FROM card_value_mappings
+          """)
+        try database.execute("DROP TABLE card_value_mappings")
+        try database.execute("ALTER TABLE card_value_mappings_v2 RENAME TO card_value_mappings")
+      }
+    }
+
+    let stagingPrimaryKey = try primaryKeyColumns(in: "staging_card_value_mappings")
+    if stagingPrimaryKey != ["job_id", "mtgjson_uuid"] {
+      try database.transaction {
+        try database.execute(
+          """
+          CREATE TABLE staging_card_value_mappings_v2 (
+              job_id TEXT NOT NULL REFERENCES value_history_background_jobs(id) ON DELETE CASCADE,
+              card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+              mtgjson_uuid TEXT NOT NULL,
+              PRIMARY KEY (job_id, mtgjson_uuid)
+          )
+          """)
+        try database.execute(
+          """
+          INSERT OR IGNORE INTO staging_card_value_mappings_v2 (job_id, card_id, mtgjson_uuid)
+          SELECT job_id, card_id, mtgjson_uuid
+          FROM staging_card_value_mappings
+          """)
+        try database.execute("DROP TABLE staging_card_value_mappings")
+        try database.execute(
+          "ALTER TABLE staging_card_value_mappings_v2 RENAME TO staging_card_value_mappings")
+      }
+    }
+  }
+
+  private func primaryKeyColumns(in table: String) throws -> [String] {
+    let statement = try database.prepare("PRAGMA table_info(\(table))")
+    var columns: [(position: Int, name: String)] = []
+    while try statement.step() {
+      guard let name = statement.string(at: 1),
+        let position = statement.int(at: 5),
+        position > 0
+      else {
+        continue
+      }
+      columns.append((position, name))
+    }
+    return columns.sorted { $0.position < $1.position }.map(\.name)
   }
 
   func rebuildNameSearchIndexIfNeeded() throws {

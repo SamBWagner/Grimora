@@ -22,6 +22,8 @@ public struct GrimoraEnvironment: Sendable {
   public var cloudSyncCoordinator: CloudSyncCoordinator
   public var canOfferInitialCloudSync: Bool
   public var currencyExchangeRateClient: any CurrencyExchangeRateClient
+  public var managedCatalogMigrationService: ManagedCatalogMigrationService?
+  public var initialManagedCatalogMigrationStatus: ManagedCatalogMigrationStatus?
 
   public init(
     database: CardDatabase,
@@ -44,7 +46,9 @@ public struct GrimoraEnvironment: Sendable {
       GrimoraSearchHistoryStore(key: GrimoraSearchPreferences.plainTextSearchHistoryKey),
     cloudSyncCoordinator: CloudSyncCoordinator? = nil,
     canOfferInitialCloudSync: Bool = true,
-    currencyExchangeRateClient: (any CurrencyExchangeRateClient)? = nil
+    currencyExchangeRateClient: (any CurrencyExchangeRateClient)? = nil,
+    managedCatalogMigrationService: ManagedCatalogMigrationService? = nil,
+    initialManagedCatalogMigrationStatus: ManagedCatalogMigrationStatus? = nil
   ) {
     self.database = database
     self.updateService = updateService
@@ -67,6 +71,8 @@ public struct GrimoraEnvironment: Sendable {
       ?? CachedCurrencyExchangeRateClient(
         liveClient: FrankfurterCurrencyExchangeRateClient(network: BlockingNetworkClient())
       )
+    self.managedCatalogMigrationService = managedCatalogMigrationService
+    self.initialManagedCatalogMigrationStatus = initialManagedCatalogMigrationStatus
   }
 
   public static func live(
@@ -74,12 +80,22 @@ public struct GrimoraEnvironment: Sendable {
     processInfo: ProcessInfo = .processInfo
   ) throws -> GrimoraEnvironment {
     let supportDirectory = try Self.applicationSupportDirectory(fileManager: fileManager)
-    let databaseURL =
-      processInfo.environment["GRIMORA_TEST_DATABASE_PATH"]
+    let testDatabaseURL = processInfo.environment["GRIMORA_TEST_DATABASE_PATH"]
       .map(URL.init(fileURLWithPath:))
-      ?? supportDirectory.appendingPathComponent("Grimora.sqlite")
-    let databaseAlreadyExists = fileManager.fileExists(atPath: databaseURL.path)
-
+    let testDatabaseAlreadyExists = testDatabaseURL.map {
+      fileManager.fileExists(atPath: $0.path)
+    } ?? false
+    let userDatabaseURL = testDatabaseURL
+      ?? supportDirectory.appendingPathComponent("Database-v2/User.sqlite")
+    if processInfo.environment["GRIMORA_TEST_RESET_DATABASE"] == "1" {
+      for url in [
+        userDatabaseURL,
+        URL(fileURLWithPath: userDatabaseURL.path + "-shm"),
+        URL(fileURLWithPath: userDatabaseURL.path + "-wal"),
+      ] where fileManager.fileExists(atPath: url.path) {
+        try fileManager.removeItem(at: url)
+      }
+    }
     let imageDirectory =
       processInfo.environment["GRIMORA_TEST_IMAGE_DIR"]
       .map(URL.init(fileURLWithPath:))
@@ -95,14 +111,41 @@ public struct GrimoraEnvironment: Sendable {
     try fileManager.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: valueHistoryBackgroundDirectory, withIntermediateDirectories: true)
 
-    let database = try CardDatabase(storage: .file(databaseURL))
-    try seedTestFixtureCardsIfNeeded(database: database, processInfo: processInfo)
-
     let network: NetworkClient =
       processInfo.environment["GRIMORA_DISABLE_NETWORK"] == "1"
       ? BlockingNetworkClient()
       : URLSessionNetworkClient()
-    let bulkClient = BulkDataClient(network: network)
+    let catalogAPIURL =
+      testDatabaseURL == nil
+      ? URL(
+        string: processInfo.environment["GRIMORA_CATALOG_API_URL"]
+          ?? "https://grimora-data-api.fly.dev/v1/catalog"
+      )
+      : nil
+    let bulkClient = BulkDataClient(network: network, catalogAPIURL: catalogAPIURL)
+
+    let database: CardDatabase
+    let databaseAlreadyExists: Bool
+    let managedCatalogMigrationService: ManagedCatalogMigrationService?
+    let initialManagedCatalogMigrationStatus: ManagedCatalogMigrationStatus?
+    if testDatabaseURL != nil {
+      database = try CardDatabase(storage: .file(userDatabaseURL))
+      databaseAlreadyExists = testDatabaseAlreadyExists
+      managedCatalogMigrationService = nil
+      initialManagedCatalogMigrationStatus = nil
+    } else {
+      let bootstrap = try ManagedCatalogMigrationService.bootstrap(
+        supportDirectory: supportDirectory,
+        bulkDataClient: bulkClient,
+        fileManager: fileManager
+      )
+      database = bootstrap.database
+      databaseAlreadyExists = bootstrap.databaseAlreadyExists
+      managedCatalogMigrationService = bootstrap.migrationService
+      initialManagedCatalogMigrationStatus = bootstrap.initialMigrationStatus
+    }
+    try seedTestFixtureCardsIfNeeded(database: database, processInfo: processInfo)
+
     let imageStore = ImageStore(rootDirectory: imageDirectory)
     let imageResolver = DownloadingImageResolver(store: imageStore, network: network)
     let searchHistoryUserDefaults =
@@ -122,8 +165,10 @@ public struct GrimoraEnvironment: Sendable {
     }
     let importer = LibraryImporter(database: database, imageResolver: imageResolver)
     let imageCache = CardImageCache(database: database, imageResolver: imageResolver)
-    let priceHistoryClient = MTGJSONPriceHistoryClient(network: network)
-    let priceHistoryImporter = MTGJSONPriceHistoryImporter(database: database)
+    let priceHistoryClient =
+      testDatabaseURL == nil ? nil : MTGJSONPriceHistoryClient(network: network)
+    let priceHistoryImporter =
+      testDatabaseURL == nil ? nil : MTGJSONPriceHistoryImporter(database: database)
     let currencyExchangeRateClient = CachedCurrencyExchangeRateClient(
       liveClient: FrankfurterCurrencyExchangeRateClient(network: network),
       userDefaults: .standard
@@ -132,12 +177,13 @@ public struct GrimoraEnvironment: Sendable {
       database: database,
       bulkDataClient: bulkClient,
       priceHistoryClient: priceHistoryClient,
-      priceHistoryImporter: priceHistoryImporter
+      priceHistoryImporter: priceHistoryImporter,
+      minimumAutomaticCheckInterval: 24 * 60 * 60
     )
     let cloudSyncCoordinator =
       Self.cloudSyncIsDisabled(processInfo: processInfo)
       ? .disabled(database: database)
-      : Self.liveCloudSyncCoordinator(database: database)
+      : Self.liveCloudSyncCoordinator(database: database, processInfo: processInfo)
 
     return GrimoraEnvironment(
       database: database,
@@ -159,7 +205,9 @@ public struct GrimoraEnvironment: Sendable {
       plainTextSearchHistoryStore: plainTextSearchHistoryStore,
       cloudSyncCoordinator: cloudSyncCoordinator,
       canOfferInitialCloudSync: !databaseAlreadyExists,
-      currencyExchangeRateClient: currencyExchangeRateClient
+      currencyExchangeRateClient: currencyExchangeRateClient,
+      managedCatalogMigrationService: managedCatalogMigrationService,
+      initialManagedCatalogMigrationStatus: initialManagedCatalogMigrationStatus
     )
   }
 
@@ -182,6 +230,31 @@ public struct GrimoraEnvironment: Sendable {
       forKey: MetadataKey.searchSchemaVersion.rawValue
     )
     try database.saveMetadataValue("true", forKey: MetadataKey.requiredImagesCached.rawValue)
+
+    guard let listName = processInfo.environment["GRIMORA_TEST_CATEGORIZED_LIST_NAME"],
+      let rawCategoryNames = processInfo.environment["GRIMORA_TEST_CATEGORY_NAMES"]
+    else {
+      return
+    }
+
+    let categoryNames = rawCategoryNames
+      .split(separator: "\n")
+      .map(String.init)
+    guard !categoryNames.isEmpty else {
+      return
+    }
+
+    let list = try database.createCardList(named: listName)
+    let categories = try categoryNames.map {
+      try database.createCardListCategory(inList: list.id, named: $0)
+    }
+    for (index, card) in cards.enumerated() {
+      try database.appendCard(
+        card.id,
+        toList: list.id,
+        categoryID: categories[index % categories.count].id
+      )
+    }
   }
 
   private static func seedTestValuePreferencesIfNeeded(
@@ -210,7 +283,19 @@ public struct GrimoraEnvironment: Sendable {
     )
   }
 
-  private static func liveCloudSyncCoordinator(database: CardDatabase) -> CloudSyncCoordinator {
+  private static func liveCloudSyncCoordinator(
+    database: CardDatabase,
+    processInfo: ProcessInfo
+  ) -> CloudSyncCoordinator {
+    if let relayURL = processInfo.environment["GRIMORA_TEST_CLOUD_SYNC_RELAY_URL"]
+      .flatMap(URL.init(string:))
+    {
+      return CloudSyncCoordinator(
+        database: database,
+        transport: RelayCloudSyncTransport(baseURL: relayURL)
+      )
+    }
+
     #if canImport(CloudKit)
       guard hasCloudKitContainerEntitlement() else {
         return .disabled(database: database)
@@ -218,9 +303,25 @@ public struct GrimoraEnvironment: Sendable {
 
       if #available(iOS 17.0, macOS 14.0, visionOS 1.0, *) {
         let stateSerialization = try? database.cloudSyncEngineStateSerialization()
-        let transport = CloudKitSyncTransport(stateSerialization: stateSerialization) { [database] data in
-          try? database.saveCloudSyncEngineStateSerialization(data)
-        }
+        let transport = CloudKitSyncTransport(
+          stateSerialization: stateSerialization,
+          stateSerializationHandler: { [database] data in
+            try? database.saveCloudSyncEngineStateSerialization(data)
+          },
+          systemFieldsProvider: { [database] recordType, recordID in
+            try? database.cloudSyncRecordSystemFields(
+              recordType: recordType,
+              recordID: recordID
+            )
+          },
+          systemFieldsHandler: { [database] data, recordType, recordID in
+            try? database.saveCloudSyncRecordSystemFields(
+              data,
+              recordType: recordType,
+              recordID: recordID
+            )
+          }
+        )
         return CloudSyncCoordinator(database: database, transport: transport)
       }
     #endif

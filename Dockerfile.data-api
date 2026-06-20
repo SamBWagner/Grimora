@@ -1,0 +1,22 @@
+FROM swift:6.2-noble AS build
+WORKDIR /src
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libsqlite3-dev zlib1g-dev \
+  && rm -rf /var/lib/apt/lists/*
+COPY GrimoraKit/Package.swift GrimoraKit/Package.resolved ./GrimoraKit/
+COPY GrimoraKit/Sources ./GrimoraKit/Sources
+COPY GrimoraKit/Tests ./GrimoraKit/Tests
+RUN swift build \
+  --package-path GrimoraKit \
+  -c release \
+  --product grimora-data-api \
+  --static-swift-stdlib
+
+FROM ubuntu:noble
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates libcurl4t64 libsqlite3-0 libssl3 \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/GrimoraKit/.build/release/grimora-data-api /usr/local/bin/grimora-data-api
+ENV PORT=8080
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/grimora-data-api"]

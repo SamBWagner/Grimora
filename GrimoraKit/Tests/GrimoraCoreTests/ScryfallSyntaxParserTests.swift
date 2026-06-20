@@ -65,6 +65,7 @@ final class ScryfallSyntaxParserTests: XCTestCase {
             "wm:orzhov",
             "border:white t:creature",
             "frame:2003 new:frame in:fut is:reprint",
+            "set:ncc is:first-print",
             "stamp:acorn",
             "game:arena",
             "year<=1994",

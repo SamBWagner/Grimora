@@ -2,14 +2,6 @@ import Foundation
 import GrimoraCore
 
 extension GrimoraAppModel {
-  public func toggleFilter(_ filter: FilterPreset) {
-    if activeFilters.contains(filter) {
-      activeFilters.remove(filter)
-    } else {
-      activeFilters.insert(filter)
-    }
-  }
-
   public func setSearchInputMode(_ mode: SearchInputMode) {
     searchInputMode = mode
   }
@@ -80,13 +72,18 @@ extension GrimoraAppModel {
       searchHistoryStore.clear()
       Task { await previewImageWarmer.cancelHistory() }
     }
+    durableCloudSyncPreferencesChanged()
   }
 
   public func applySearchInputModePreference(_ mode: SearchInputMode) {
+    let changed = mode != searchInputMode
     setSearchInputMode(mode)
-    if cloudSyncMode == .enabled {
-      try? database.recordLocalSyncSnapshotChange(reason: "search-input-mode")
-      pushCloudSyncChangesIfNeeded()
+    if changed, !isApplyingCloudSyncState {
+      markCloudSyncSearchSettingsChanged()
+      if cloudSyncMode == .enabled {
+        try? database.recordLocalSyncSnapshotChange(reason: "search-input-mode")
+        pushCloudSyncChangesIfNeeded()
+      }
     }
   }
 
@@ -107,9 +104,12 @@ extension GrimoraAppModel {
       }
     }
     reloadSearch()
-    if cloudSyncMode == .enabled {
-      try? database.recordLocalSyncSnapshotChange(reason: "search-preferences")
-      pushCloudSyncChangesIfNeeded()
+    if !isApplyingCloudSyncState {
+      markCloudSyncSearchSettingsChanged()
+      if cloudSyncMode == .enabled {
+        try? database.recordLocalSyncSnapshotChange(reason: "search-preferences")
+        pushCloudSyncChangesIfNeeded()
+      }
     }
   }
 
@@ -206,20 +206,14 @@ extension GrimoraAppModel {
     currentSearchCacheKey = nil
     searchVisibleImageWindowTracker.reset()
     resetSearchVisibleImageRequests()
-    statusMessage = "Checking Scryfall bulk data..."
+    statusMessage = usesManagedCatalog ? "Checking Grimora catalog..." : "Checking Scryfall bulk data..."
     beginLibraryActivity(operation: .setupLibrary, title: "Setting Up Library", message: statusMessage)
+    startLibraryActivityHeartbeat(stage: .checkCardData)
     defer { isWorking = false }
 
     do {
-      let manifest: BulkDataManifest
-      if cloudSyncMode == .enabled,
-        let requiredManifest = requiredCloudLibraryIdentity?.manifest
-      {
-        manifest = requiredManifest
-      } else {
-        let result = try await updateService.checkForUpdates(manual: true)
-        manifest = manifestForInitialSetup(from: result)
-      }
+      let result = try await updateService.checkForUpdates(manual: true)
+      let manifest = manifestForInitialSetup(from: result)
       let summary = try await updateService.downloadAndImport(
         manifest: manifest,
         temporaryDirectory: temporaryDirectory,
@@ -231,7 +225,6 @@ extension GrimoraAppModel {
           self?.handleImportProgress(progress, manifest: manifest)
         }
       }
-      stopCardDataReadHeartbeat()
       updateManifest = nil
       refreshLibraryState()
       searchResultCache.removeAll()
@@ -261,13 +254,17 @@ extension GrimoraAppModel {
   }
 
   public func checkForUpdates(manual: Bool = true) async {
+    if managedCatalogMigrationService != nil {
+      await stageManagedCatalogMigration(manual: manual)
+      return
+    }
     guard !isWorking else {
       return
     }
 
     isWorking = true
     if manual {
-      statusMessage = "Checking Scryfall bulk data..."
+      statusMessage = usesManagedCatalog ? "Checking Grimora catalog..." : "Checking Scryfall bulk data..."
     }
     defer { isWorking = false }
 
@@ -284,14 +281,20 @@ extension GrimoraAppModel {
         statusMessage = "Library is current."
       case .updateAvailable(let manifest):
         updateManifest = manifest
-        statusMessage = "New Scryfall data is available."
+        statusMessage = usesManagedCatalog
+          ? "A new Grimora catalog is available."
+          : "New Scryfall data is available."
       }
     } catch {
       statusMessage = "Update check failed. Check your connection and try again."
     }
   }
 
-  public func importAvailableUpdate() async {
+  public func importAvailableUpdate(automatic: Bool = false) async {
+    if managedCatalogMigrationService != nil {
+      await stageManagedCatalogMigration(manual: !automatic)
+      return
+    }
     guard let manifest = updateManifest, !isWorking else {
       return
     }
@@ -321,7 +324,8 @@ extension GrimoraAppModel {
         manifest: manifest,
         temporaryDirectory: temporaryDirectory,
         importer: importer,
-        imagePolicy: .reuseExistingImagesWithoutDownloading
+        imagePolicy: .reuseExistingImagesWithoutDownloading,
+        automatic: automatic
       ) { [weak self] progress in
         await MainActor.run {
           self?.handleImportProgress(progress, manifest: manifest)
@@ -404,9 +408,8 @@ extension GrimoraAppModel {
     defer { isWorking = false }
 
     do {
-      try imageStore.removeAllImages()
+      try await removeCachedImages(publishesLibraryActivity: false)
       try database.clearStoredImagePaths()
-      LocalCardImageLoader.shared.clear()
       updateManifest = nil
       refreshLibraryState()
       reloadCardLists()
@@ -444,13 +447,17 @@ extension GrimoraAppModel {
     successMessage: (ImportSummary) -> String,
     failureMessage: String
   ) async {
+    if managedCatalogMigrationService != nil {
+      await stageManagedCatalogMigration(manual: true)
+      return
+    }
     guard !isWorking else {
       return
     }
 
     isWorking = true
     prepareForLibraryMaintenance()
-    statusMessage = "Checking Scryfall bulk data..."
+    statusMessage = usesManagedCatalog ? "Checking Grimora catalog..." : "Checking Scryfall bulk data..."
     beginLibraryActivity(operation: activityOperation, title: activityTitle, message: statusMessage)
     defer { isWorking = false }
 
@@ -461,7 +468,8 @@ extension GrimoraAppModel {
         manifest: manifest,
         temporaryDirectory: temporaryDirectory,
         importer: importer,
-        imagePolicy: imagePolicy
+        imagePolicy: imagePolicy,
+        preservesCardValueHistory: activityOperation == .deleteAndRefreshDatabase ? false : nil
       ) { [weak self] progress in
         await MainActor.run {
           self?.handleImportProgress(progress, manifest: manifest)
@@ -469,8 +477,7 @@ extension GrimoraAppModel {
       }
 
       if clearsImageCacheAfterImport {
-        try imageStore.removeAllImages()
-        LocalCardImageLoader.shared.clear()
+        try await removeCachedImages(publishesLibraryActivity: true)
       }
 
       updateManifest = nil
@@ -493,7 +500,7 @@ extension GrimoraAppModel {
       startValueHistoryBackgroundImportIfNeeded()
     } catch {
       refreshLibraryState()
-      statusMessage = failureMessage
+      statusMessage = libraryMaintenanceFailureMessage(fallback: failureMessage, error: error)
       finishLibraryActivity(message: statusMessage, state: .failed)
     }
   }
@@ -547,13 +554,13 @@ extension GrimoraAppModel {
       startValueHistoryBackgroundImportIfNeeded()
     } catch {
       refreshLibraryState()
-      statusMessage = failureMessage
+      statusMessage = libraryMaintenanceFailureMessage(fallback: failureMessage, error: error)
       finishLibraryActivity(message: statusMessage, state: .failed)
     }
   }
 
   private func prepareForLibraryMaintenance() {
-    stopCardDataReadHeartbeat()
+    stopLibraryActivityHeartbeat()
     valueHistoryRefreshTask?.cancel()
     valueHistoryRefreshTask = nil
     searchDebounceTask?.cancel()
@@ -579,8 +586,89 @@ extension GrimoraAppModel {
     closeSelectedCard()
   }
 
+  private func removeCachedImages(publishesLibraryActivity: Bool) async throws {
+    statusMessage = "Deleting cached card images..."
+    if publishesLibraryActivity {
+      startLibraryActivityHeartbeat(stage: .deleteCachedImages)
+      updateLibraryActivity(message: statusMessage) { steps in
+        Self.updateStep(
+          LibraryActivityStepID.deleteCachedImages,
+          title: "Delete cached images",
+          detail: "Preparing image cache cleanup",
+          progress: nil,
+          state: .running,
+          in: &steps
+        )
+      }
+    }
+
+    let imageStore = imageStore
+    let progressStream = AsyncThrowingStream<ImageStoreRemovalProgress, Error> { continuation in
+      Task.detached(priority: .userInitiated) {
+        do {
+          try imageStore.removeAllImages { progress in
+            continuation.yield(progress)
+          }
+          continuation.finish()
+        } catch {
+          continuation.finish(throwing: error)
+        }
+      }
+    }
+
+    for try await progress in progressStream {
+      publishImageRemovalProgress(progress, publishesLibraryActivity: publishesLibraryActivity)
+    }
+
+    LocalCardImageLoader.shared.clear()
+    if publishesLibraryActivity {
+      stopLibraryActivityHeartbeat()
+      updateLibraryActivity(message: "Finalizing refreshed library...") { steps in
+        Self.finishStep(LibraryActivityStepID.deleteCachedImages, in: &steps)
+        Self.updateStep(
+          LibraryActivityStepID.finalizeCardLibrary,
+          title: "Finalize library",
+          detail: "Reloading local library",
+          progress: nil,
+          state: .running,
+          in: &steps
+        )
+      }
+      startLibraryActivityHeartbeat(stage: .finalizeCardLibrary)
+    }
+  }
+
+  private func publishImageRemovalProgress(
+    _ progress: ImageStoreRemovalProgress,
+    publishesLibraryActivity: Bool
+  ) {
+    let detail: String
+    if progress.totalItems == 0 {
+      detail = "Image cache is already empty"
+    } else {
+      detail =
+        "Deleting \(formatted(progress.removedItems)) of \(formatted(progress.totalItems)) cached image folders"
+    }
+    statusMessage = "\(detail)..."
+
+    guard publishesLibraryActivity else {
+      return
+    }
+
+    updateLibraryActivity(message: statusMessage) { steps in
+      Self.updateStep(
+        LibraryActivityStepID.deleteCachedImages,
+        title: "Delete cached images",
+        detail: detail,
+        progress: progress.totalItems > 0 ? progress.fraction : 1,
+        state: .running,
+        in: &steps
+      )
+    }
+  }
+
   private func failInitialSetup(message: String) {
-    stopCardDataReadHeartbeat()
+    stopLibraryActivityHeartbeat()
     libraryState = .failed(message)
     statusMessage = message
     finishLibraryActivity(message: statusMessage, state: .failed)
@@ -705,6 +793,9 @@ extension GrimoraAppModel {
   }
 
   func startValueHistoryBackgroundImportIfNeeded() {
+    guard !usesManagedCatalog else {
+      return
+    }
     guard valueHistoryBackgroundTask == nil else {
       return
     }

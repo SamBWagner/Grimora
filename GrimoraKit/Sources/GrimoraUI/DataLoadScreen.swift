@@ -133,12 +133,7 @@ struct DataLoadScreen: View {
     private func libraryActivityStepRow(_ step: GrimoraLibraryActivityStep) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Image(systemName: symbol(for: step.state))
-                    .font(.caption.weight(.semibold))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(tint(for: step.state))
-                    .frame(width: 16)
-                    .accessibilityHidden(true)
+                stepStateIndicator(for: step.state)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(step.title)
@@ -172,6 +167,25 @@ struct DataLoadScreen: View {
         .accessibilityLabel(step.title)
         .accessibilityValue(progressText(for: step))
         .accessibilityIdentifier("data-load-step-\(step.id)")
+    }
+
+    @ViewBuilder
+    private func stepStateIndicator(for state: GrimoraLibraryActivityStepState) -> some View {
+        switch state {
+        case .running:
+            ProgressView()
+                .controlSize(.small)
+                .tint(tint(for: state))
+                .frame(width: 16)
+                .accessibilityHidden(true)
+        case .pending, .succeeded, .failed:
+            Image(systemName: symbol(for: state))
+                .font(.caption.weight(.semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(tint(for: state))
+                .frame(width: 16)
+                .accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder

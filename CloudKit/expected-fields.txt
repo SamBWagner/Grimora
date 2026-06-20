@@ -1,0 +1,6 @@
+payload
+capturedAt
+updatedAt
+deletedAt
+entityID
+sourceDeviceID

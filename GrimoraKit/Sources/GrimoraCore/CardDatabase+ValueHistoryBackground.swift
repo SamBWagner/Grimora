@@ -7,6 +7,24 @@ extension CardDatabase {
     }
   }
 
+  func valueMappingsByMTGJSONUUID() throws -> [String: CardRecord.ID] {
+    try withDatabaseLock {
+      let statement = try database.prepare(
+        "SELECT mtgjson_uuid, card_id FROM card_value_mappings"
+      )
+      var mappings: [String: CardRecord.ID] = [:]
+      while try statement.step() {
+        guard let uuid = statement.string(at: 0),
+          let cardID = statement.string(at: 1)
+        else {
+          continue
+        }
+        mappings[uuid] = cardID
+      }
+      return mappings
+    }
+  }
+
   func valueHistoryCardDatabaseIdentityUnlocked() throws -> String {
     let updatedAt = try metadataValue(forKey: MetadataKey.defaultCardsUpdatedAt.rawValue) ?? "unknown"
     let statement = try database.prepare("SELECT id FROM cards ORDER BY id")
@@ -168,13 +186,83 @@ extension CardDatabase {
 
   func prepareValueHistoryStaging(jobID: String) throws {
     try withDatabaseLock {
-      let deletePrices = try database.prepare("DELETE FROM staging_card_price_points WHERE job_id = ?")
-      try deletePrices.bind(jobID, at: 1)
-      try deletePrices.step()
+      try clearValueHistoryStagingUnlocked(jobID: jobID)
+    }
+  }
 
-      let deleteMappings = try database.prepare("DELETE FROM staging_card_value_mappings WHERE job_id = ?")
-      try deleteMappings.bind(jobID, at: 1)
-      try deleteMappings.step()
+  func prepareValueHistoryStaging(
+    jobID: String,
+    mappingsByMTGJSONUUID: [String: CardRecord.ID]
+  ) throws {
+    try withDatabaseLock {
+      try database.transaction {
+        try clearValueHistoryStagingUnlocked(jobID: jobID)
+        let mappingInsert = try database.prepare(
+          """
+          INSERT OR REPLACE INTO staging_card_value_mappings (job_id, card_id, mtgjson_uuid)
+          VALUES (?, ?, ?)
+          """)
+        for (uuid, cardID) in mappingsByMTGJSONUUID {
+          try mappingInsert.bind(jobID, at: 1)
+          try mappingInsert.bind(cardID, at: 2)
+          try mappingInsert.bind(uuid, at: 3)
+          try mappingInsert.step()
+          try mappingInsert.reset()
+        }
+      }
+    }
+  }
+
+  func appendStagedCardValuePoints(jobID: String, points: [CardValueImportPoint]) throws {
+    guard !points.isEmpty else {
+      return
+    }
+
+    try withDatabaseLock {
+      try database.transaction {
+        let priceInsert = try database.prepare(
+          """
+          INSERT OR REPLACE INTO staging_card_price_points (job_id, card_id, provider, finish, date, price)
+          VALUES (?, ?, ?, ?, ?, ?)
+          """)
+        let writer = StagingCardPricePointWriter(jobID: jobID, statement: priceInsert)
+        for point in points {
+          try writer.insert(
+            cardID: point.cardID,
+            provider: point.provider,
+            finish: point.finish,
+            date: point.date,
+            price: point.price
+          )
+        }
+      }
+    }
+  }
+
+  func stagedValueHistorySummary(jobID: String) throws -> MTGJSONPriceImportSummary {
+    try withDatabaseLock {
+      let mappedCardsStatement = try database.prepare(
+        "SELECT COUNT(*) FROM staging_card_value_mappings WHERE job_id = ?"
+      )
+      try mappedCardsStatement.bind(jobID, at: 1)
+      _ = try mappedCardsStatement.step()
+
+      let pricePointsStatement = try database.prepare(
+        "SELECT COUNT(*) FROM staging_card_price_points WHERE job_id = ?"
+      )
+      try pricePointsStatement.bind(jobID, at: 1)
+      _ = try pricePointsStatement.step()
+
+      return MTGJSONPriceImportSummary(
+        mappedCards: mappedCardsStatement.int(at: 0) ?? 0,
+        importedPricePoints: pricePointsStatement.int(at: 0) ?? 0
+      )
+    }
+  }
+
+  func discardValueHistoryStaging(jobID: String) throws {
+    try withDatabaseLock {
+      try clearValueHistoryStagingUnlocked(jobID: jobID)
     }
   }
 
@@ -222,6 +310,26 @@ extension CardDatabase {
     try withDatabaseLock {
       var summary = MTGJSONPriceImportSummary(mappedCards: 0, importedPricePoints: 0)
       try database.transaction {
+        let preserveCurrentPrices = try database.prepare(
+          """
+          INSERT OR REPLACE INTO staging_card_price_points (
+              job_id, card_id, provider, finish, date, price
+          )
+          SELECT ?, current.card_id, current.provider, current.finish, current.date, current.price
+          FROM card_price_points current
+          JOIN (
+              SELECT card_id, provider, finish, MAX(date) AS latest_date
+              FROM card_price_points
+              GROUP BY card_id, provider, finish
+          ) latest
+              ON latest.card_id = current.card_id
+              AND latest.provider = current.provider
+              AND latest.finish = current.finish
+              AND latest.latest_date = current.date
+          """)
+        try preserveCurrentPrices.bind(jobID, at: 1)
+        try preserveCurrentPrices.step()
+
         let mappedCardsStatement = try database.prepare(
           "SELECT COUNT(*) FROM staging_card_value_mappings WHERE job_id = ?"
         )
@@ -239,20 +347,26 @@ extension CardDatabase {
         try database.execute("DELETE FROM card_value_summaries")
         try database.execute("DELETE FROM card_price_points")
         try database.execute("DELETE FROM card_value_mappings")
-        try database.execute(
+        let mappingCopy = try database.prepare(
           """
           INSERT INTO card_value_mappings (card_id, mtgjson_uuid)
           SELECT card_id, mtgjson_uuid
           FROM staging_card_value_mappings
-          WHERE job_id = '\(jobID.sqlEscaped)'
+          WHERE job_id = ?
           """)
-        try database.execute(
+        try mappingCopy.bind(jobID, at: 1)
+        try mappingCopy.step()
+
+        let priceCopy = try database.prepare(
           """
           INSERT INTO card_price_points (card_id, provider, finish, date, price)
           SELECT card_id, provider, finish, date, price
           FROM staging_card_price_points
-          WHERE job_id = '\(jobID.sqlEscaped)'
+          WHERE job_id = ?
           """)
+        try priceCopy.bind(jobID, at: 1)
+        try priceCopy.step()
+
         try rebuildCardValueSummariesUnlocked()
         try saveMetadataValue(meta.date, forKey: MetadataKey.mtgjsonPriceHistoryDate.rawValue)
         try saveMetadataValue(meta.version, forKey: MetadataKey.mtgjsonPriceHistoryVersion.rawValue)
@@ -260,16 +374,21 @@ extension CardDatabase {
           try valueHistoryCardDatabaseIdentityUnlocked(),
           forKey: MetadataKey.mtgjsonPriceHistoryCardDatabaseIdentity.rawValue
         )
-        try saveMetadataValue(meta.date, forKey: MetadataKey.mtgjsonCurrentPricesDate.rawValue)
-        try saveMetadataValue(meta.version, forKey: MetadataKey.mtgjsonCurrentPricesVersion.rawValue)
-        try saveMetadataValue(
-          try valueHistoryCardDatabaseIdentityUnlocked(),
-          forKey: MetadataKey.mtgjsonCurrentPricesCardDatabaseIdentity.rawValue
-        )
+        try clearValueHistoryStagingUnlocked(jobID: jobID)
         summary = MTGJSONPriceImportSummary(mappedCards: mappedCards, importedPricePoints: importedPricePoints)
       }
       return summary
     }
+  }
+
+  private func clearValueHistoryStagingUnlocked(jobID: String) throws {
+    let deletePrices = try database.prepare("DELETE FROM staging_card_price_points WHERE job_id = ?")
+    try deletePrices.bind(jobID, at: 1)
+    try deletePrices.step()
+
+    let deleteMappings = try database.prepare("DELETE FROM staging_card_value_mappings WHERE job_id = ?")
+    try deleteMappings.bind(jobID, at: 1)
+    try deleteMappings.step()
   }
 
   private func valueHistoryBackgroundJob(from statement: SQLiteStatement) -> ValueHistoryBackgroundJob {
