@@ -1,12 +1,12 @@
 import Darwin
 import Foundation
 
-enum ProcessLockError: Error, Equatable, CustomStringConvertible {
+public enum ProcessLockError: Error, Equatable, CustomStringConvertible {
   case alreadyRunning
   case openFailed(Int32)
   case lockFailed(Int32)
 
-  var description: String {
+  public var description: String {
     switch self {
     case .alreadyRunning:
       "another grimora-data-engine process is already running"
@@ -18,10 +18,10 @@ enum ProcessLockError: Error, Equatable, CustomStringConvertible {
   }
 }
 
-final class ProcessLock {
+public final class ProcessLock {
   private let descriptor: Int32
 
-  init(url: URL) throws {
+  public init(url: URL) throws {
     descriptor = Darwin.open(url.path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
     guard descriptor >= 0 else {
       throw ProcessLockError.openFailed(errno)

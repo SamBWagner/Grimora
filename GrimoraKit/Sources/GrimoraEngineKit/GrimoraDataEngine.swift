@@ -3,15 +3,18 @@ import Foundation
 import GrimoraCore
 import GrimoraDataPipeline
 
-enum EngineError: Error, CustomStringConvertible {
+public enum EngineError: Error, CustomStringConvertible {
   case invalidCommand
   case missingArtifact(URL)
   case missingManifest(URL)
   case missingConfiguration(String)
   case missingTigrisCredentials
+  case noLocalBuild
 
-  var description: String {
+  public var description: String {
     switch self {
+    case .noLocalBuild:
+      "no local build is available to publish — run a build first"
     case .invalidCommand:
       """
       usage:
@@ -33,13 +36,19 @@ enum EngineError: Error, CustomStringConvertible {
   }
 }
 
-struct GrimoraDataEngine {
-  private let configuration: EngineConfiguration
+/// Callback invoked as a run advances. Receives coarse phase plus pipeline stage detail.
+public typealias EngineProgressHandler = @Sendable (EngineRunProgress) async -> Void
+
+/// Orchestrates the catalog build/publish pipeline and records every run to disk so that any
+/// observer (the CLI's launchd agent or the SwiftUI dashboard) sees the same history and live
+/// progress in the shared engine state directory.
+public struct GrimoraDataEngine {
+  public let configuration: EngineConfiguration
   private let fileManager: FileManager
   private let environment: [String: String]
   private let network: NetworkClient
 
-  init(
+  public init(
     fileManager: FileManager = .default,
     environment: [String: String] = ProcessInfo.processInfo.environment,
     network: NetworkClient = URLSessionNetworkClient(
@@ -52,56 +61,223 @@ struct GrimoraDataEngine {
     self.network = network
   }
 
-  func execute(arguments: [String]) async throws {
-    guard let command = arguments.first else {
-      throw EngineError.invalidCommand
+  // MARK: - Read-only observation
+
+  /// The last persisted single-run state (backwards-compatible `state.json`).
+  public func loadState() -> EngineState {
+    EngineState.load(from: configuration.stateFile)
+  }
+
+  /// All recorded runs, newest first.
+  public func loadRunHistory() -> [EngineRunRecord] {
+    RunHistoryStore(fileURL: configuration.runHistoryFile).all()
+  }
+
+  /// The currently in-flight run, if `current-run.json` is present. May be stale if a process
+  /// crashed; cross-check with ``isRunning()``.
+  public func currentRun() -> CurrentRunStatus? {
+    CurrentRunStatusStore(fileURL: configuration.currentRunFile).read()
+  }
+
+  /// Whether another process currently holds the engine lock (i.e. a build is actually running).
+  public func isRunning() -> Bool {
+    do {
+      let lock = try ProcessLock(url: configuration.lockFile)
+      withExtendedLifetime(lock) {}
+      return false
+    } catch ProcessLockError.alreadyRunning {
+      return true
+    } catch {
+      return false
     }
+  }
+
+  // MARK: - Commands
+
+  /// Fetches the latest source versions and reports, per data source, whether they differ from the
+  /// last successful build.
+  public func checkForUpdate() async throws -> CatalogUpdateCheck {
+    let sources = try await currentSources()
+    let state = EngineState.load(from: configuration.stateFile)
+    return CatalogUpdateCheck(current: sources, lastBuilt: state.lastSuccessfulSources)
+  }
+
+  /// Build + publish if sources changed (or `force`). Returns the recorded outcome.
+  @discardableResult
+  public func run(
+    force: Bool,
+    trigger: EngineRunTrigger = .cli,
+    progress: EngineProgressHandler? = nil
+  ) async throws -> EngineRunRecord.Outcome {
+    let info = try await recordRun(operation: .run, trigger: trigger, userProgress: progress) { report in
+      await report(EngineRunProgress(phase: .checking))
+      let sources = try await currentSources()
+      let state = EngineState.load(from: configuration.stateFile)
+      guard force || state.lastSuccessfulSources != sources else {
+        return RunResultInfo(
+          outcome: .skippedUnchanged,
+          publishedVersion: state.lastPublishedVersion,
+          sourceVersions: sources,
+          counts: nil
+        )
+      }
+      let result = try await performBuild(sources: sources, force: force, report: report)
+      try await performPublish(result: result, report: report)
+      return RunResultInfo(
+        outcome: .succeeded,
+        publishedVersion: result.manifest.version,
+        sourceVersions: sources,
+        counts: result.manifest.counts
+      )
+    }
+    return info.outcome
+  }
+
+  /// Build the catalog locally (no publish). Returns the local artifacts.
+  @discardableResult
+  public func build(
+    force: Bool,
+    trigger: EngineRunTrigger = .cli,
+    progress: EngineProgressHandler? = nil
+  ) async throws -> LocalBuildResult {
+    var built: LocalBuildResult?
+    _ = try await recordRun(operation: .build, trigger: trigger, userProgress: progress) { report in
+      await report(EngineRunProgress(phase: .checking))
+      let sources = try await currentSources()
+      let result = try await performBuild(sources: sources, force: force, report: report)
+      built = result
+      return RunResultInfo(
+        outcome: .succeeded,
+        publishedVersion: nil,
+        sourceVersions: sources,
+        counts: result.manifest.counts
+      )
+    }
+    return built!
+  }
+
+  /// The most recent successful local build still present on disk, if any. Useful for inspecting
+  /// the catalog (e.g. `catalog.sqlite` in the build directory) before publishing.
+  public func lastLocalBuild() -> LocalBuildResult? {
+    let state = EngineState.load(from: configuration.stateFile)
+    guard let manifestPath = state.lastBuiltManifestPath else { return nil }
+    let directory = URL(fileURLWithPath: manifestPath).deletingLastPathComponent()
+    return try? LocalBuildResult.load(directory: directory)
+  }
+
+  /// Publishes the most recent local build. Throws `EngineError.noLocalBuild` if none exists.
+  public func publishLastBuild(
+    trigger: EngineRunTrigger = .cli,
+    progress: EngineProgressHandler? = nil
+  ) async throws {
+    guard let build = lastLocalBuild() else {
+      throw EngineError.noLocalBuild
+    }
+    try await publish(build.directory, trigger: trigger, progress: progress)
+  }
+
+  /// Publish a previously built artifact (or its containing directory).
+  public func publish(
+    _ argument: URL,
+    trigger: EngineRunTrigger = .cli,
+    progress: EngineProgressHandler? = nil
+  ) async throws {
+    let result = try LocalBuildResult.load(argument: argument)
+    _ = try await recordRun(operation: .publish, trigger: trigger, userProgress: progress) { report in
+      try await performPublish(result: result, report: report)
+      return RunResultInfo(
+        outcome: .succeeded,
+        publishedVersion: result.manifest.version,
+        sourceVersions: result.manifest.sources,
+        counts: result.manifest.counts
+      )
+    }
+  }
+
+  // MARK: - Recording
+
+  private struct RunResultInfo {
+    var outcome: EngineRunRecord.Outcome
+    var publishedVersion: String?
+    var sourceVersions: CatalogSourceVersions?
+    var counts: CatalogCounts?
+  }
+
+  /// Acquires the process lock, writes live progress to `current-run.json`, and appends a record to
+  /// `runs.json` on completion (success or failure) so every execution path stays observable.
+  private func recordRun(
+    operation: EngineRunRecord.Operation,
+    trigger: EngineRunTrigger,
+    userProgress: EngineProgressHandler?,
+    body: (_ report: @escaping EngineProgressHandler) async throws -> RunResultInfo
+  ) async throws -> RunResultInfo {
     let lock = try ProcessLock(url: configuration.lockFile)
     defer { withExtendedLifetime(lock) {} }
     try cleanupInterruptedBuilds()
 
-    switch command {
-    case "check":
-      let sources = try await currentSources()
-      let state = EngineState.load(from: configuration.stateFile)
-      print(state.lastSuccessfulSources == sources ? "unchanged" : "update available")
-      print(try jsonString(sources))
-    case "build":
-      let result = try await build(force: arguments.contains("--force"))
-      print(result.manifestURL.path)
-    case "publish":
-      guard arguments.count == 2 else {
-        throw EngineError.invalidCommand
-      }
-      try await publish(URL(fileURLWithPath: arguments[1]))
-    case "run":
-      try await run(force: arguments.contains("--force"))
-    case "status":
-      print(try jsonString(EngineState.load(from: configuration.stateFile)))
-    default:
-      throw EngineError.invalidCommand
+    let runID = UUID()
+    let startedAt = Date()
+    let history = RunHistoryStore(fileURL: configuration.runHistoryFile)
+    let current = CurrentRunStatusStore(fileURL: configuration.currentRunFile)
+
+    let report: EngineProgressHandler = { progress in
+      current.write(
+        CurrentRunStatus(
+          runID: runID,
+          trigger: trigger,
+          operation: operation,
+          startedAt: startedAt,
+          progress: progress,
+          updatedAt: Date()
+        )
+      )
+      await userProgress?(progress)
+    }
+
+    do {
+      let info = try await body(report)
+      history.append(
+        EngineRunRecord(
+          id: runID,
+          trigger: trigger,
+          operation: operation,
+          startedAt: startedAt,
+          finishedAt: Date(),
+          outcome: info.outcome,
+          publishedVersion: info.publishedVersion,
+          sourceVersions: info.sourceVersions,
+          counts: info.counts,
+          error: nil
+        )
+      )
+      current.clear()
+      return info
+    } catch {
+      history.append(
+        EngineRunRecord(
+          id: runID,
+          trigger: trigger,
+          operation: operation,
+          startedAt: startedAt,
+          finishedAt: Date(),
+          outcome: .failed,
+          publishedVersion: nil,
+          sourceVersions: nil,
+          counts: nil,
+          error: String(describing: error)
+        )
+      )
+      current.clear()
+      throw error
     }
   }
 
-  private func run(force: Bool) async throws {
-    let sources = try await currentSources()
-    let state = EngineState.load(from: configuration.stateFile)
-    guard force || state.lastSuccessfulSources != sources else {
-      print("sources unchanged")
-      return
-    }
-    let result = try await build(sources: sources, force: force)
-    try await publish(result.artifactURL)
-  }
+  // MARK: - Core pipeline
 
-  private func build(force: Bool) async throws -> LocalBuildResult {
-    let sources = try await currentSources()
-    return try await build(sources: sources, force: force)
-  }
-
-  private func build(
+  private func performBuild(
     sources: CatalogSourceVersions,
-    force: Bool
+    force: Bool,
+    report: @escaping EngineProgressHandler
   ) async throws -> LocalBuildResult {
     let state = EngineState.load(from: configuration.stateFile)
     if !force,
@@ -118,14 +294,22 @@ struct GrimoraDataEngine {
       .appendingPathComponent(".building-\(UUID().uuidString)", isDirectory: true)
     try fileManager.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
     do {
-      let inputs = try await downloadInputs(sources: sources)
+      await report(EngineRunProgress(phase: .downloading))
+      let inputs = try await downloadInputs(sources: sources, report: report)
       let databaseURL = workingDirectory.appendingPathComponent("catalog.sqlite")
       let pipelineResult = try await CatalogPipeline().build(
         inputs: inputs,
         databaseURL: databaseURL,
         temporaryDirectory: workingDirectory.appendingPathComponent("Temporary", isDirectory: true)
       ) { progress in
-        print("[\(progress.stage.rawValue)] \(progress.completed)")
+        await report(
+          EngineRunProgress(
+            phase: .building,
+            stage: progress.stage.rawValue,
+            completed: progress.completed,
+            total: progress.total
+          )
+        )
       }
       let artifactURL = workingDirectory.appendingPathComponent("catalog.sqlite.gz")
       try GzipArchive.compressFile(at: databaseURL, to: artifactURL)
@@ -180,22 +364,34 @@ struct GrimoraDataEngine {
     }
   }
 
-  private func publish(_ argument: URL) async throws {
-    let result = try LocalBuildResult.load(argument: argument)
+  private func performPublish(
+    result: LocalBuildResult,
+    report: @escaping EngineProgressHandler
+  ) async throws {
+    await report(EngineRunProgress(phase: .publishing))
     let publisher = TigrisPublisher(
       configuration: try TigrisConfiguration(environment: environment)
     )
     try await publisher.publish(
       manifest: result.manifest,
       artifactURL: result.artifactURL,
-      manifestURL: result.manifestURL
+      manifestURL: result.manifestURL,
+      progress: { fraction, label in
+        await report(
+          EngineRunProgress(
+            phase: .publishing,
+            detail: label,
+            completed: Int((fraction * 1000).rounded()),
+            total: 1000
+          )
+        )
+      }
     )
     var state = EngineState.load(from: configuration.stateFile)
     state.lastPublishedVersion = result.manifest.version
     state.lastRunAt = Date()
     state.lastError = nil
     try state.save(to: configuration.stateFile)
-    print("published \(result.manifest.version)")
   }
 
   private func currentSources() async throws -> CatalogSourceVersions {
@@ -208,10 +404,26 @@ struct GrimoraDataEngine {
     )
   }
 
-  private func downloadInputs(sources: CatalogSourceVersions) async throws -> CatalogBuildInputs {
+  private func downloadInputs(
+    sources: CatalogSourceVersions,
+    report: @escaping EngineProgressHandler
+  ) async throws -> CatalogBuildInputs {
     let sourceDirectory = configuration.cacheDirectory
       .appendingPathComponent(try sourceCacheVersion(sources: sources), isDirectory: true)
     try fileManager.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+
+    func downloadReporter(_ label: String) -> @Sendable (NetworkDownloadProgress) async -> Void {
+      { progress in
+        await report(
+          EngineRunProgress(
+            phase: .downloading,
+            detail: label,
+            completed: Int(clamping: progress.completedBytes),
+            total: progress.totalBytes.map { Int(clamping: $0) }
+          )
+        )
+      }
+    }
 
     let scryfallManifest = try await BulkDataClient(network: network).fetchDefaultCardsManifest()
     let scryfallURL = sourceDirectory.appendingPathComponent("scryfall-default-cards.json")
@@ -219,14 +431,24 @@ struct GrimoraDataEngine {
     let pricesURL = sourceDirectory.appendingPathComponent("mtgjson-prices.json.gz")
     if !fileManager.fileExists(atPath: scryfallURL.path) {
       try await BulkDataClient(network: network)
-        .downloadDefaultCards(manifest: scryfallManifest, to: scryfallURL)
+        .downloadDefaultCards(
+          manifest: scryfallManifest,
+          to: scryfallURL,
+          progress: downloadReporter("Scryfall card data")
+        )
     }
     let mtgjsonClient = MTGJSONPriceHistoryClient(network: network)
     if !fileManager.fileExists(atPath: identifiersURL.path) {
-      try await mtgjsonClient.downloadAllPrintings(to: identifiersURL)
+      try await mtgjsonClient.downloadAllPrintings(
+        to: identifiersURL,
+        progress: downloadReporter("MTGJSON card identifiers")
+      )
     }
     if !fileManager.fileExists(atPath: pricesURL.path) {
-      try await mtgjsonClient.downloadAllPrices(to: pricesURL)
+      try await mtgjsonClient.downloadAllPrices(
+        to: pricesURL,
+        progress: downloadReporter("MTGJSON pricing data")
+      )
     }
     return CatalogBuildInputs(
       scryfallJSONURL: scryfallURL,
@@ -271,17 +493,10 @@ struct GrimoraDataEngine {
     let value = try fileManager.attributesOfItem(atPath: url.path)[.size] as? NSNumber
     return value?.int64Value ?? 0
   }
-
-  private func jsonString<T: Encodable>(_ value: T) throws -> String {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    encoder.dateEncodingStrategy = .iso8601
-    return String(decoding: try encoder.encode(value), as: UTF8.self)
-  }
 }
 
-enum CatalogVersioning {
-  static func contentVersion(
+public enum CatalogVersioning {
+  public static func contentVersion(
     sources: CatalogSourceVersions,
     enrichments: [CatalogEnrichmentVersion],
     artifactSHA256: String,
@@ -310,11 +525,11 @@ private struct CatalogBuildIdentity: Encodable {
   var artifactSHA256: String
 }
 
-private struct LocalBuildResult {
-  var directory: URL
-  var artifactURL: URL
-  var manifestURL: URL
-  var manifest: CatalogManifest
+public struct LocalBuildResult: Sendable {
+  public var directory: URL
+  public var artifactURL: URL
+  public var manifestURL: URL
+  public var manifest: CatalogManifest
 
   static func load(argument: URL) throws -> LocalBuildResult {
     var isDirectory: ObjCBool = false

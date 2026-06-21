@@ -1,16 +1,18 @@
 import Foundation
 import GrimoraCore
 
-struct EngineConfiguration: Sendable {
-  let stateDirectory: URL
-  let cacheDirectory: URL
-  let logDirectory: URL
-  let buildsDirectory: URL
-  let stateFile: URL
-  let lockFile: URL
-  let publicCatalogBaseURL: URL
+public struct EngineConfiguration: Sendable {
+  public let stateDirectory: URL
+  public let cacheDirectory: URL
+  public let logDirectory: URL
+  public let buildsDirectory: URL
+  public let stateFile: URL
+  public let lockFile: URL
+  public let runHistoryFile: URL
+  public let currentRunFile: URL
+  public let publicCatalogBaseURL: URL
 
-  init(
+  public init(
     fileManager: FileManager = .default,
     environment: [String: String] = ProcessInfo.processInfo.environment
   ) throws {
@@ -24,6 +26,8 @@ struct EngineConfiguration: Sendable {
     buildsDirectory = stateDirectory.appendingPathComponent("Builds", isDirectory: true)
     stateFile = stateDirectory.appendingPathComponent("state.json")
     lockFile = stateDirectory.appendingPathComponent("engine.lock")
+    runHistoryFile = stateDirectory.appendingPathComponent("runs.json")
+    currentRunFile = stateDirectory.appendingPathComponent("current-run.json")
     publicCatalogBaseURL = URL(
       string: environment["GRIMORA_CATALOG_PUBLIC_BASE_URL"]
         ?? "https://grimora-data-api.fly.dev/v1/catalog"
@@ -35,14 +39,28 @@ struct EngineConfiguration: Sendable {
   }
 }
 
-struct EngineState: Codable, Equatable, Sendable {
-  var lastSuccessfulSources: CatalogSourceVersions?
-  var lastBuiltManifestPath: String?
-  var lastPublishedVersion: String?
-  var lastRunAt: Date?
-  var lastError: String?
+public struct EngineState: Codable, Equatable, Sendable {
+  public var lastSuccessfulSources: CatalogSourceVersions?
+  public var lastBuiltManifestPath: String?
+  public var lastPublishedVersion: String?
+  public var lastRunAt: Date?
+  public var lastError: String?
 
-  static func load(from url: URL) -> EngineState {
+  public init(
+    lastSuccessfulSources: CatalogSourceVersions? = nil,
+    lastBuiltManifestPath: String? = nil,
+    lastPublishedVersion: String? = nil,
+    lastRunAt: Date? = nil,
+    lastError: String? = nil
+  ) {
+    self.lastSuccessfulSources = lastSuccessfulSources
+    self.lastBuiltManifestPath = lastBuiltManifestPath
+    self.lastPublishedVersion = lastPublishedVersion
+    self.lastRunAt = lastRunAt
+    self.lastError = lastError
+  }
+
+  public static func load(from url: URL) -> EngineState {
     guard let data = try? Data(contentsOf: url),
       let state = try? Self.decoder.decode(EngineState.self, from: data)
     else {
@@ -51,7 +69,7 @@ struct EngineState: Codable, Equatable, Sendable {
     return state
   }
 
-  func save(to url: URL) throws {
+  public func save(to url: URL) throws {
     let data = try Self.encoder.encode(self)
     try data.write(to: url, options: .atomic)
   }

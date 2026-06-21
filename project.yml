@@ -101,6 +101,35 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: Apple Development
         DEVELOPMENT_TEAM: BJPQVZR5PZ
+  GrimoraEngineApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: GrimoraEngineApp
+        excludes:
+          - AppIconComposerSources
+    dependencies:
+      - package: GrimoraKit
+        product: GrimoraEngineKit
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_NAME: Grimora Engine
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.GrimoraEngine
+        INFOPLIST_KEY_CFBundleDisplayName: Grimora Engine
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
+        # Local-only tool: not sandboxed so it shares the engine's state directory and Keychain
+        # entries with the launchd CLI. Hardened runtime stays on for code signing.
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        CODE_SIGN_ENTITLEMENTS: GrimoraEngineApp/GrimoraEngine.entitlements
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+        DEVELOPMENT_TEAM: BJPQVZR5PZ
   GrimoraMacUITests:
     type: bundle.ui-testing
     platform: macOS
@@ -165,6 +194,12 @@ schemes:
       gatherCoverageData: true
       targets:
         - GrimoraMacUITests
+  GrimoraEngineApp:
+    build:
+      targets:
+        GrimoraEngineApp: all
+    run:
+      config: Debug
   GrimoraiOS:
     build:
       targets:

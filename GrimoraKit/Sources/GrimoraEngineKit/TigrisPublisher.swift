@@ -2,14 +2,14 @@ import Foundation
 import GrimoraCore
 import SotoS3
 
-struct TigrisConfiguration: Sendable {
-  var artifactsBucket: String
-  var metadataBucket: String
-  var endpoint: String
-  var region: Region
-  var credentials: TigrisCredentials
+public struct TigrisConfiguration: Sendable {
+  public var artifactsBucket: String
+  public var metadataBucket: String
+  public var endpoint: String
+  public var region: Region
+  public var credentials: TigrisCredentials
 
-  init(environment: [String: String]) throws {
+  public init(environment: [String: String]) throws {
     guard let artifactsBucket = environment["TIGRIS_ARTIFACTS_BUCKET"],
       !artifactsBucket.isEmpty
     else {
@@ -28,20 +28,36 @@ struct TigrisConfiguration: Sendable {
   }
 }
 
-struct TigrisPublisher {
-  let configuration: TigrisConfiguration
+public struct TigrisPublisher {
+  public let configuration: TigrisConfiguration
 
-  func publish(manifest: CatalogManifest, artifactURL: URL, manifestURL: URL) async throws {
+  public init(configuration: TigrisConfiguration) {
+    self.configuration = configuration
+  }
+
+  /// Publishes the artifact + manifest to Tigris.
+  ///
+  /// - Parameter progress: optional callback reporting `(fraction, label)` as each large object
+  ///   uploads, where `fraction` is 0...1 for the current upload.
+  public func publish(
+    manifest: CatalogManifest,
+    artifactURL: URL,
+    manifestURL: URL,
+    progress: (@Sendable (Double, String) async -> Void)? = nil
+  ) async throws {
     let client = AWSClient(
       credentialProvider: .static(
         accessKeyId: configuration.credentials.accessKeyID,
         secretAccessKey: configuration.credentials.secretAccessKey
       )
     )
+    // The default Soto per-request timeout is 20s, far too short for uploading a multi-megabyte
+    // catalog over a home uplink — a part upload that exceeds it throws HTTPClientError.deadlineExceeded.
     let s3 = S3(
       client: client,
       region: configuration.region,
-      endpoint: configuration.endpoint
+      endpoint: configuration.endpoint,
+      timeout: .seconds(600)
     )
     do {
       let prefix = "catalogs/\(manifest.version)"
@@ -54,8 +70,11 @@ struct TigrisPublisher {
       _ = try await s3.multipartUpload(
         artifactRequest,
         filename: artifactURL.path,
-        concurrentUploads: 3
-      )
+        concurrentUploads: 3,
+        abortOnFail: true
+      ) { fraction in
+        await progress?(fraction, "Uploading catalog")
+      }
 
       let manifestData = try Data(contentsOf: manifestURL)
       _ = try await s3.putObject(
@@ -76,8 +95,11 @@ struct TigrisPublisher {
       _ = try await s3.multipartUpload(
         currentArtifactRequest,
         filename: artifactURL.path,
-        concurrentUploads: 3
-      )
+        concurrentUploads: 3,
+        abortOnFail: true
+      ) { fraction in
+        await progress?(fraction, "Updating current pointer")
+      }
 
       _ = try await s3.putObject(
         body: AWSHTTPBody(bytes: manifestData),

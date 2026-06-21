@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "GrimoraCore", targets: ["GrimoraCore"]),
         .library(name: "GrimoraUI", targets: ["GrimoraUI"]),
         .library(name: "GrimoraDataPipeline", targets: ["GrimoraDataPipeline"]),
+        .library(name: "GrimoraEngineKit", targets: ["GrimoraEngineKit"]),
         .executable(name: "grimora-data-engine", targets: ["GrimoraDataEngine"]),
         .executable(name: "grimora-data-api", targets: ["GrimoraDataAPI"])
     ],
@@ -67,8 +68,8 @@ let package = Package(
             name: "GrimoraDataPipeline",
             dependencies: ["GrimoraCore"]
         ),
-        .executableTarget(
-            name: "GrimoraDataEngine",
+        .target(
+            name: "GrimoraEngineKit",
             dependencies: [
                 "GrimoraCore",
                 "GrimoraDataPipeline",
@@ -76,6 +77,13 @@ let package = Package(
             ],
             linkerSettings: [
                 .linkedFramework("Security")
+            ]
+        ),
+        .executableTarget(
+            name: "GrimoraDataEngine",
+            dependencies: [
+                "GrimoraCore",
+                "GrimoraEngineKit"
             ]
         ),
         .executableTarget(
@@ -104,7 +112,7 @@ let package = Package(
         ),
         .testTarget(
             name: "GrimoraDataEngineTests",
-            dependencies: ["GrimoraCore", "GrimoraDataEngine"]
+            dependencies: ["GrimoraCore", "GrimoraEngineKit"]
         ),
         .testTarget(
             name: "GrimoraUITests",

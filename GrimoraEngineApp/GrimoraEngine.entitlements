@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Local-only developer tool. The app is intentionally NOT sandboxed so it can read the shared
+	  engine state directory (~/Library/Application Support/GrimoraDataEngine) and the Tigris
+	  Keychain items written by the grimora-data-engine CLI.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+</dict>
+</plist>

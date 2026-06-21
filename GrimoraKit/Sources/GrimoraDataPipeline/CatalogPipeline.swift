@@ -143,7 +143,22 @@ public struct CatalogPipeline: Sendable {
         ),
         allPrintingsGzipURL: inputs.mtgjsonIdentifiersGzipURL,
         allPricesGzipURL: inputs.mtgjsonPricesGzipURL,
-        temporaryDirectory: temporaryDirectory
+        temporaryDirectory: temporaryDirectory,
+        progress: { importProgress in
+          switch importProgress {
+          case let .buildingPriceIDMapProgress(scannedBytes, totalBytes, _),
+            let .importingPriceHistoryProgress(scannedBytes, totalBytes, _):
+            await progress?(
+              CatalogPipelineProgress(
+                stage: .ingestingPrices,
+                completed: Int(clamping: scannedBytes),
+                total: totalBytes.map { Int(clamping: $0) }
+              )
+            )
+          default:
+            break
+          }
+        }
       )
 
     for (index, stage) in enrichmentStages.enumerated() {

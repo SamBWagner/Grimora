@@ -1,7 +1,7 @@
 import Foundation
 import GrimoraCore
 import Testing
-@testable import GrimoraDataEngine
+import GrimoraEngineKit
 
 @Test
 func processLockPreventsConcurrentRuns() throws {

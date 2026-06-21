@@ -1,15 +1,20 @@
 import Foundation
 import Security
 
-struct TigrisCredentials: Sendable {
-  var accessKeyID: String
-  var secretAccessKey: String
+public struct TigrisCredentials: Sendable {
+  public var accessKeyID: String
+  public var secretAccessKey: String
+
+  public init(accessKeyID: String, secretAccessKey: String) {
+    self.accessKeyID = accessKeyID
+    self.secretAccessKey = secretAccessKey
+  }
 }
 
-enum KeychainCredentials {
-  static let service = "com.samwagner.GrimoraDataEngine.tigris"
+public enum KeychainCredentials {
+  public static let service = "com.samwagner.GrimoraDataEngine.tigris"
 
-  static func load(environment: [String: String]) throws -> TigrisCredentials {
+  public static func load(environment: [String: String]) throws -> TigrisCredentials {
     if let accessKey = environment["TIGRIS_ACCESS_KEY_ID"] ?? environment["AWS_ACCESS_KEY_ID"],
       let secretKey = environment["TIGRIS_SECRET_ACCESS_KEY"] ?? environment["AWS_SECRET_ACCESS_KEY"]
     {
