@@ -1839,12 +1839,7 @@ final class GrimoraMacUITests: XCTestCase {
         try createCategory(app: app, named: "Removal")
         XCTAssertTrue(app.descendants(matching: .any)["list-category-section-Ramp"].waitForExistence(timeout: 3))
 
-        let moveToCategoryButton = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "move-list-entry-"))
-            .firstMatch
-        XCTAssertTrue(moveToCategoryButton.waitForExistence(timeout: 3))
-        moveToCategoryButton.click()
-        XCTAssertTrue(clickMenuItemOrButton(app: app, named: "Ramp"))
+        XCTAssertTrue(moveFirstVisibleListEntry(app: app, toCategoryNamed: "Ramp"))
         XCTAssertFalse(app.descendants(matching: .any)["list-category-section-Uncategorized"].waitForExistence(timeout: 1))
 
         try clickToolbarMenuItem(
@@ -2110,12 +2105,7 @@ final class GrimoraMacUITests: XCTestCase {
         }
         XCTAssertTrue(app.staticTexts["3 selected"].waitForExistence(timeout: 3))
 
-        let moveToCategoryButton = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "move-list-entry-"))
-            .firstMatch
-        XCTAssertTrue(moveToCategoryButton.waitForExistence(timeout: 3))
-        moveToCategoryButton.click()
-        XCTAssertTrue(clickMenuItemOrButton(app: app, named: "Ramp"))
+        XCTAssertTrue(moveFirstVisibleListEntry(app: app, toCategoryNamed: "Ramp"))
         XCTAssertTrue(app.descendants(matching: .any)["list-category-section-Ramp"].waitForExistence(timeout: 3))
         XCTAssertTrue(waitForValue(of: listCount, toEqual: "3 cards"))
 
@@ -2935,6 +2925,36 @@ final class GrimoraMacUITests: XCTestCase {
         }
 
         return false
+    }
+
+    /// Moves the first visible list entry to a category through the per-card
+    /// "more" (ellipsis) menu, which now nests the Move to Category submenu.
+    @discardableResult
+    private func moveFirstVisibleListEntry(
+        app: XCUIApplication,
+        toCategoryNamed name: String
+    ) -> Bool {
+        let moreButton = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "more-list-entry-"))
+            .firstMatch
+        guard moreButton.waitForExistence(timeout: 3) else {
+            return false
+        }
+        moreButton.click()
+
+        let moveToCategoryButton = app.descendants(matching: .any)
+            .matching(NSPredicate(
+                format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@",
+                "move-list-entry-",
+                "-category"
+            ))
+            .firstMatch
+        guard moveToCategoryButton.waitForExistence(timeout: 3) else {
+            return false
+        }
+        moveToCategoryButton.click()
+
+        return clickMenuItemOrButton(app: app, named: name)
     }
 
     private func clickToolbarMenuItem(

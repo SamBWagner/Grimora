@@ -386,7 +386,6 @@ struct CardListEmptyCategoryView: View {
 }
 
 struct CardListMoveCategoryMenu: View {
-    @EnvironmentObject private var model: GrimoraAppModel
     @State private var moveFeedbackTrigger = 0
 
     var entry: CardListEntryRecord
@@ -398,33 +397,13 @@ struct CardListMoveCategoryMenu: View {
         if !categories.isEmpty || entry.categoryID != nil {
             HStack(spacing: 5) {
                 Menu {
-                    Button {
-                        move(to: nil)
-                    } label: {
-                        GrimoraMenuSelectionLabel(
-                            title: "Uncategorized",
-                            isSelected: entry.categoryID == nil
-                        )
-                    }
-                    .disabled(isMoveDisabled(to: nil))
-                    .accessibilityIdentifier("move-list-entry-\(entry.id)-category-uncategorized")
-
-                    if !categories.isEmpty {
-                        Divider()
-                    }
-
-                    ForEach(categories) { category in
-                        Button {
-                            move(to: category.id)
-                        } label: {
-                            GrimoraMenuSelectionLabel(
-                                title: category.name,
-                                isSelected: entry.categoryID == category.id
-                            )
-                        }
-                        .disabled(isMoveDisabled(to: category.id))
-                        .accessibilityIdentifier("move-list-entry-\(entry.id)-category-\(category.name)")
-                    }
+                    CardListMoveCategoryMenuContent(
+                        entry: entry,
+                        categories: categories,
+                        onMoveToCategory: onMoveToCategory,
+                        isDestinationDisabled: isDestinationDisabled,
+                        onMoved: { moveFeedbackTrigger += 1 }
+                    )
                 } label: {
                     CardGridControlIcon(
                         systemName: "folder.badge.gearshape",
@@ -441,23 +420,9 @@ struct CardListMoveCategoryMenu: View {
             .fixedSize(horizontal: true, vertical: true)
         }
     }
-
-    private func move(to categoryID: CardListCategoryRecord.ID?) {
-        if let onMoveToCategory {
-            onMoveToCategory(categoryID)
-        } else {
-            model.moveCardListEntry(id: entry.id, toCategoryID: categoryID)
-        }
-        moveFeedbackTrigger += 1
-    }
-
-    private func isMoveDisabled(to categoryID: CardListCategoryRecord.ID?) -> Bool {
-        isDestinationDisabled?(categoryID) ?? (entry.categoryID == categoryID)
-    }
 }
 
 struct CardListMoveZoneMenu: View {
-    @EnvironmentObject private var model: GrimoraAppModel
     @State private var moveFeedbackTrigger = 0
 
     var entry: CardListEntryRecord
@@ -465,20 +430,11 @@ struct CardListMoveZoneMenu: View {
 
     var body: some View {
         Menu {
-            ForEach(availableZones) { zone in
-                Button {
-                    move(to: zone)
-                } label: {
-                    HStack {
-                        Text(zone.title)
-                        if entry.zone == zone {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-                .disabled(entry.zone == zone)
-                .accessibilityIdentifier("move-list-entry-\(entry.id)-zone-\(zone.rawValue)")
-            }
+            CardListMoveZoneMenuContent(
+                entry: entry,
+                onMoveToZone: onMoveToZone,
+                onMoved: { moveFeedbackTrigger += 1 }
+            )
         } label: {
             CardGridControlIcon(
                 systemName: "rectangle.3.group",
@@ -490,19 +446,6 @@ struct CardListMoveZoneMenu: View {
         .accessibilityLabel("Move to Zone")
         .accessibilityIdentifier("move-list-entry-\(entry.id)-zone")
         .grimoraSelectionFeedback(trigger: moveFeedbackTrigger)
-    }
-
-    private var availableZones: [CardListZone] {
-        (model.selectedList?.ruleset ?? .none).allowedZones
-    }
-
-    private func move(to zone: CardListZone) {
-        if let onMoveToZone {
-            onMoveToZone(zone)
-        } else {
-            model.moveCardListEntry(id: entry.id, toZone: zone)
-        }
-        moveFeedbackTrigger += 1
     }
 }
 
@@ -685,36 +628,26 @@ struct MissingCardListEntryView: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 5) {
-            if entry.quantity > 1 {
-                CardGridQuantityBadge(
-                    quantity: entry.quantity,
-                    accessibilityIdentifier: "quantity-list-entry-\(entry.id)"
-                )
-            }
+        HStack(spacing: 6) {
+            CardGridQuantityStepper(
+                quantity: entry.quantity,
+                onIncrement: onIncrementQuantity,
+                onDecrement: onRemove,
+                incrementAccessibilityIdentifier: "increase-list-entry-\(entry.id)",
+                decrementAccessibilityIdentifier: "remove-list-entry-\(entry.id)",
+                quantityAccessibilityIdentifier: "quantity-list-entry-\(entry.id)"
+            )
 
-            CardListMoveCategoryMenu(
-                entry: entry,
+            CardGridMoreMenu(
+                categoryEntry: entry,
                 categories: categories,
                 onMoveToCategory: onMoveToCategory,
-                isDestinationDisabled: isMoveDestinationDisabled
-            )
-
-            CardListMoveZoneMenu(
-                entry: entry,
-                onMoveToZone: onMoveToZone
-            )
-
-            CardGridAddButton(
-                action: onIncrementQuantity,
-                accessibilityIdentifier: "increase-list-entry-\(entry.id)"
-            )
-
-            CardGridRemoveButton(
-                action: onRemove,
-                removeCompletelyAction: onRemoveCompletely,
+                onMoveToZone: onMoveToZone,
+                isMoveDestinationDisabled: isMoveDestinationDisabled,
+                onEditQuantity: onEditQuantity,
+                onRemoveCompletely: onRemoveCompletely,
                 quantity: entry.quantity,
-                accessibilityIdentifier: "remove-list-entry-\(entry.id)"
+                accessibilityIdentifier: "more-list-entry-\(entry.id)"
             )
         }
         .fixedSize(horizontal: true, vertical: true)

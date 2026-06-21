@@ -511,21 +511,17 @@ final class VisionNavigationUITests: XCTestCase {
         let section = firstElement(app, identifier: "list-category-section-content-\(sectionName)")
         XCTAssertTrue(section.waitForExistence(timeout: 3), file: file, line: line)
 
-        if categoryName == "Uncategorized" {
-            let directButton = section.descendants(matching: .any)
-                .matching(NSPredicate(
-                    format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@",
-                    "move-list-entry-",
-                    "-category-uncategorized-direct"
-                ))
-                .firstMatch
-            if directButton.waitForExistence(timeout: 1) {
-                activate(directButton)
-                return
-            }
-        }
+        // Move is now nested inside the per-card "more" (ellipsis) menu, so open
+        // that first, then drill into the Move to Category submenu. The submenu
+        // items render in a menu overlay outside the section, so search the whole
+        // app for them.
+        let moreButton = section.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "more-list-entry-"))
+            .firstMatch
+        XCTAssertTrue(moreButton.waitForExistence(timeout: 3), file: file, line: line)
+        activate(moreButton)
 
-        let moveButton = section.descendants(matching: .any)
+        let moveButton = app.descendants(matching: .any)
             .matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "move-list-entry-", "-category"))
             .firstMatch
         XCTAssertTrue(moveButton.waitForExistence(timeout: 3), file: file, line: line)

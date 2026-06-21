@@ -173,12 +173,11 @@ struct CardGridItemView: View {
     private var bottomBar: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 8) {
-                identityLabel
-                    .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .modifier(identityActivationModifier)
+                leadingControls
 
-                cardControls
+                Spacer(minLength: 0)
+
+                trailingControls
             }
             .padding(.horizontal, 9)
             .frame(height: Self.bottomBarMinimumHeight)
@@ -189,65 +188,51 @@ struct CardGridItemView: View {
         .modifier(CardGridEditLongPressModifier(onEditQuantity: onEditQuantity))
     }
 
-    private var identityLabel: some View {
-        CardIdentityLabel(
-            card: card,
-            nameFont: .callout.weight(.semibold),
-            metadataFont: .caption,
-            nameLineLimit: 1
-        )
+    @ViewBuilder
+    private var leadingControls: some View {
+        if let onIncrementQuantity, let onRemove {
+            CardGridQuantityStepper(
+                quantity: quantity,
+                onIncrement: onIncrementQuantity,
+                onDecrement: onRemove,
+                incrementAccessibilityIdentifier: "increase-list-entry-\(categoryEntry?.id ?? card.id)",
+                decrementAccessibilityIdentifier: removeAccessibilityIdentifier ?? "remove-list-entry-\(card.id)",
+                quantityAccessibilityIdentifier: quantityAccessibilityIdentifier ?? "card-quantity-\(card.id)"
+            )
+        }
     }
 
-    private var cardControls: some View {
-        HStack(spacing: 5) {
-            if quantity > 1 {
-                CardGridQuantityBadge(
-                    quantity: quantity,
-                    accessibilityIdentifier: quantityAccessibilityIdentifier ?? "card-quantity-\(card.id)"
-                )
-            }
-
-            if let onIncrementQuantity {
-                CardGridAddButton(
-                    action: onIncrementQuantity,
-                    accessibilityIdentifier: "increase-list-entry-\(categoryEntry?.id ?? card.id)"
-                )
-            } else {
-                CardListAddMenu(
-                    card: card,
-                    selectedCardIDs: selectedCardIDsForBulkActions,
-                    selectedCardIDsProvider: selectedCardIDsForBulkActionsProvider,
-                    onCreateListForCard: onCreateListForCard,
-                    onCreateListForCards: onCreateListForCards,
-                    onAddCardsToList: onAddCardsToList,
-                    onPrepareAddMenu: onPrepareAddMenu
-                )
-            }
-
-            if let categoryEntry {
-                CardListMoveCategoryMenu(
-                    entry: categoryEntry,
-                    categories: categories,
-                    onMoveToCategory: onMoveToCategory,
-                    isDestinationDisabled: isMoveDestinationDisabled
-                )
-
-                CardListMoveZoneMenu(
-                    entry: categoryEntry,
-                    onMoveToZone: onMoveToZone
-                )
-            }
-
-            if let onRemove {
-                CardGridRemoveButton(
-                    action: onRemove,
-                    removeCompletelyAction: onRemoveCompletely,
-                    quantity: quantity,
-                    accessibilityIdentifier: removeAccessibilityIdentifier ?? "remove-list-entry-\(card.id)"
-                )
-            }
+    @ViewBuilder
+    private var trailingControls: some View {
+        if onIncrementQuantity != nil {
+            CardGridMoreMenu(
+                card: card,
+                selectedCardIDs: selectedCardIDsForBulkActions,
+                selectedCardIDsProvider: selectedCardIDsForBulkActionsProvider,
+                onCreateListForCard: onCreateListForCard,
+                onCreateListForCards: onCreateListForCards,
+                onAddCardsToList: onAddCardsToList,
+                categoryEntry: categoryEntry,
+                categories: categories,
+                onMoveToCategory: onMoveToCategory,
+                onMoveToZone: onMoveToZone,
+                isMoveDestinationDisabled: isMoveDestinationDisabled,
+                onEditQuantity: onEditQuantity,
+                onRemoveCompletely: onRemoveCompletely,
+                quantity: quantity,
+                accessibilityIdentifier: "more-list-entry-\(categoryEntry?.id ?? card.id)"
+            )
+        } else {
+            CardListAddMenu(
+                card: card,
+                selectedCardIDs: selectedCardIDsForBulkActions,
+                selectedCardIDsProvider: selectedCardIDsForBulkActionsProvider,
+                onCreateListForCard: onCreateListForCard,
+                onCreateListForCards: onCreateListForCards,
+                onAddCardsToList: onAddCardsToList,
+                onPrepareAddMenu: onPrepareAddMenu
+            )
         }
-        .fixedSize(horizontal: true, vertical: true)
     }
 
     private var palette: GrimoraPalette {
@@ -294,18 +279,6 @@ struct CardGridItemView: View {
             label: cardAccessibilityLabel,
             value: cardAccessibilityValue,
             action: openCard
-        )
-    }
-
-    private var identityActivationModifier: CardGridIdentityActivationModifier {
-        CardGridIdentityActivationModifier(
-            usesSelectionModeGestures: usesSelectionModeGestures,
-            onSelectionTap: handleSelectionModeTap,
-            onClick: handlePointerClick,
-            onDoubleClick: openCard,
-            onKeyboardActivate: handleKeyboardActivate,
-            onTouch: openCard,
-            dragConfiguration: pointerDragConfiguration
         )
     }
 
@@ -451,31 +424,6 @@ private struct CardGridItemAccessibilityModifier: ViewModifier {
             .accessibilityIdentifier(identifier)
             .accessibilityLabel(label)
             .accessibilityValue(value)
-    }
-}
-
-private struct CardGridIdentityActivationModifier: ViewModifier {
-    var usesSelectionModeGestures: Bool
-    var onSelectionTap: () -> Void
-    var onClick: (CardGridPointerModifiers) -> Void
-    var onDoubleClick: () -> Void
-    var onKeyboardActivate: () -> Void
-    var onTouch: () -> Void
-    var dragConfiguration: CardGridPointerDragConfiguration?
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if usesSelectionModeGestures {
-            content.onTapGesture(perform: onSelectionTap)
-        } else {
-            content.cardGridPointerActivation(
-                onClick: onClick,
-                onDoubleClick: onDoubleClick,
-                onKeyboardActivate: onKeyboardActivate,
-                onTouch: onTouch,
-                dragConfiguration: dragConfiguration
-            )
-        }
     }
 }
 
@@ -723,7 +671,6 @@ enum CardListAddMenuPresentation {
 
 struct CardListAddMenu: View {
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var model: GrimoraAppModel
     @State private var addFeedbackTrigger = 0
 
     var card: CardRecord
@@ -780,25 +727,15 @@ struct CardListAddMenu: View {
 
     private var menu: some View {
         Menu {
-            if !model.cardLists.isEmpty {
-                Section(addSectionTitle) {
-                    ForEach(model.cardLists) { list in
-                        Button {
-                            addTargetCards(to: list.id)
-                        } label: {
-                            Text(list.name)
-                        }
-                        .accessibilityIdentifier("add-card-\(card.id)-to-list-\(list.name)")
-                    }
-                }
-            }
-
-            Button {
-                createListForTargetCards()
-            } label: {
-                Text("New List...")
-            }
-            .accessibilityIdentifier("new-list-from-card-\(card.id)")
+            CardListAddMenuContent(
+                card: card,
+                selectedCardIDs: selectedCardIDs,
+                selectedCardIDsProvider: selectedCardIDsProvider,
+                onCreateListForCard: onCreateListForCard,
+                onCreateListForCards: onCreateListForCards,
+                onAddCardsToList: onAddCardsToList,
+                onAdded: { addFeedbackTrigger += 1 }
+            )
         } label: {
             menuLabel
         }
@@ -838,128 +775,16 @@ struct CardListAddMenu: View {
         }
     }
 
-    private var targetCardIDs: [CardRecord.ID] {
-        let providedIDs = selectedCardIDsProvider?() ?? []
-        let ids = providedIDs.isEmpty
-            ? (selectedCardIDs.isEmpty ? [card.id] : selectedCardIDs)
-            : providedIDs
-        var seenIDs: Set<CardRecord.ID> = []
-        return ids.filter { seenIDs.insert($0).inserted }
-    }
-
     private var resolvedAccessibilityIdentifier: String {
         accessibilityIdentifier ?? "add-card-to-list-\(card.id)"
-    }
-
-    private var addSectionTitle: String {
-        let count = targetCardIDs.count
-        return count > 1 ? "Add \(count.formatted()) Selected Cards to List" : "Add to List"
     }
 
     private var palette: GrimoraPalette {
         GrimoraPalette(colorScheme: colorScheme)
     }
 
-    private func addTargetCards(to listID: CardListRecord.ID) {
-        if onAddCardsToList?(listID, card) == true {
-            addFeedbackTrigger += 1
-            return
-        }
-
-        let ids = targetCardIDs
-        if ids.count == 1, ids.first == card.id {
-            model.addCard(card, toListID: listID)
-        } else {
-            model.addCards(ids, toListID: listID)
-        }
-        addFeedbackTrigger += 1
-    }
-
     private func prepareTargetCards() {
         onPrepareAddMenu?(card)
-    }
-
-    private func createListForTargetCards() {
-        let ids = targetCardIDs
-        if ids.count > 1, let onCreateListForCards {
-            onCreateListForCards(ids)
-        } else {
-            onCreateListForCard(card)
-        }
-    }
-}
-
-struct CardGridRemoveButton: View {
-    @State private var feedbackTrigger = 0
-
-    var action: () -> Void
-    var removeCompletelyAction: (() -> Void)?
-    var quantity: Int
-    var accessibilityIdentifier: String
-
-    var body: some View {
-        Button(role: .destructive) {
-            triggerFeedback()
-            action()
-        } label: {
-            CardGridControlIcon(
-                systemName: "minus",
-                foregroundColor: .red,
-                tone: .destructive,
-                feedbackTrigger: feedbackTrigger
-            )
-        }
-        .contextMenu {
-            if quantity > 1 {
-                Button {
-                    triggerFeedback()
-                    action()
-                } label: {
-                    Text("Decrease Quantity")
-                }
-                .accessibilityIdentifier("\(accessibilityIdentifier)-decrease")
-            }
-
-            if let removeCompletelyAction {
-                Button(role: .destructive) {
-                    triggerFeedback()
-                    removeCompletelyAction()
-                } label: {
-                    Text("Remove")
-                }
-                .accessibilityIdentifier("\(accessibilityIdentifier)-remove")
-            }
-        }
-        .buttonStyle(GrimoraIconButtonStyle())
-        .help(quantity > 1 ? "Decrease Quantity" : "Remove from List")
-        .accessibilityLabel(quantity > 1 ? "Decrease Quantity" : "Remove from List")
-        .accessibilityIdentifier(accessibilityIdentifier)
-        .grimoraDecreaseFeedback(trigger: feedbackTrigger)
-    }
-
-    private func triggerFeedback() {
-        feedbackTrigger += 1
-    }
-}
-
-struct CardGridAddButton: View {
-    @State private var feedbackTrigger = 0
-
-    var action: () -> Void
-    var accessibilityIdentifier: String
-
-    var body: some View {
-        Button {
-            feedbackTrigger += 1
-            action()
-        } label: {
-            CardGridControlIcon(systemName: "plus", feedbackTrigger: feedbackTrigger)
-        }
-        .buttonStyle(GrimoraIconButtonStyle())
-        .help("Increase Quantity")
-        .accessibilityLabel("Increase Quantity")
-        .accessibilityIdentifier(accessibilityIdentifier)
-        .grimoraIncreaseFeedback(trigger: feedbackTrigger)
     }
 }
 
@@ -1041,30 +866,3 @@ struct CardGridControlIcon: View {
     }
 }
 
-struct CardGridQuantityBadge: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var quantity: Int
-    var accessibilityIdentifier: String
-
-    var body: some View {
-        Text("x\(quantity.formatted())")
-            .font(.caption.weight(.bold))
-            .monospacedDigit()
-            .foregroundStyle(palette.primaryText.color)
-            .frame(minWidth: 34, minHeight: 28)
-            .padding(.horizontal, 4)
-            .background(.regularMaterial, in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(palette.hairline.color, lineWidth: 1)
-            }
-            .accessibilityLabel("Quantity")
-            .accessibilityValue(quantity.formatted())
-            .accessibilityIdentifier(accessibilityIdentifier)
-    }
-
-    private var palette: GrimoraPalette {
-        GrimoraPalette(colorScheme: colorScheme)
-    }
-}
