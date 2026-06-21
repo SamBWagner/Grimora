@@ -1995,6 +1995,59 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(waitForValue(of: contextRow, toEqual: "1 card"))
     }
 
+    func testOracleSelectionMenuOffersOnlyTransientPhraseRefinements() throws {
+        let databaseURL = try seedDatabase(cards: [
+            CardRecord(
+                id: "oracle-selection",
+                name: "Oracle Selection",
+                releasedAt: "2026-01-01",
+                setCode: "tst",
+                setName: "Test Set",
+                setType: "expansion",
+                collectorNumber: "1",
+                collectorNumberNumber: 1,
+                rarity: "rare",
+                rarityRank: 2,
+                colorSortKey: 1,
+                layout: "normal",
+                typeLine: "Sorcery",
+                oracleText: "Reveal a card from your hand.",
+                isRealCard: true
+            )
+        ])
+
+        let app = launchApp(databaseURL: databaseURL)
+        XCTAssertTrue(app.buttons["open-card-oracle-selection"].waitForExistence(timeout: 5))
+        openSearchResultCard(app: app, cardID: "oracle-selection")
+
+        let oracleText = app.descendants(matching: .any)["card-detail-oracle-text"]
+        XCTAssertTrue(oracleText.waitForExistence(timeout: 3))
+        let selectionStart = oracleText.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5)
+        )
+        let selectionEnd = oracleText.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.38, dy: 0.5)
+        )
+        selectionStart.press(forDuration: 0.05, thenDragTo: selectionEnd)
+        oracleText.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)
+        ).rightClick()
+
+        XCTAssertTrue(
+            app.descendants(matching: .menuItem)
+                .matching(identifier: "oracle-selection-more-cards")
+                .firstMatch
+                .waitForExistence(timeout: 2)
+        )
+        XCTAssertTrue(
+            app.descendants(matching: .menuItem)
+                .matching(identifier: "oracle-selection-exclude")
+                .firstMatch
+                .exists
+        )
+        XCTAssertFalse(app.menuItems["Always Hide"].exists)
+    }
+
     func testCardListDirectSelectionClearsAndEntryActionsRemainAvailable() throws {
         let databaseURL = try seedDatabase(cards: makeZoomFixtureCards(count: 3))
         let database = try CardDatabase(storage: .file(databaseURL))

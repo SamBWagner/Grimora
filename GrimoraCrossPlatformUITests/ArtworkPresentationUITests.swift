@@ -95,6 +95,20 @@ final class ArtworkPresentationUITests: XCTestCase {
             waitForContextMenuItem(app: app, identifier: "card-artwork-add-favourites-fable-main", label: "Add to Favourites")
         )
         XCTAssertTrue(waitForContextMenuItem(app: app, identifier: "card-artwork-create-list-fable-main", label: "Create New List"))
+        XCTAssertTrue(
+            waitForContextMenuItem(
+                app: app,
+                identifier: "card-artwork-refine-search-fable-main",
+                label: "Refine Search"
+            )
+        )
+        XCTAssertTrue(
+            waitForContextMenuItem(
+                app: app,
+                identifier: "card-artwork-always-hide-fable-main",
+                label: "Always Hide"
+            )
+        )
 
         try activateContextMenuItem(
             app: app,
@@ -106,6 +120,91 @@ final class ArtworkPresentationUITests: XCTestCase {
         revealContextMenu(on: card)
         XCTAssertTrue(waitForContextMenuItem(app: app, identifier: "card-artwork-add-to-list-menu-fable-main", label: "Add to List"))
     }
+
+    @MainActor
+    func testCardDetailUsesOneTriStateRefineControl() throws {
+        let app = try launchSeededApp()
+        let card = firstElement(app, identifier: "open-card-fable-main")
+        XCTAssertTrue(card.waitForExistence(timeout: 8))
+        openSearchResult(card)
+
+        let detail = firstElement(app, identifier: "card-detail")
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        let refine = visibleElement(
+            detail,
+            identifier: "card-detail-refine-button",
+            scrollingIn: detail
+        )
+        XCTAssertTrue(refine.isHittable)
+        XCTAssertFalse(firstElement(detail, identifier: "card-detail-refinement-facets").exists)
+        XCTAssertFalse(firstElement(detail, identifier: "card-detail-oracle-refinement").exists)
+        XCTAssertTrue(firstElement(detail, identifier: "card-detail-oracle-text").exists)
+
+        activate(refine)
+        let panel = firstElement(app, identifier: "search-refinement-panel")
+        XCTAssertTrue(panel.waitForExistence(timeout: 3))
+        let enchantment = app.buttons
+            .matching(NSPredicate(format: "label == %@", "Enchantment"))
+            .firstMatch
+        XCTAssertTrue(enchantment.waitForExistence(timeout: 3))
+        XCTAssertEqual(enchantment.value as? String, "Neutral")
+
+        activate(enchantment)
+        XCTAssertEqual(enchantment.value as? String, "Include")
+        activate(enchantment)
+        XCTAssertEqual(enchantment.value as? String, "Exclude")
+
+        activate(app.buttons["Clear"])
+        XCTAssertEqual(enchantment.value as? String, "Neutral")
+        activate(app.buttons["Cancel"])
+        XCTAssertTrue(waitForNonExistence(of: panel))
+    }
+
+    #if os(iOS) || os(visionOS)
+    @MainActor
+    func testOracleSelectionMenuOffersTransientRefinements() throws {
+        #if os(visionOS)
+        throw XCTSkip(
+            "The visionOS 26.5 simulator does not expose UITextView edit-menu actions to XCTest."
+        )
+        #else
+        let app = try launchSeededApp()
+        let card = firstElement(app, identifier: "open-card-fable-main")
+        XCTAssertTrue(card.waitForExistence(timeout: 8))
+        openSearchResult(card)
+
+        let detail = firstElement(app, identifier: "card-detail")
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        let oracleText = visibleElement(
+            detail,
+            identifier: "card-detail-oracle-text",
+            scrollingIn: detail
+        )
+        XCTAssertTrue(oracleText.isHittable)
+        #if os(visionOS)
+        oracleText.doubleTap()
+        #else
+        oracleText.press(forDuration: 1.0)
+        #endif
+
+        let includeAction = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "More cards with"))
+            .firstMatch
+        let excludeAction = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Exclude"))
+            .firstMatch
+        if !includeAction.waitForExistence(timeout: 0.5) {
+            let forward = app.buttons["Forward"]
+            if forward.waitForExistence(timeout: 2) {
+                activate(forward)
+            }
+        }
+        XCTAssertTrue(includeAction.waitForExistence(timeout: 3))
+        XCTAssertTrue(excludeAction.exists)
+        XCTAssertFalse(app.descendants(matching: .any)["Always Hide"].exists)
+        #endif
+    }
+    #endif
 
     #if os(iOS)
     @MainActor
@@ -857,13 +956,14 @@ private extension ArtworkPresentationUITests {
             layout: "transform",
             typeLine: "Enchantment — Saga // Enchantment Creature — Goblin Shaman",
             oracleText: "",
+            keywords: ["Reflection"],
             faces: [
                 CardFaceRecord(
                     cardID: id,
                     faceIndex: 0,
                     name: "Fable of the Mirror-Breaker",
                     typeLine: "Enchantment — Saga",
-                    oracleText: "",
+                    oracleText: "Create a Goblin Shaman token.",
                     normalImageURL: "https://example.test/\(id)-front.jpg"
                 ),
                 CardFaceRecord(

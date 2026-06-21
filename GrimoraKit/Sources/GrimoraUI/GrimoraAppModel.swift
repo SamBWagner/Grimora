@@ -85,6 +85,7 @@ public final class GrimoraAppModel: ObservableObject {
     GrimoraDefaultSearchConfiguration()
   @Published public internal(set) var searchHistory: [String] = []
   @Published public internal(set) var plainTextSearchHistory: [String] = []
+  @Published public internal(set) var hiddenSearchTerms: [SearchRefinement] = []
   @Published public internal(set) var generatedSearchQuery: String?
   @Published public internal(set) var plainTextSearchStatusMessage: String?
   @Published public internal(set) var plainTextSearchErrorMessage: String?
@@ -231,6 +232,7 @@ public final class GrimoraAppModel: ObservableObject {
   let autoUpdateChecksEnabled: Bool
   let searchHistoryStore: GrimoraSearchHistoryStore
   let plainTextSearchHistoryStore: GrimoraSearchHistoryStore
+  let hiddenSearchTermsStore: HiddenSearchTermsStore
   let imageDownloadConfiguration: GrimoraImageDownloadConfiguration
   let searchPerformance: GrimoraSearchPerformanceConfiguration
   let cloudSyncCoordinator: CloudSyncCoordinator
@@ -310,6 +312,7 @@ public final class GrimoraAppModel: ObservableObject {
     self.autoUpdateChecksEnabled = environment.autoUpdateChecksEnabled
     self.searchHistoryStore = environment.searchHistoryStore
     self.plainTextSearchHistoryStore = environment.plainTextSearchHistoryStore
+    self.hiddenSearchTermsStore = environment.hiddenSearchTermsStore
     self.imageDownloadConfiguration = environment.imageDownloadConfiguration
     self.searchPerformance = environment.searchPerformanceConfiguration
     self.cloudSyncCoordinator = environment.cloudSyncCoordinator
@@ -352,6 +355,7 @@ public final class GrimoraAppModel: ObservableObject {
 
     searchHistory = environment.searchHistoryStore.load()
     plainTextSearchHistory = environment.plainTextSearchHistoryStore.load()
+    hiddenSearchTerms = environment.hiddenSearchTermsStore.load()
     reloadCardLists()
     reloadCloudSyncRecoverySnapshots()
     reloadCloudSyncDiagnostics()

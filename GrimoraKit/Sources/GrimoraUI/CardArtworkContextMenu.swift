@@ -34,6 +34,9 @@ extension View {
 
 private struct CardArtworkContextMenuModifier: ViewModifier {
     @EnvironmentObject private var model: GrimoraAppModel
+    @State private var isRefinementPresented = false
+    @State private var refinementPresentationID = 0
+    @State private var pendingAlwaysHiddenRefinement: SearchRefinement?
 
     var card: CardRecord
     var selectedCardIDs: [CardRecord.ID]
@@ -53,10 +56,75 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
                     onCreateListForCard: onCreateListForCard,
                     onCreateListForCards: onCreateListForCards,
                     onAddCardsToList: onAddCardsToList,
-                    openAction: openAction
+                    openAction: openAction,
+                    onRefineSearch: presentRefinement,
+                    onAlwaysHide: { pendingAlwaysHiddenRefinement = $0 }
                 )
                 .environmentObject(model)
             }
+            .popover(isPresented: $isRefinementPresented, arrowEdge: .bottom) {
+                SearchRefinementPanel(
+                    groups: model.candidateRefinements(for: card),
+                    currentQuery: currentQuery,
+                    onApply: applyRefinements,
+                    onCancel: { isRefinementPresented = false }
+                )
+                .id(refinementPresentationID)
+                .presentationCompactAdaptation(.sheet)
+            }
+            .confirmationDialog(
+                "Always Hide Matching Cards?",
+                isPresented: alwaysHideConfirmationPresented,
+                titleVisibility: .visible
+            ) {
+                Button("Always Hide", role: .destructive, action: confirmAlwaysHide)
+                Button("Cancel", role: .cancel) {
+                    pendingAlwaysHiddenRefinement = nil
+                }
+            } message: {
+                Text(alwaysHideConfirmationMessage)
+            }
+    }
+
+    private var currentQuery: String {
+        model.searchInputMode == .scryfall
+            ? model.submittedSearchText
+            : (model.generatedSearchQuery ?? "")
+    }
+
+    private var alwaysHideConfirmationPresented: Binding<Bool> {
+        Binding {
+            pendingAlwaysHiddenRefinement != nil
+        } set: { isPresented in
+            if !isPresented {
+                pendingAlwaysHiddenRefinement = nil
+            }
+        }
+    }
+
+    private var alwaysHideConfirmationMessage: String {
+        guard let pendingAlwaysHiddenRefinement else {
+            return ""
+        }
+        return "Cards matching “\(pendingAlwaysHiddenRefinement.displayLabel)” will be excluded from every search and synced through iCloud. You can undo this in Settings → Always Hidden."
+    }
+
+    private func presentRefinement() {
+        refinementPresentationID += 1
+        isRefinementPresented = true
+    }
+
+    private func applyRefinements(_ updates: [SearchRefinementUpdate]) {
+        model.applySearchRefinements(updates)
+        isRefinementPresented = false
+    }
+
+    private func confirmAlwaysHide() {
+        guard let pendingAlwaysHiddenRefinement else {
+            return
+        }
+        model.addHiddenTerm(pendingAlwaysHiddenRefinement)
+        self.pendingAlwaysHiddenRefinement = nil
     }
 }
 
@@ -70,6 +138,8 @@ private struct CardArtworkContextMenuContent: View {
     var onCreateListForCards: (([CardRecord.ID]) -> Void)?
     var onAddCardsToList: ((CardListRecord.ID, CardRecord) -> Bool)?
     var openAction: CardArtworkContextMenuAction?
+    var onRefineSearch: () -> Void
+    var onAlwaysHide: (SearchRefinement) -> Void
 
     var body: some View {
         shareMenu
@@ -91,6 +161,16 @@ private struct CardArtworkContextMenuContent: View {
             Label("Create New List", systemImage: "plus.rectangle.on.folder")
         }
         .accessibilityIdentifier("card-artwork-create-list-\(card.id)")
+
+        if !refinementGroups.isEmpty {
+            Divider()
+            Button(action: onRefineSearch) {
+                Label("Refine Search…", systemImage: "checklist")
+            }
+            .accessibilityIdentifier("card-artwork-refine-search-\(card.id)")
+
+            alwaysHideMenu
+        }
 
         if let openAction {
             Divider()
@@ -146,6 +226,27 @@ private struct CardArtworkContextMenuContent: View {
             Label("Add to List", systemImage: "text.badge.plus")
         }
         .accessibilityIdentifier("card-artwork-add-to-list-menu-\(card.id)")
+    }
+
+    private var alwaysHideMenu: some View {
+        Menu {
+            ForEach(refinementGroups) { group in
+                Menu(group.title) {
+                    ForEach(group.refinements) { refinement in
+                        Button(refinement.displayLabel) {
+                            onAlwaysHide(refinement)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label("Always Hide…", systemImage: "eye.slash")
+        }
+        .accessibilityIdentifier("card-artwork-always-hide-\(card.id)")
+    }
+
+    private var refinementGroups: [SearchRefinementGroup] {
+        model.candidateRefinements(for: card)
     }
 
     private var availableLists: [CardListRecord] {

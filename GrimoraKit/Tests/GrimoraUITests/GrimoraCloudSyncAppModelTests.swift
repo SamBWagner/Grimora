@@ -258,6 +258,12 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     modelB.cloudSyncMode = .enabled
     await modelB.startCloudSync()
 
+    modelA.addHiddenTerm(.forKeyword("Devoid"))
+    let hiddenTermArrived = await waitUntil {
+      modelB.hiddenSearchTerms == [.forKeyword("Devoid", intent: .exclude)]
+    }
+    XCTAssertTrue(hiddenTermArrived)
+
     let sharedList = try XCTUnwrap(
       modelA.createCardList(named: "Live Picks", selectAfterCreate: true)
     )
@@ -451,6 +457,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
         userDefaults: isolatedUserDefaults(),
         key: GrimoraSearchPreferences.plainTextSearchHistoryKey
       ),
+      hiddenSearchTermsStore: HiddenSearchTermsStore(userDefaults: isolatedUserDefaults()),
       cloudSyncCoordinator: cloudSyncCoordinator
     )
   }

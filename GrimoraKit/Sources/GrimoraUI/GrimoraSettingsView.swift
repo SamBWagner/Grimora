@@ -99,6 +99,44 @@ public struct GrimoraSettingsView: View {
         }
       }
 
+      Section("Always Hidden") {
+        if model.hiddenSearchTerms.isEmpty {
+          Text("No card traits are excluded from every search.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+          Text("These exclusions affect every search and sync through iCloud.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          ForEach(model.hiddenSearchTerms) { refinement in
+            HStack {
+              VStack(alignment: .leading, spacing: 2) {
+                Text(refinement.displayLabel)
+                Text(refinement.queryFragment)
+                  .font(.caption.monospaced())
+                  .foregroundStyle(.secondary)
+              }
+              Spacer()
+              Button(
+                "Remove \(refinement.displayLabel)",
+                systemImage: "minus.circle",
+                role: .destructive
+              ) {
+                model.removeHiddenTerm(refinement)
+              }
+              .labelStyle(.iconOnly)
+              .accessibilityIdentifier("remove-hidden-search-term-\(refinement.id)")
+            }
+          }
+
+          Button("Clear All Always Hidden", role: .destructive) {
+            model.clearHiddenTerms()
+          }
+          .accessibilityIdentifier("clear-hidden-search-terms")
+        }
+      }
+
       #if os(iOS) || os(visionOS)
       valueSection
 

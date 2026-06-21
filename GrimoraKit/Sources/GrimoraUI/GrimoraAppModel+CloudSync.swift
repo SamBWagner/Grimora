@@ -228,6 +228,7 @@ extension GrimoraAppModel {
       ) ?? CardValueDisplayCurrency.usd.rawValue,
       searchHistory: searchHistory,
       plainTextSearchHistory: plainTextSearchHistory,
+      hiddenSearchTerms: hiddenSearchTerms,
       updatedAt: cloudSyncSearchSettingsUpdatedAt
     )
   }
@@ -362,6 +363,7 @@ extension GrimoraAppModel {
     plainTextSearchHistoryStore.save(settings.plainTextSearchHistory)
     searchHistory = settings.searchHistory
     plainTextSearchHistory = settings.plainTextSearchHistory
+    applySyncedHiddenSearchTerms(settings.hiddenSearchTerms)
 
     applySearchPreferences(
       GrimoraSearchPreferences.configuration(

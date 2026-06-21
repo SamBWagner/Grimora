@@ -177,9 +177,7 @@ extension GrimoraAppModel {
   func resolvedSearchConfiguration() -> GrimoraResolvedSearchConfiguration {
     if isDefaultSearchActive {
       return GrimoraResolvedSearchConfiguration(
-        text: defaultSearchConfiguration.searchText(
-          includingAlwaysIncluded: defaultSearchConfiguration.normalizedText
-        ),
+        text: effectiveSearchText(defaultSearchConfiguration.normalizedText),
         sortMode: sortMode,
         sortDirection: sortDirection
       )
@@ -187,14 +185,14 @@ extension GrimoraAppModel {
 
     if searchInputMode == .plainText {
       return GrimoraResolvedSearchConfiguration(
-        text: defaultSearchConfiguration.searchText(includingAlwaysIncluded: generatedSearchQuery ?? ""),
+        text: effectiveSearchText(generatedSearchQuery ?? ""),
         sortMode: sortMode,
         sortDirection: sortDirection
       )
     }
 
     return GrimoraResolvedSearchConfiguration(
-      text: defaultSearchConfiguration.searchText(includingAlwaysIncluded: submittedSearchText),
+      text: effectiveSearchText(submittedSearchText),
       sortMode: sortMode,
       sortDirection: sortDirection
     )

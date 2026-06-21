@@ -12,6 +12,7 @@ public enum CardDetailPresentationStyle: Equatable {
 }
 
 public struct CardDetailView: View {
+    @EnvironmentObject private var model: GrimoraAppModel
     @Environment(\.colorScheme) private var colorScheme
     #if os(iOS) || os(visionOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -291,11 +292,12 @@ public struct CardDetailView: View {
                 cardTypeLine
             }
 
+            if !refinementGroups.isEmpty {
+                CardRefinementButton(groups: refinementGroups)
+            }
+
             if !card.oracleText.isEmpty {
-                Text(card.oracleText)
-                    .font(.body)
-                    .foregroundStyle(palette.primaryText.color)
-                    .textSelection(.enabled)
+                selectableOracleText(card.oracleText)
             }
 
             if !card.faces.isEmpty {
@@ -312,12 +314,9 @@ public struct CardDetailView: View {
                                 .foregroundStyle(palette.secondaryText.color)
                         }
                         if !face.oracleText.isEmpty {
-                            Text(face.oracleText)
-                                .font(.body)
-                                .foregroundStyle(palette.primaryText.color)
+                            selectableOracleText(face.oracleText)
                         }
                     }
-                    .textSelection(.enabled)
                     .padding(.top, 2)
                 }
             }
@@ -412,6 +411,28 @@ public struct CardDetailView: View {
             .font(usesInspectorPresentation ? .subheadline.weight(.semibold) : .headline)
             .foregroundStyle(palette.secondaryText.color)
             .textSelection(.enabled)
+    }
+
+    private var refinementGroups: [SearchRefinementGroup] {
+        model.candidateRefinements(for: card)
+    }
+
+    private func selectableOracleText(_ text: String) -> some View {
+        SelectableOracleText(
+            text: text,
+            color: palette.primaryText,
+            onIncludeSelection: { selectedText in
+                model.refineCurrentSearch(
+                    with: .forSelectedOracleText(selectedText, intent: .include)
+                )
+            },
+            onExcludeSelection: { selectedText in
+                model.refineCurrentSearch(
+                    with: .forSelectedOracleText(selectedText, intent: .exclude)
+                )
+            }
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var shareMenu: some View {

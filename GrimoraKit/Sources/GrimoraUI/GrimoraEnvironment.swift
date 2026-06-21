@@ -19,6 +19,7 @@ public struct GrimoraEnvironment: Sendable {
   public var autoUpdateChecksEnabled: Bool
   public var searchHistoryStore: GrimoraSearchHistoryStore
   public var plainTextSearchHistoryStore: GrimoraSearchHistoryStore
+  public var hiddenSearchTermsStore: HiddenSearchTermsStore
   public var cloudSyncCoordinator: CloudSyncCoordinator
   public var canOfferInitialCloudSync: Bool
   public var currencyExchangeRateClient: any CurrencyExchangeRateClient
@@ -44,6 +45,7 @@ public struct GrimoraEnvironment: Sendable {
     searchHistoryStore: GrimoraSearchHistoryStore = GrimoraSearchHistoryStore(),
     plainTextSearchHistoryStore: GrimoraSearchHistoryStore =
       GrimoraSearchHistoryStore(key: GrimoraSearchPreferences.plainTextSearchHistoryKey),
+    hiddenSearchTermsStore: HiddenSearchTermsStore = HiddenSearchTermsStore(),
     cloudSyncCoordinator: CloudSyncCoordinator? = nil,
     canOfferInitialCloudSync: Bool = true,
     currencyExchangeRateClient: (any CurrencyExchangeRateClient)? = nil,
@@ -65,6 +67,7 @@ public struct GrimoraEnvironment: Sendable {
     self.autoUpdateChecksEnabled = autoUpdateChecksEnabled
     self.searchHistoryStore = searchHistoryStore
     self.plainTextSearchHistoryStore = plainTextSearchHistoryStore
+    self.hiddenSearchTermsStore = hiddenSearchTermsStore
     self.cloudSyncCoordinator = cloudSyncCoordinator ?? .disabled(database: database)
     self.canOfferInitialCloudSync = canOfferInitialCloudSync
     self.currencyExchangeRateClient = currencyExchangeRateClient
@@ -157,6 +160,7 @@ public struct GrimoraEnvironment: Sendable {
       userDefaults: searchHistoryUserDefaults,
       key: GrimoraSearchPreferences.plainTextSearchHistoryKey
     )
+    let hiddenSearchTermsStore = HiddenSearchTermsStore(userDefaults: searchHistoryUserDefaults)
     if let testSearchHistory = processInfo.environment["GRIMORA_TEST_SEARCH_HISTORY"] {
       searchHistoryStore.save(testSearchHistory.components(separatedBy: "\n"))
     }
@@ -203,6 +207,7 @@ public struct GrimoraEnvironment: Sendable {
       autoUpdateChecksEnabled: processInfo.environment["GRIMORA_DISABLE_AUTO_UPDATE"] != "1",
       searchHistoryStore: searchHistoryStore,
       plainTextSearchHistoryStore: plainTextSearchHistoryStore,
+      hiddenSearchTermsStore: hiddenSearchTermsStore,
       cloudSyncCoordinator: cloudSyncCoordinator,
       canOfferInitialCloudSync: !databaseAlreadyExists,
       currencyExchangeRateClient: currencyExchangeRateClient,

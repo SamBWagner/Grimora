@@ -52,6 +52,7 @@ public enum GrimoraSearchPreferences {
   public static let searchInputModeKey = "Grimora.search.inputMode"
   public static let searchHistoryKey = "Grimora.searchHistory.queries"
   public static let plainTextSearchHistoryKey = "Grimora.plainTextSearchHistory.queries"
+  public static let hiddenSearchTermsKey = "Grimora.search.hiddenTerms"
 
   public static let defaultSearchText = ""
   public static let defaultAlwaysIncludedSearchText = ""

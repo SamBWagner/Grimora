@@ -5803,6 +5803,7 @@ final class GrimoraAppModelTests: XCTestCase {
           userDefaults: isolatedUserDefaults(),
           key: GrimoraSearchPreferences.plainTextSearchHistoryKey
         ),
+      hiddenSearchTermsStore: HiddenSearchTermsStore(userDefaults: isolatedUserDefaults()),
       cloudSyncCoordinator: cloudSyncCoordinator
     )
   }
@@ -6022,5 +6023,83 @@ final class GrimoraAppModelTests: XCTestCase {
         isRealCard: false
       ),
     ]
+  }
+}
+
+extension GrimoraAppModelTests {
+  func testHiddenSearchTermIsPersistedComposedAndIncludedInSyncSettings() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    let model = GrimoraAppModel(
+      environment: environment(database: database),
+      initialCloudSyncSearchSettingsUpdatedAt: .distantPast
+    )
+
+    model.setSearchDraft("t:creature")
+    model.addHiddenTerm(.forKeyword("Devoid"))
+
+    XCTAssertEqual(model.hiddenSearchTerms, [.forKeyword("Devoid", intent: .exclude)])
+    XCTAssertEqual(model.effectiveSearchText("t:creature"), "t:creature -keyword:Devoid")
+    XCTAssertEqual(
+      model.currentSyncSearchSettings().hiddenSearchTerms,
+      [.forKeyword("Devoid", intent: .exclude)]
+    )
+    XCTAssertGreaterThan(model.currentSyncSearchSettings().updatedAt, Date.distantPast)
+  }
+
+  func testCandidateRefinementsExposeStructuredCardFacets() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    var card = uiRecords()[0]
+    card.typeLine = "Legendary Creature — Eldrazi"
+    card.keywords = ["Devoid", "Flying"]
+    card.colorIdentity = ["U", "R"]
+    card.manaValue = 4
+    card.rarity = "mythic"
+
+    let groups = model.candidateRefinements(for: card)
+
+    XCTAssertEqual(
+      groups.map(\.title),
+      ["Keywords", "Type", "Color Identity", "Mana Value", "Rarity", "Set"]
+    )
+    XCTAssertTrue(groups.flatMap(\.refinements).contains(.forKeyword("Devoid")))
+    XCTAssertTrue(groups.flatMap(\.refinements).contains(.forColorIdentity(["U", "R"])))
+  }
+
+  func testTransientChecklistRefinementReplacesTopLevelTermsWithoutPersistingThem() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    let model = GrimoraAppModel(environment: environment(database: database))
+    model.setSearchDraft("ci:B -kw:devoid")
+
+    model.applySearchRefinements([
+      SearchRefinementUpdate(
+        refinement: .forKeyword("Devoid"),
+        state: .include
+      ),
+      SearchRefinementUpdate(
+        refinement: .forRarity("rare"),
+        state: .exclude
+      ),
+    ])
+
+    XCTAssertEqual(model.submittedSearchText, "ci:B keyword:Devoid -r:rare")
+    XCTAssertEqual(model.hiddenSearchTerms, [])
+    XCTAssertEqual(model.refinementState(for: .forKeyword("Devoid")), .include)
+  }
+
+  func testSelectedOracleTextRefinementIsTransient() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    let model = GrimoraAppModel(environment: environment(database: database))
+    model.setSearchDraft("t:creature")
+
+    model.refineCurrentSearch(
+      with: .forSelectedOracleText("  reveal\n a card  ", intent: .exclude)
+    )
+
+    XCTAssertEqual(model.submittedSearchText, #"t:creature -o:"reveal a card""#)
+    XCTAssertEqual(model.hiddenSearchTerms, [])
   }
 }
