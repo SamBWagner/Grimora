@@ -6,11 +6,15 @@ extension GrimoraAppModel {
     cloudSyncMode == .enabled
   }
 
-  public var cloudSyncResolutionSnapshots: [DeviceSyncSnapshot] {
-    if case .resolving(let snapshots) = cloudSyncStatus {
-      return snapshots
+  public var cloudSyncResolutionContext: CloudSyncResolutionContext? {
+    if case .resolving(let context) = cloudSyncStatus {
+      return context
     }
-    return []
+    return nil
+  }
+
+  public var cloudSyncResolutionSnapshots: [DeviceSyncSnapshot] {
+    cloudSyncResolutionContext?.snapshots ?? []
   }
 
   public func applyCloudSyncModePreference(_ mode: GrimoraCloudSyncMode) {
@@ -157,10 +161,10 @@ extension GrimoraAppModel {
     sourceSnapshotID: DeviceSyncSnapshot.ID,
     importedListIDsBySnapshotID: [DeviceSyncSnapshot.ID: Set<CardListRecord.ID>]
   ) async {
-    let snapshots = cloudSyncResolutionSnapshots
-    guard !snapshots.isEmpty else {
+    guard let context = cloudSyncResolutionContext else {
       return
     }
+    let snapshots = context.snapshots
 
     let selectedSearchSettings = snapshots.first { $0.id == sourceSnapshotID }?.searchSettings
     cloudSyncStatus = .syncing

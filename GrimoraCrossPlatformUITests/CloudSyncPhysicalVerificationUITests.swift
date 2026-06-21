@@ -10,7 +10,7 @@ final class CloudSyncPhysicalVerificationUITests: XCTestCase {
     app.launchEnvironment["GRIMORA_SYNC_TEST_EXPOSE_STATUS"] = "1"
     app.launch()
 
-    let resolutionTitle = app.staticTexts["Choose Sync Source"]
+    let resolutionTitle = app.staticTexts["Review iCloud Data"]
     if resolutionTitle.waitForExistence(timeout: 20) {
       let iPhoneSource = app.buttons.matching(
         NSPredicate(format: "label CONTAINS[c] %@", "iPhone")
@@ -22,7 +22,7 @@ final class CloudSyncPhysicalVerificationUITests: XCTestCase {
       let identifiedConfirmButton = app.descendants(matching: .any)[
         "confirm-sync-resolution-button"
       ]
-      let labeledConfirmButton = app.buttons["Use Selected Data"]
+      let labeledConfirmButton = app.buttons["Combine and Continue"]
       let confirmButton = identifiedConfirmButton.exists
         ? identifiedConfirmButton
         : labeledConfirmButton

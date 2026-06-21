@@ -80,110 +80,160 @@ struct CloudSyncResolutionView: View {
   @State private var importedListIDsBySnapshotID: [DeviceSyncSnapshot.ID: Set<CardListRecord.ID>] = [:]
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 18) {
-      if !model.hasLibrary {
-        Button {
-          model.reconsiderCloudSyncChoice()
-        } label: {
-          Label("Back", systemImage: "chevron.left")
-        }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("back-to-cloud-sync-choice-button")
-      }
-
-      VStack(alignment: .leading, spacing: 6) {
-        Text("Choose Sync Source")
-          .font(.title2.weight(.semibold))
-          .foregroundStyle(palette.primaryText.color)
-        Text("Pick the device that should become the starting point. You can also import individual lists from the other devices.")
-          .font(.callout)
-          .foregroundStyle(palette.secondaryText.color)
-      }
-
-      List {
-        ForEach(model.cloudSyncResolutionSnapshots) { snapshot in
-          Section {
-            Button {
-              sourceSnapshotID = snapshot.id
-            } label: {
-              HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                  Text(snapshot.deviceName)
-                    .font(.headline)
-                  Text("\(snapshot.listCount) lists, \(snapshot.entryCount) cards")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if selectedSourceID == snapshot.id {
-                  Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(palette.accent.color)
-                }
-              }
-            }
-            .accessibilityIdentifier("sync-source-\(snapshot.id)")
-
-            ForEach(snapshot.listSnapshot.lists) { list in
-              Toggle(isOn: importBinding(snapshotID: snapshot.id, listID: list.id)) {
-                Text(list.name)
-              }
-              .disabled(selectedSourceID == snapshot.id)
-            }
-          } header: {
-            Text(snapshot.deviceName)
+    Group {
+      if let context = model.cloudSyncResolutionContext {
+        VStack(alignment: .leading, spacing: 20) {
+          if !model.hasLibrary {
+            Button("Back", systemImage: "chevron.left", action: model.reconsiderCloudSyncChoice)
+              .buttonStyle(.bordered)
+              .accessibilityIdentifier("back-to-cloud-sync-choice-button")
           }
-        }
-      }
-      .listStyle(.inset)
 
-      HStack {
-        Spacer()
-        Button {
-          Task {
-            await model.resolveCloudSync(
-              sourceSnapshotID: selectedSourceID,
-              importedListIDsBySnapshotID: importedListIDsBySnapshotID
+          VStack(alignment: .leading, spacing: 7) {
+            Text("Review iCloud Data")
+              .font(.title2)
+              .bold()
+              .foregroundStyle(palette.primaryText.color)
+            Text(
+              "Grimora combined everything it could safely. Choose a starting point, then decide whether to keep any genuinely different versions."
             )
+            .font(.callout)
+            .foregroundStyle(palette.secondaryText.color)
           }
-        } label: {
-          Text("Use Selected Data")
+
+          ScrollView {
+            LazyVStack(spacing: 14) {
+              ForEach(context.snapshots) { snapshot in
+                CloudSyncResolutionSourceCard(
+                  snapshot: snapshot,
+                  isSelected: selectedSourceID == snapshot.id,
+                  isEligibleSource: context.eligibleSourceSnapshotIDs.contains(snapshot.id),
+                  conflictingLists: conflictingLists(
+                    in: snapshot,
+                    context: context
+                  ),
+                  selectedConflictingListIDs:
+                    importedListIDsBySnapshotID[snapshot.id, default: []],
+                  accent: palette.accent.color,
+                  selectSource: {
+                    selectSource(snapshot.id, context: context)
+                  },
+                  toggleConflictingList: { listID in
+                    toggleImportedList(snapshotID: snapshot.id, listID: listID)
+                  }
+                )
+                .accessibilityIdentifier("sync-source-\(snapshot.id)")
+              }
+            }
+            .padding(.vertical, 2)
+          }
+
+          VStack(alignment: .leading, spacing: 12) {
+            Text(selectionSummary(context: context))
+              .font(.subheadline)
+              .foregroundStyle(palette.secondaryText.color)
+
+            HStack {
+              Spacer()
+              Button("Combine and Continue") {
+                resolveSelection()
+              }
+              .buttonStyle(.borderedProminent)
+              .keyboardShortcut(.defaultAction)
+              .accessibilityIdentifier("confirm-sync-resolution-button")
+            }
+          }
         }
-        .buttonStyle(.borderedProminent)
-        .disabled(model.cloudSyncResolutionSnapshots.isEmpty)
-        .accessibilityIdentifier("confirm-sync-resolution-button")
+        .onAppear {
+          prepareSelection(context)
+        }
+        .onChange(of: context) { _, updatedContext in
+          prepareSelection(updatedContext)
+        }
+      } else {
+        ProgressView("Preparing iCloud data…")
       }
     }
     .padding(24)
-    .frame(maxWidth: 820, maxHeight: .infinity)
+    .frame(maxWidth: 860, maxHeight: .infinity)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background {
       GrimoraAppBackground(palette: palette)
         .ignoresSafeArea()
     }
-    .onAppear {
-      sourceSnapshotID = selectedSourceID
-    }
     .accessibilityIdentifier("cloud-sync-resolution")
   }
 
   private var selectedSourceID: DeviceSyncSnapshot.ID {
-    sourceSnapshotID ?? model.cloudSyncResolutionSnapshots.first?.id ?? ""
+    sourceSnapshotID ?? model.cloudSyncResolutionContext?.defaultSourceSnapshotID ?? ""
   }
 
-  private func importBinding(
+  private func prepareSelection(_ context: CloudSyncResolutionContext) {
+    let sourceID =
+      context.eligibleSourceSnapshotIDs.contains(selectedSourceID)
+      ? selectedSourceID
+      : context.defaultSourceSnapshotID
+    selectSource(sourceID, context: context)
+  }
+
+  private func selectSource(
+    _ snapshotID: DeviceSyncSnapshot.ID,
+    context: CloudSyncResolutionContext
+  ) {
+    guard context.eligibleSourceSnapshotIDs.contains(snapshotID) else {
+      return
+    }
+    sourceSnapshotID = snapshotID
+    importedListIDsBySnapshotID = context.safeImportedListIDs(for: snapshotID)
+  }
+
+  private func toggleImportedList(
     snapshotID: DeviceSyncSnapshot.ID,
     listID: CardListRecord.ID
-  ) -> Binding<Bool> {
-    Binding {
-      importedListIDsBySnapshotID[snapshotID, default: []].contains(listID)
-    } set: { isImported in
-      var ids = importedListIDsBySnapshotID[snapshotID, default: []]
-      if isImported {
-        ids.insert(listID)
-      } else {
-        ids.remove(listID)
-      }
-      importedListIDsBySnapshotID[snapshotID] = ids
+  ) {
+    if importedListIDsBySnapshotID[snapshotID, default: []].contains(listID) {
+      importedListIDsBySnapshotID[snapshotID, default: []].remove(listID)
+    } else {
+      importedListIDsBySnapshotID[snapshotID, default: []].insert(listID)
+    }
+  }
+
+  private func conflictingLists(
+    in snapshot: DeviceSyncSnapshot,
+    context: CloudSyncResolutionContext
+  ) -> [CardListRecord] {
+    let conflictIDs = context.conflictingListIDs(for: snapshot.id)
+    return snapshot.listSnapshot.lists.filter { conflictIDs.contains($0.id) }
+  }
+
+  private func selectionSummary(context: CloudSyncResolutionContext) -> String {
+    let source = context.snapshots.first { $0.id == selectedSourceID }
+    let sourceListCount = source?.listCount ?? 0
+    let sourceCardCount = source?.entryCount ?? 0
+    var importedListCount = 0
+    var importedCardCount = 0
+
+    for snapshot in context.snapshots where snapshot.id != selectedSourceID {
+      let selectedIDs = importedListIDsBySnapshotID[snapshot.id, default: []]
+      importedListCount += selectedIDs.count
+      importedCardCount += snapshot.listSnapshot.entries
+        .filter { selectedIDs.contains($0.listID) }
+        .reduce(0) { $0 + max(1, $1.quantity) }
+    }
+
+    let listCount = sourceListCount + importedListCount
+    let cardCount = sourceCardCount + importedCardCount
+    let listNoun = listCount == 1 ? "list" : "lists"
+    let cardNoun = cardCount == 1 ? "card" : "cards"
+    return "\(listCount) \(listNoun) and \(cardCount) \(cardNoun) will be combined. A recovery copy is created first."
+  }
+
+  private func resolveSelection() {
+    Task {
+      await model.resolveCloudSync(
+        sourceSnapshotID: selectedSourceID,
+        importedListIDsBySnapshotID: importedListIDsBySnapshotID
+      )
     }
   }
 

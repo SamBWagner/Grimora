@@ -399,11 +399,30 @@ public final class GrimoraAppModel: ObservableObject {
     let storedInputMode = GrimoraSearchPreferences.searchInputMode()
     let inputMode =
       GrimoraSearchPreferences.isPlainTextSearchInterfaceEnabled ? storedInputMode : .scryfall
-    return GrimoraAppModel(
+    let preferredCloudSyncMode = GrimoraCloudSyncPreferences.resolvedMode()
+    #if DEBUG
+      let usesConflictFixture =
+        ProcessInfo.processInfo.environment["GRIMORA_SYNC_TEST_CONFLICT_FIXTURE"] == "1"
+        || ProcessInfo.processInfo.arguments.contains("--grimora-sync-conflict-fixture")
+        || UserDefaults.standard.bool(forKey: "GRIMORA_SYNC_TEST_CONFLICT_FIXTURE")
+    #else
+      let usesConflictFixture = false
+    #endif
+    let model = GrimoraAppModel(
       environment: environment,
       initialDefaultSearchConfiguration: GrimoraSearchPreferences.configuration(),
       initialSearchInputMode: inputMode,
-      initialCloudSyncMode: GrimoraCloudSyncPreferences.resolvedMode()
+      initialCloudSyncMode: usesConflictFixture
+        ? .disabled
+        : preferredCloudSyncMode,
+      cloudSyncDeviceName: GrimoraDeviceLabel.current
     )
+    #if DEBUG
+      if usesConflictFixture {
+        model.cloudSyncMode = preferredCloudSyncMode
+        model.cloudSyncStatus = .resolving(CloudSyncConflictFixture.context())
+      }
+    #endif
+    return model
   }
 }

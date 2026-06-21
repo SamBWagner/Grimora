@@ -21,7 +21,7 @@ public enum CloudSyncStatus: Equatable, Sendable {
   case appliedRemoteSnapshot(DeviceSyncSnapshot)
   case syncing
   case needsAppUpdate(requiredSyncSchemaVersion: Int)
-  case resolving([DeviceSyncSnapshot])
+  case resolving(CloudSyncResolutionContext)
   case accountChangeRequiresResolution(CloudSyncAccountChange)
   case failed(String)
 }
@@ -659,7 +659,7 @@ public struct SyncResolutionPlan: Codable, Equatable, Sendable {
           !(CloudSyncEntityCodec.isFavouritesListName($0.name)
             || $0.id == CloudSyncEntityCodec.favouritesListID)
         }
-        .map(\.name)
+        .map { CloudSyncListSemanticIdentity.normalizedName($0.name) }
     )
 
     for snapshot in snapshots where snapshot.id != sourceSnapshotID {
@@ -674,6 +674,24 @@ public struct SyncResolutionPlan: Codable, Equatable, Sendable {
         let isFavouritesList =
           CloudSyncEntityCodec.isFavouritesListName(sourceList.name)
           || sourceList.id == CloudSyncEntityCodec.favouritesListID
+        let semanticIdentity = CloudSyncListSemanticIdentity(
+          listID: sourceList.id,
+          snapshot: snapshot.listSnapshot
+        )
+        let isAlreadyRepresented = !isFavouritesList && listSnapshot.lists.contains { existingList in
+          guard !CloudSyncEntityCodec.isFavouritesListName(existingList.name),
+            existingList.id != CloudSyncEntityCodec.favouritesListID
+          else {
+            return false
+          }
+          return CloudSyncListSemanticIdentity(
+            listID: existingList.id,
+            snapshot: listSnapshot
+          ) == semanticIdentity
+        }
+        if isAlreadyRepresented {
+          continue
+        }
         if usedListIDs.contains(list.id) {
           list.id = UUID().uuidString.lowercased()
         }
@@ -682,14 +700,16 @@ public struct SyncResolutionPlan: Codable, Equatable, Sendable {
           // name; later duplicates become "Name 2", "Name 3", ... Favourites are
           // excluded here and collapsed into the single canonical list below.
           let baseName = sourceList.name
-          if usedListNames.contains(list.name) {
+          if usedListNames.contains(CloudSyncListSemanticIdentity.normalizedName(list.name)) {
             var suffix = 2
-            while usedListNames.contains("\(baseName) \(suffix)") {
+            while usedListNames.contains(
+              CloudSyncListSemanticIdentity.normalizedName("\(baseName) \(suffix)")
+            ) {
               suffix += 1
             }
             list.name = "\(baseName) \(suffix)"
           }
-          usedListNames.insert(list.name)
+          usedListNames.insert(CloudSyncListSemanticIdentity.normalizedName(list.name))
         }
         list.position = listSnapshot.lists.filter { $0.isPinned == list.isPinned }.count
         usedListIDs.insert(list.id)
@@ -730,7 +750,7 @@ public struct SyncResolutionPlan: Codable, Equatable, Sendable {
     }
 
     resolved.listSnapshot = listSnapshot
-    resolved.capturedAt = Date()
+    resolved.capturedAt = .now
     // Collapse every device's "Favourites" into the single canonical favourites
     // list (merging their cards) so multi-device users never end up with
     // duplicate or "(Imported)" favourites lists.

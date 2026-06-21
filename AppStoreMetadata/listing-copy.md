@@ -1,6 +1,6 @@
 # Grimora App Store Listing Copy
 
-Use this copy for version 1.2 (build 2026061402). All public screenshots use
+Use this copy for version 1.2 (build 2026061404). All public screenshots use
 the clean fictional-card screenshot set.
 
 ## App Name
@@ -53,15 +53,20 @@ Version 1.2 moves Grimora's card catalog to a managed, prebuilt database.
 - Catalog updates no longer require rebuilding card and market indexes on device
 - Downloads validate before activation and safely fall back to the previous catalog
 - User lists and optional iCloud sync remain separate from managed card data
+- iCloud now combines safe changes automatically and asks only about genuine conflicts
+- Duplicate Favourites and identical lists are consolidated without imported copies
+- A recovery copy is created before automatic or manual iCloud consolidation
 - Improved migration recovery, storage checks, and cross-device compatibility
 ```
 
 ## App Review Notes
 
 ```text
-Version 1.2 (2026061402) requires no account or reviewer credentials. iCloud sync is optional.
+Version 1.2 (2026061404) requires no account or reviewer credentials. iCloud sync is optional.
 
 For an existing installation, Grimora keeps the current library fully usable while an approximately 126 MB managed catalog stages on an allowed network. The app then displays "Restart to finish"; activation occurs atomically on the next cold launch. A failed download, validation, migration, or activation leaves the existing library untouched. A manual refresh may use any network.
+
+When multiple devices contain different iCloud data, Grimora automatically combines non-conflicting lists, Favourites, and search settings. The "Review iCloud Data" screen appears only for same-list content conflicts or delete-versus-edit conflicts. Grimora creates a recovery copy before applying the result.
 
 All App Store screenshots contain fictional card names, fictional set data, and original placeholder artwork. Grimora is independently developed and is not affiliated with or endorsed by any card publisher, data provider, or marketplace.
 ```

@@ -390,7 +390,10 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
 
     return CloudRemoteState(
       requiredLibraryIdentity: entitySnapshot?.libraryIdentity ?? legacyIdentity,
-      snapshots: legacySnapshots + [entitySnapshot].compactMap { $0 },
+      snapshots: CloudSyncSnapshotSelection.authoritativeSnapshots(
+        legacySnapshots: legacySnapshots,
+        entitySnapshot: entitySnapshot
+      ),
       recoverySnapshots: CloudSyncRecoveryPolicy.retained(recoverySnapshots)
     )
   }

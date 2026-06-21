@@ -174,37 +174,36 @@ public actor CloudSyncCoordinator {
       )
       let localSnapshot = localRead.snapshot
 
-      if try shouldResolveBootstrapConflict(localSnapshot: localSnapshot, remoteState: remoteState) {
-        return .resolving(resolutionSnapshots(localSnapshot: localSnapshot, remoteState: remoteState))
-      }
-
-      if try !database.isCloudSyncBootstrapResolved(),
-        let remoteSnapshot = remoteSnapshotToApplyDuringBootstrap(
+      if try !database.isCloudSyncBootstrapResolved(), !remoteState.snapshots.isEmpty {
+        switch try CloudSyncBootstrapAnalyzer.analyze(
           localSnapshot: localSnapshot,
-          remoteState: remoteState
-        )
-      {
-        try Task.checkCancellation()
-        try database.applyDeviceSyncSnapshot(
-          remoteSnapshot,
-          recoveryReason: "Before applying the initial iCloud snapshot",
-          expectedLocalRevision: localRead.revision
-        )
-        try database.markCloudSyncBootstrapResolved(true)
-        let appliedSettings =
-          remoteSnapshot.searchSettings.updatedAt >= searchSettings.updatedAt
-          ? remoteSnapshot.searchSettings
-          : searchSettings
-        let refreshedSnapshot = try database.deviceSyncSnapshot(
-          deviceID: deviceID,
-          deviceName: deviceName,
-          searchSettings: appliedSettings
-        )
-        try await save(refreshedSnapshot)
-        try database.saveCloudSyncBaseSnapshot(refreshedSnapshot)
-        var appliedSnapshot = remoteSnapshot
-        appliedSnapshot.searchSettings = appliedSettings
-        return .appliedRemoteSnapshot(appliedSnapshot)
+          remoteSnapshots: remoteState.snapshots
+        ) {
+        case .resolve(let context):
+          return .resolving(context)
+        case .apply(var mergedSnapshot):
+          try Task.checkCancellation()
+          let appliedSettings =
+            mergedSnapshot.searchSettings.updatedAt >= searchSettings.updatedAt
+            ? mergedSnapshot.searchSettings
+            : searchSettings
+          mergedSnapshot.searchSettings = appliedSettings
+          try database.applyDeviceSyncSnapshot(
+            mergedSnapshot,
+            recoveryReason: "Before automatically combining initial iCloud data",
+            expectedLocalRevision: localRead.revision,
+            alwaysCreateRecoverySnapshot: true
+          )
+          try database.markCloudSyncBootstrapResolved(true)
+          let refreshedSnapshot = try database.deviceSyncSnapshot(
+            deviceID: deviceID,
+            deviceName: deviceName,
+            searchSettings: appliedSettings
+          )
+          try await save(refreshedSnapshot)
+          try database.saveCloudSyncBaseSnapshot(refreshedSnapshot)
+          return .appliedRemoteSnapshot(mergedSnapshot)
+        }
       }
 
       if try !database.isCloudSyncBootstrapResolved() {
@@ -406,9 +405,12 @@ public actor CloudSyncCoordinator {
       localSnapshot: localSnapshot,
       remoteState: remoteState
     ) {
-      return .resolving(
-        resolutionSnapshots(localSnapshot: localSnapshot, remoteState: remoteState)
-      )
+      if case .resolve(let context) = try CloudSyncBootstrapAnalyzer.analyze(
+        localSnapshot: localSnapshot,
+        remoteSnapshots: remoteState.snapshots
+      ) {
+        return .resolving(context)
+      }
     }
 
     let mergedSnapshot = try mergedEntitySnapshot(
@@ -584,72 +586,6 @@ public actor CloudSyncCoordinator {
       return nil
     case .needsAppUpdate(let requiredVersion):
       return .needsAppUpdate(requiredSyncSchemaVersion: requiredVersion)
-    }
-  }
-
-  private func shouldResolveBootstrapConflict(
-    localSnapshot: DeviceSyncSnapshot,
-    remoteState: CloudRemoteState
-  ) throws -> Bool {
-    guard try !database.isCloudSyncBootstrapResolved(),
-      !remoteState.snapshots.isEmpty
-    else {
-      return false
-    }
-
-    if remoteState.snapshots.count > 1 {
-      return true
-    }
-
-    guard let remoteSnapshot = remoteState.snapshots.first else {
-      return false
-    }
-
-    return !localSnapshot.isEffectivelyEmpty && localSnapshot.listSnapshot != remoteSnapshot.listSnapshot
-  }
-
-  private func remoteSnapshotToApplyDuringBootstrap(
-    localSnapshot: DeviceSyncSnapshot,
-    remoteState: CloudRemoteState
-  ) -> DeviceSyncSnapshot? {
-    guard let latestSnapshot = remoteState.snapshots.max(by: {
-      if $0.capturedAt != $1.capturedAt {
-        return $0.capturedAt < $1.capturedAt
-      }
-      return $0.id < $1.id
-    }) else {
-      return nil
-    }
-
-    if latestSnapshot.listSnapshot != localSnapshot.listSnapshot
-      || latestSnapshot.deletedLists != localSnapshot.deletedLists
-      || latestSnapshot.searchSettings.updatedAt > localSnapshot.searchSettings.updatedAt
-    {
-      return latestSnapshot
-    }
-    return nil
-  }
-
-  private func resolutionSnapshots(
-    localSnapshot: DeviceSyncSnapshot,
-    remoteState: CloudRemoteState
-  ) -> [DeviceSyncSnapshot] {
-    var snapshots = remoteState.snapshots.map { snapshot in
-      guard snapshot.id == localSnapshot.id else {
-        return snapshot
-      }
-      var cloudCopy = snapshot
-      cloudCopy.id =
-        "\(snapshot.id)-icloud-\(Int(snapshot.capturedAt.timeIntervalSince1970 * 1_000))"
-      cloudCopy.deviceName = "\(snapshot.deviceName) (iCloud copy)"
-      return cloudCopy
-    }
-    snapshots.append(localSnapshot)
-    return snapshots.sorted {
-      if $0.capturedAt != $1.capturedAt {
-        return $0.capturedAt > $1.capturedAt
-      }
-      return $0.id < $1.id
     }
   }
 

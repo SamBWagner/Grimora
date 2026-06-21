@@ -74,7 +74,8 @@ extension CardDatabase {
   public func applyDeviceSyncSnapshot(
     _ snapshot: DeviceSyncSnapshot,
     recoveryReason: String = "Before applying iCloud changes",
-    expectedLocalRevision: Int? = nil
+    expectedLocalRevision: Int? = nil,
+    alwaysCreateRecoverySnapshot: Bool = false
   ) throws {
     try snapshot.validateForApplication()
 
@@ -89,7 +90,9 @@ extension CardDatabase {
         recoverySnapshot.listSnapshot != snapshot.listSnapshot
         || recoverySnapshot.deletedLists != snapshot.deletedLists
       let recoveryPayload =
-        preservesChangedListData ? try Self.syncJSONData(recoverySnapshot) : nil
+        preservesChangedListData || alwaysCreateRecoverySnapshot
+        ? try Self.syncJSONData(recoverySnapshot)
+        : nil
 
       try database.transaction {
         if let recoveryPayload {
@@ -120,7 +123,11 @@ extension CardDatabase {
     snapshots: [DeviceSyncSnapshot]
   ) throws -> DeviceSyncSnapshot {
     let resolved = try plan.resolvedSnapshot(from: snapshots)
-    try applyDeviceSyncSnapshot(resolved)
+    try applyDeviceSyncSnapshot(
+      resolved,
+      recoveryReason: "Before manually combining iCloud data",
+      alwaysCreateRecoverySnapshot: true
+    )
     try markCloudSyncBootstrapResolved(true)
     try recordLocalSyncChange(
       entityType: .snapshot,

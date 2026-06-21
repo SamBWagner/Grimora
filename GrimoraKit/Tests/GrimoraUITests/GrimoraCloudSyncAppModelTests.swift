@@ -179,7 +179,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
       return XCTFail("Expected remote snapshot application, got \(model.cloudSyncStatus)")
     }
 
-    XCTAssertEqual(appliedSnapshot.id, "iphone")
+    XCTAssertEqual(appliedSnapshot.deviceName, "Grimora Device")
     XCTAssertEqual(model.cardLists.map(\.name), ["Favourites", "Remote Picks"])
     XCTAssertEqual(model.defaultSearchConfiguration.text, "type:creature")
     XCTAssertEqual(model.statusMessage, "iCloud sync is ready.")
@@ -187,7 +187,8 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
 
   func testSourceOfTruthResolutionCanImportSelectedLocalLists() async throws {
     let database = try CardDatabase(storage: .inMemory)
-    let localList = try database.createCardList(named: "Local Picks")
+    let localList = try database.createCardList(named: "Remote Picks")
+    try database.setCardListRuleset(id: localList.id, ruleset: .commander)
     let remoteSnapshot = deviceSnapshot(
       id: "ipad",
       deviceName: "iPad",
@@ -205,18 +206,24 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     model.cloudSyncMode = .enabled
     await model.startCloudSync()
 
-    XCTAssertEqual(Set(model.cloudSyncResolutionSnapshots.map(\.deviceName)), ["iPad", "Grimora Device"])
+    XCTAssertEqual(
+      Set(model.cloudSyncResolutionSnapshots.map(\.deviceName)),
+      ["iCloud (combined)", "Grimora Device"]
+    )
 
     let localSnapshot = try XCTUnwrap(
       model.cloudSyncResolutionSnapshots.first { $0.deviceName == "Grimora Device" }
     )
+    let remoteCombinedSnapshot = try XCTUnwrap(
+      model.cloudSyncResolutionSnapshots.first { $0.deviceName == "iCloud (combined)" }
+    )
     await model.resolveCloudSync(
-      sourceSnapshotID: remoteSnapshot.id,
+      sourceSnapshotID: remoteCombinedSnapshot.id,
       importedListIDsBySnapshotID: [localSnapshot.id: [localList.id]]
     )
 
     XCTAssertEqual(model.cloudSyncStatus, .ready)
-    XCTAssertEqual(Set(model.cardLists.map(\.name)), ["Favourites", "Remote Picks", "Local Picks"])
+    XCTAssertEqual(Set(model.cardLists.map(\.name)), ["Favourites", "Remote Picks", "Remote Picks 2"])
   }
 
   func testRunningDevicesPropagateListsFavouritesAndSelectedListState() async throws {
