@@ -113,6 +113,7 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
   public var displayCurrencyRawValue: String
   public var searchHistory: [String]
   public var plainTextSearchHistory: [String]
+  public var hiddenSearchTerms: [SearchRefinement]
   public var updatedAt: Date
 
   public init(
@@ -124,6 +125,7 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
     displayCurrencyRawValue: String = "USD",
     searchHistory: [String] = [],
     plainTextSearchHistory: [String] = [],
+    hiddenSearchTerms: [SearchRefinement] = [],
     updatedAt: Date = Date()
   ) {
     self.defaultSearchText = defaultSearchText
@@ -134,6 +136,7 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
     self.displayCurrencyRawValue = displayCurrencyRawValue
     self.searchHistory = Self.normalizedHistory(searchHistory)
     self.plainTextSearchHistory = Self.normalizedHistory(plainTextSearchHistory)
+    self.hiddenSearchTerms = SearchRefinement.normalizedHiddenTerms(hiddenSearchTerms)
     self.updatedAt = updatedAt
   }
 
@@ -146,6 +149,7 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
     case displayCurrencyRawValue
     case searchHistory
     case plainTextSearchHistory
+    case hiddenSearchTerms
     case updatedAt
   }
 
@@ -171,6 +175,9 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
     )
     plainTextSearchHistory = Self.normalizedHistory(
       try container.decodeIfPresent([String].self, forKey: .plainTextSearchHistory) ?? []
+    )
+    hiddenSearchTerms = SearchRefinement.normalizedHiddenTerms(
+      try container.decodeIfPresent([SearchRefinement].self, forKey: .hiddenSearchTerms) ?? []
     )
     updatedAt = try container.decode(Date.self, forKey: .updatedAt)
   }
@@ -278,6 +285,7 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
       && searchSettings.alwaysIncludedSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && searchSettings.searchHistory.isEmpty
       && searchSettings.plainTextSearchHistory.isEmpty
+      && searchSettings.hiddenSearchTerms.isEmpty
   }
 
   private var hasNoUserListContent: Bool {

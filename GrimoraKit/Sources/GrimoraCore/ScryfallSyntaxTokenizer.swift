@@ -93,7 +93,12 @@ struct ScryfallSyntaxTokenizer {
 
             if isQuoted {
                 text.formIndex(after: &index)
-                if character.isScryfallQuoteDelimiter {
+                if isEscaped {
+                    value.append(character)
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character.isScryfallQuoteDelimiter {
                     isQuoted = false
                 } else {
                     value.append(character)
