@@ -109,10 +109,13 @@ struct CloudSyncResolutionSourceCard: View {
       }
     }
     .padding(18)
-    .background(.thinMaterial, in: .rect(cornerRadius: 18))
+    .background(.thinMaterial, in: .rect(cornerRadius: 18, style: .continuous))
     .overlay {
-      RoundedRectangle(cornerRadius: 18)
-        .stroke(isSelected ? accent : Color.secondary.opacity(0.22), lineWidth: isSelected ? 2 : 1)
+      RoundedRectangle(cornerRadius: 18, style: .continuous)
+        .strokeBorder(
+          isSelected ? accent : Color.secondary.opacity(0.22),
+          lineWidth: isSelected ? 2 : 1
+        )
     }
     .opacity(isEligibleSource ? 1 : 0.72)
   }
