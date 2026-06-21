@@ -285,6 +285,49 @@ public enum CloudSyncEntityCodec {
     }
   }
 
+  /// Drops lists that hold no cards and carry no description text when device
+  /// data is combined, tombstoning them so the deletion propagates. The system
+  /// Favourites list is always preserved even when empty. Lists are only pruned
+  /// at combine time (bootstrap merge / manual resolution), never during ordinary
+  /// single-device syncing, so freshly created empty lists are left untouched.
+  public static func pruningEmptyContentlessLists(
+    _ snapshot: DeviceSyncSnapshot
+  ) -> DeviceSyncSnapshot {
+    let entryListIDs = Set(snapshot.listSnapshot.entries.map(\.listID))
+    let prunableListIDs = Set(
+      snapshot.listSnapshot.lists.filter { list in
+        guard !(isFavouritesListName(list.name) || list.id == favouritesListID) else {
+          return false
+        }
+        guard !entryListIDs.contains(list.id) else {
+          return false
+        }
+        let hasDescription =
+          list.descriptionRTFDData != nil
+          || !list.descriptionPlainText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return !hasDescription
+      }.map(\.id)
+    )
+    guard !prunableListIDs.isEmpty else {
+      return snapshot
+    }
+
+    var snapshot = snapshot
+    let deletedAt = snapshot.capturedAt
+    snapshot.listSnapshot.lists.removeAll { prunableListIDs.contains($0.id) }
+    snapshot.listSnapshot.categories.removeAll { prunableListIDs.contains($0.listID) }
+    snapshot.listSnapshot.entries.removeAll { prunableListIDs.contains($0.listID) }
+    for listID in prunableListIDs {
+      if !snapshot.deletedLists.contains(where: { $0.id == listID }) {
+        snapshot.deletedLists.append(SyncListDeletion(id: listID, deletedAt: deletedAt))
+      }
+      snapshot.deletedEntities.append(
+        SyncTombstone(entityType: .cardList, recordID: listID, deletedAt: deletedAt)
+      )
+    }
+    return snapshot
+  }
+
   public static func canonicalizedSnapshot(
     _ snapshot: DeviceSyncSnapshot
   ) -> DeviceSyncSnapshot {

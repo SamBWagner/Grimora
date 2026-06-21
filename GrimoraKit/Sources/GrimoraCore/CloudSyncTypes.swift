@@ -761,8 +761,11 @@ public struct SyncResolutionPlan: Codable, Equatable, Sendable {
     resolved.capturedAt = .now
     // Collapse every device's "Favourites" into the single canonical favourites
     // list (merging their cards) so multi-device users never end up with
-    // duplicate or "(Imported)" favourites lists.
-    return CloudSyncEntityCodec.canonicalizedSnapshot(resolved)
+    // duplicate or "(Imported)" favourites lists, and drop empty contentless
+    // lists so combining never leaves pointless leftovers behind.
+    return CloudSyncEntityCodec.pruningEmptyContentlessLists(
+      CloudSyncEntityCodec.canonicalizedSnapshot(resolved)
+    )
   }
 }
 

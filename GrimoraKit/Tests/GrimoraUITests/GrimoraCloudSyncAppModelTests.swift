@@ -185,10 +185,14 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     XCTAssertEqual(model.statusMessage, "iCloud sync is ready.")
   }
 
-  func testSourceOfTruthResolutionCanImportSelectedLocalLists() async throws {
+  func testBootstrapCombineKeepsBothListsSharingANameWithoutResolution() async throws {
+    // A name collision between two different lists is no longer a conflict: both
+    // are kept side by side and the user is never asked to resolve.
     let database = try CardDatabase(storage: .inMemory)
+    let card = testCard()
+    try database.replaceAllCards([card])
     let localList = try database.createCardList(named: "Remote Picks")
-    try database.setCardListRuleset(id: localList.id, ruleset: .commander)
+    try database.appendCard(card.id, toList: localList.id)
     let remoteSnapshot = deviceSnapshot(
       id: "ipad",
       deviceName: "iPad",
@@ -206,24 +210,14 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     model.cloudSyncMode = .enabled
     await model.startCloudSync()
 
+    XCTAssertTrue(model.cloudSyncResolutionSnapshots.isEmpty)
+    if case .resolving = model.cloudSyncStatus {
+      return XCTFail("A name collision must not require resolution.")
+    }
     XCTAssertEqual(
-      Set(model.cloudSyncResolutionSnapshots.map(\.deviceName)),
-      ["iCloud (combined)", "Grimora Device"]
+      model.cardLists.filter { $0.name == "Remote Picks" }.count,
+      2
     )
-
-    let localSnapshot = try XCTUnwrap(
-      model.cloudSyncResolutionSnapshots.first { $0.deviceName == "Grimora Device" }
-    )
-    let remoteCombinedSnapshot = try XCTUnwrap(
-      model.cloudSyncResolutionSnapshots.first { $0.deviceName == "iCloud (combined)" }
-    )
-    await model.resolveCloudSync(
-      sourceSnapshotID: remoteCombinedSnapshot.id,
-      importedListIDsBySnapshotID: [localSnapshot.id: [localList.id]]
-    )
-
-    XCTAssertEqual(model.cloudSyncStatus, .ready)
-    XCTAssertEqual(Set(model.cardLists.map(\.name)), ["Favourites", "Remote Picks", "Remote Picks 2"])
   }
 
   func testRunningDevicesPropagateListsFavouritesAndSelectedListState() async throws {
@@ -493,6 +487,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
           CardListRecord(
             id: listID,
             name: listName,
+            descriptionPlainText: "synced notes",
             createdAt: date,
             updatedAt: date
           )

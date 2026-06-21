@@ -30,18 +30,10 @@ enum CloudSyncBootstrapAnalyzer {
       )
     }
 
-    let internallyConflictedSnapshotIDs = Set(
-      snapshots.compactMap { snapshot in
-        hasInternalNameConflict(snapshot) ? snapshot.id : nil
-      }
-    )
-    var eligibleSourceIDs = Set(snapshots.map(\.id))
-      .subtracting(internallyConflictedSnapshotIDs)
-    if eligibleSourceIDs.isEmpty {
-      eligibleSourceIDs = [localSnapshot.id]
-    }
-    let defaultSourceID =
-      eligibleSourceIDs.contains(remoteSnapshot.id) ? remoteSnapshot.id : localSnapshot.id
+    // Lists are identified by their stable ID, so any snapshot can serve as the
+    // source of truth. The combined iCloud snapshot is offered by default.
+    let eligibleSourceIDs = Set(snapshots.map(\.id))
+    let defaultSourceID = remoteSnapshot.id
 
     return .resolve(
       CloudSyncResolutionContext(
@@ -86,9 +78,11 @@ enum CloudSyncBootstrapAnalyzer {
       deviceName: deviceName,
       libraryIdentity: libraryIdentity
     )
-    return collapsedIdenticalNamedLists(
-      CloudSyncEntityCodec.canonicalizedSnapshot(merged),
-      tombstoneRemovedDuplicates: true
+    return CloudSyncEntityCodec.pruningEmptyContentlessLists(
+      collapsedIdenticalNamedLists(
+        CloudSyncEntityCodec.canonicalizedSnapshot(merged),
+        tombstoneRemovedDuplicates: true
+      )
     )
   }
 
@@ -99,48 +93,32 @@ enum CloudSyncBootstrapAnalyzer {
       uniqueKeysWithValues: snapshots.map { ($0.id, Set<CardListRecord.ID>()) }
     )
 
-    for snapshot in snapshots {
-      let groupedByName = Dictionary(
-        grouping: snapshot.listSnapshot.lists.filter { !isFavourites($0) },
-        by: { CloudSyncListSemanticIdentity.normalizedName($0.name) }
-      )
-      for lists in groupedByName.values where lists.count > 1 {
-        let identities = Set(
-          lists.map {
-            CloudSyncListSemanticIdentity(listID: $0.id, snapshot: snapshot.listSnapshot)
-          }
-        )
-        if identities.count > 1 {
-          conflicts[snapshot.id, default: []].formUnion(lists.map(\.id))
-        }
-      }
-    }
-
+    // A genuine conflict only exists when the *same* list (matching ID) has been
+    // changed in incompatible ways across snapshots, or one side edited a list
+    // the other side deleted. Lists that merely share a name are independent
+    // lists and are kept side by side without asking the user to resolve them.
     for leftIndex in snapshots.indices {
       for rightIndex in snapshots.indices where rightIndex > leftIndex {
         let left = snapshots[leftIndex]
         let right = snapshots[rightIndex]
         for leftList in left.listSnapshot.lists where !isFavourites(leftList) {
+          guard
+            let rightList = right.listSnapshot.lists.first(where: { $0.id == leftList.id }),
+            !isFavourites(rightList)
+          else {
+            continue
+          }
           let leftIdentity = CloudSyncListSemanticIdentity(
             listID: leftList.id,
             snapshot: left.listSnapshot
           )
-          for rightList in right.listSnapshot.lists where !isFavourites(rightList) {
-            let matchesID = leftList.id == rightList.id
-            let matchesName =
-              CloudSyncListSemanticIdentity.normalizedName(leftList.name)
-              == CloudSyncListSemanticIdentity.normalizedName(rightList.name)
-            guard matchesID || matchesName else {
-              continue
-            }
-            let rightIdentity = CloudSyncListSemanticIdentity(
-              listID: rightList.id,
-              snapshot: right.listSnapshot
-            )
-            if leftIdentity != rightIdentity {
-              conflicts[left.id, default: []].insert(leftList.id)
-              conflicts[right.id, default: []].insert(rightList.id)
-            }
+          let rightIdentity = CloudSyncListSemanticIdentity(
+            listID: rightList.id,
+            snapshot: right.listSnapshot
+          )
+          if leftIdentity != rightIdentity {
+            conflicts[left.id, default: []].insert(leftList.id)
+            conflicts[right.id, default: []].insert(rightList.id)
           }
         }
 
@@ -243,23 +221,6 @@ enum CloudSyncBootstrapAnalyzer {
       }
     }
     return snapshot
-  }
-
-  private static func hasInternalNameConflict(_ snapshot: DeviceSyncSnapshot) -> Bool {
-    let groupedByName = Dictionary(
-      grouping: snapshot.listSnapshot.lists.filter { !isFavourites($0) },
-      by: { CloudSyncListSemanticIdentity.normalizedName($0.name) }
-    )
-    return groupedByName.values.contains { lists in
-      guard lists.count > 1 else {
-        return false
-      }
-      return Set(
-        lists.map {
-          CloudSyncListSemanticIdentity(listID: $0.id, snapshot: snapshot.listSnapshot)
-        }
-      ).count > 1
-    }
   }
 
   private static func isFavourites(_ list: CardListRecord) -> Bool {

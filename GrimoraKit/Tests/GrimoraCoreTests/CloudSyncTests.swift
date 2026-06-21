@@ -193,7 +193,8 @@ final class CloudSyncTests: XCTestCase {
         let identity = libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00")
         let remoteDatabase = try Fixtures.database()
         try remoteDatabase.saveLibraryIdentity(identity)
-        _ = try remoteDatabase.createCardList(named: "Remote Picks")
+        let remotePicks = try remoteDatabase.createCardList(named: "Remote Picks")
+        try remoteDatabase.appendCard("beta", toList: remotePicks.id)
         let remoteSnapshot = try remoteDatabase.deviceSyncSnapshot(
             deviceID: "ipad",
             deviceName: "iPad",
@@ -203,7 +204,8 @@ final class CloudSyncTests: XCTestCase {
 
         let localDatabase = try Fixtures.database()
         try localDatabase.saveLibraryIdentity(identity)
-        _ = try localDatabase.createCardList(named: "Local Picks")
+        let localPicks = try localDatabase.createCardList(named: "Local Picks")
+        try localDatabase.appendCard("alpha", toList: localPicks.id)
 
         let transport = MemoryCloudSyncTransport(
             state: CloudRemoteState(requiredLibraryIdentity: identity, snapshots: [remoteSnapshot])
@@ -232,7 +234,8 @@ final class CloudSyncTests: XCTestCase {
         let identity = libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00")
         let remoteDatabase = try Fixtures.database()
         try remoteDatabase.saveLibraryIdentity(identity)
-        _ = try remoteDatabase.createCardList(named: "Remote Picks")
+        let remotePicks = try remoteDatabase.createCardList(named: "Remote Picks")
+        try remoteDatabase.appendCard("beta", toList: remotePicks.id)
         let remoteSnapshot = try remoteDatabase.deviceSyncSnapshot(
             deviceID: "ipad",
             deviceName: "iPad",
@@ -307,7 +310,8 @@ final class CloudSyncTests: XCTestCase {
         )
         let localDatabase = try Fixtures.database()
         try localDatabase.saveLibraryIdentity(identity)
-        _ = try localDatabase.createCardList(named: "Local Copy")
+        let localCopy = try localDatabase.createCardList(named: "Local Copy")
+        try localDatabase.appendCard("alpha", toList: localCopy.id)
         let coordinator = CloudSyncCoordinator(
             database: localDatabase,
             transport: MemoryCloudSyncTransport(
@@ -333,7 +337,9 @@ final class CloudSyncTests: XCTestCase {
         )
     }
 
-    func testCoordinatorOffersResolutionForDivergentListsSharingAName() async throws {
+    func testCoordinatorKeepsDivergentListsSharingANameWithoutResolution() async throws {
+        // Two different lists (distinct IDs) that merely share a name are kept
+        // side by side; a name collision is not a conflict to resolve.
         let identity = libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00")
         let remoteSnapshot = snapshot(
             deviceID: "ipad",
@@ -342,7 +348,8 @@ final class CloudSyncTests: XCTestCase {
         )
         let localDatabase = try Fixtures.database()
         try localDatabase.saveLibraryIdentity(identity)
-        _ = try localDatabase.createCardList(named: "Shared Deck")
+        let localList = try localDatabase.createCardList(named: "Shared Deck")
+        try localDatabase.appendCard("alpha", toList: localList.id)
         let coordinator = CloudSyncCoordinator(
             database: localDatabase,
             transport: MemoryCloudSyncTransport(
@@ -359,18 +366,106 @@ final class CloudSyncTests: XCTestCase {
             searchSettings: SyncSearchSettings(updatedAt: .distantPast)
         )
 
-        guard case .resolving(let context) = status else {
-            return XCTFail("Expected genuine name conflict resolution, got \(status).")
+        guard case .appliedRemoteSnapshot(let applied) = status else {
+            return XCTFail("Expected an automatic merge without resolution, got \(status).")
         }
-        XCTAssertEqual(context.snapshots.map(\.deviceName), ["iCloud (combined)", "Mac"])
-        XCTAssertEqual(context.defaultSourceSnapshotID, CloudSyncEntityCodec.entitySnapshotID)
         XCTAssertEqual(
-            Set(context.snapshots.flatMap { $0.listSnapshot.lists.map(\.name) }),
-            ["Shared Deck"]
-        )
-        XCTAssertEqual(
-            context.conflictingListIDsBySnapshotID.values.reduce(into: 0) { $0 += $1.count },
+            try localDatabase.cardLists().filter { $0.name == "Shared Deck" }.count,
             2
+        )
+
+        // A follow-up sync (carrying the applied settings, as the app does) must
+        // settle to a quiet `.ready` rather than re-opening resolution or churning.
+        let settled = await coordinator.reconcileRemoteState(
+            deviceID: "mac",
+            deviceName: "Mac",
+            searchSettings: applied.searchSettings
+        )
+        guard case .ready = settled else {
+            return XCTFail("Expected the state to settle to ready, got \(settled).")
+        }
+    }
+
+    func testPruningEmptyContentlessListsKeepsOnlyMeaningfulLists() throws {
+        let now = Date(timeIntervalSince1970: 100)
+        let snapshot = DeviceSyncSnapshot(
+            id: "device",
+            deviceName: "Device",
+            capturedAt: now,
+            libraryIdentity: libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00"),
+            searchSettings: SyncSearchSettings(updatedAt: now),
+            listSnapshot: CardListLibrarySnapshot(
+                lists: [
+                    CardListRecord(id: "empty", name: "Empty Scratch", createdAt: now, updatedAt: now),
+                    CardListRecord(
+                        id: "described",
+                        name: "Has Notes",
+                        descriptionPlainText: "deck idea",
+                        createdAt: now,
+                        updatedAt: now
+                    ),
+                    CardListRecord(
+                        id: "real",
+                        name: "Real Deck",
+                        createdAt: now,
+                        updatedAt: now,
+                        entryCount: 1
+                    ),
+                    CardListRecord(id: "fav", name: "Favourites", createdAt: now, updatedAt: now),
+                ],
+                categories: [],
+                entries: [
+                    CardListEntryRecord(
+                        id: "real-entry",
+                        listID: "real",
+                        cardID: "alpha",
+                        position: 0,
+                        createdAt: now
+                    )
+                ]
+            )
+        )
+
+        let pruned = CloudSyncEntityCodec.pruningEmptyContentlessLists(snapshot)
+
+        XCTAssertEqual(
+            Set(pruned.listSnapshot.lists.map(\.name)),
+            ["Has Notes", "Real Deck", "Favourites"]
+        )
+        XCTAssertTrue(pruned.deletedLists.contains { $0.id == "empty" })
+        XCTAssertTrue(
+            pruned.deletedEntities.contains { $0.entityType == .cardList && $0.recordID == "empty" }
+        )
+    }
+
+    func testBootstrapCombineErasesEmptyContentlessLists() async throws {
+        let identity = libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00")
+        let remoteSnapshot = snapshot(deviceID: "ipad", listID: "cloud-list", listName: "Cloud Deck")
+        let localDatabase = try Fixtures.database()
+        try localDatabase.saveLibraryIdentity(identity)
+        let keeper = try localDatabase.createCardList(named: "Keeper")
+        try localDatabase.appendCard("alpha", toList: keeper.id)
+        _ = try localDatabase.createCardList(named: "Empty Scratch")
+        let transport = MemoryCloudSyncTransport(
+            state: CloudRemoteState(requiredLibraryIdentity: identity, snapshots: [remoteSnapshot])
+        )
+        let coordinator = CloudSyncCoordinator(database: localDatabase, transport: transport)
+
+        guard case .appliedRemoteSnapshot = await coordinator.start(
+            deviceID: "mac",
+            deviceName: "Mac",
+            searchSettings: SyncSearchSettings(updatedAt: .distantPast)
+        ) else {
+            return XCTFail("Expected an automatic bootstrap combine.")
+        }
+
+        XCTAssertEqual(
+            Set(try localDatabase.cardLists().map(\.name)),
+            ["Keeper", "Cloud Deck"]
+        )
+        let remoteState = await transport.currentState()
+        XCTAssertFalse(
+            remoteState.snapshots.flatMap(\.listSnapshot.lists).contains { $0.name == "Empty Scratch" }
         )
     }
 
@@ -540,7 +635,7 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(merged.listSnapshot.entries.count, 1)
     }
 
-    func testBootstrapAnalyzerPreservesAndCollapsesEmptyNamedLists() throws {
+    func testBootstrapAnalyzerErasesEmptyContentlessListsWhenCombining() throws {
         let timestamp = Date(timeIntervalSince1970: 20)
         let local = emptySnapshot(
             deviceID: "mac",
@@ -551,7 +646,7 @@ final class CloudSyncTests: XCTestCase {
         let remote = emptySnapshot(
             deviceID: "ipad",
             listID: "remote-empty",
-            listName: "Future Deck",
+            listName: "Other Empty",
             timestamp: timestamp
         )
 
@@ -561,10 +656,11 @@ final class CloudSyncTests: XCTestCase {
         )
 
         guard case .apply(let merged) = decision else {
-            return XCTFail("Expected matching empty lists to merge automatically.")
+            return XCTFail("Expected empty lists to combine automatically.")
         }
-        XCTAssertEqual(merged.listSnapshot.lists.map(\.name), ["Future Deck"])
-        XCTAssertTrue(merged.listSnapshot.entries.isEmpty)
+        XCTAssertTrue(merged.listSnapshot.lists.isEmpty)
+        XCTAssertTrue(merged.deletedLists.contains { $0.id == "local-empty" })
+        XCTAssertTrue(merged.deletedLists.contains { $0.id == "remote-empty" })
     }
 
     func testBootstrapAnalyzerMergesFavouritesAndSearchHistories() throws {
@@ -634,7 +730,9 @@ final class CloudSyncTests: XCTestCase {
     }
 
     func testBootstrapResolutionDefaultsIncludeOnlySafeUniqueLists() throws {
-        var local = snapshot(deviceID: "mac", listID: "local-shared", listName: "Shared")
+        // The same list (matching ID) was edited differently on each device, which
+        // is a genuine conflict. Each device's unique lists remain safe to import.
+        var local = snapshot(deviceID: "mac", listID: "shared-list", listName: "Shared")
         let localUnique = snapshot(
             deviceID: "mac-unique",
             listID: "local-unique",
@@ -643,7 +741,7 @@ final class CloudSyncTests: XCTestCase {
         local.listSnapshot.lists.append(contentsOf: localUnique.listSnapshot.lists)
         local.listSnapshot.entries.append(contentsOf: localUnique.listSnapshot.entries)
 
-        var remote = snapshot(deviceID: "ipad", listID: "remote-shared", listName: "Shared")
+        var remote = snapshot(deviceID: "ipad", listID: "shared-list", listName: "Shared")
         let remoteUnique = snapshot(
             deviceID: "ipad-unique",
             listID: "remote-unique",
@@ -658,7 +756,7 @@ final class CloudSyncTests: XCTestCase {
         )
 
         guard case .resolve(let context) = decision else {
-            return XCTFail("Expected a genuine shared-name conflict.")
+            return XCTFail("Expected a genuine same-list edit conflict.")
         }
         XCTAssertEqual(context.defaultSourceSnapshotID, CloudSyncEntityCodec.entitySnapshotID)
         XCTAssertEqual(
@@ -667,7 +765,7 @@ final class CloudSyncTests: XCTestCase {
         )
         XCTAssertFalse(
             context.safeImportedListIDs(for: context.defaultSourceSnapshotID)[local.id, default: []]
-                .contains("local-shared")
+                .contains("shared-list")
         )
     }
 
