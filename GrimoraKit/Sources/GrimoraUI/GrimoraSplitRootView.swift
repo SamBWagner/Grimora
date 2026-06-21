@@ -34,9 +34,9 @@ private struct SplitRootView: View {
     private static let sidebarMinimumWidth: CGFloat = 160
     private static let sidebarIdealWidth: CGFloat = 190
     private static let centerColumnIdealWidth: CGFloat = 320
-    private static let inspectorMinimumWidth: CGFloat = 280
-    private static let inspectorIdealWidth: CGFloat = 320
-    private static let inspectorMaximumWidth: CGFloat = 520
+    private static let inspectorMinimumWidth: CGFloat = 320
+    private static let inspectorIdealWidth: CGFloat = 380
+    private static let inspectorMaximumWidth: CGFloat = 600
 
     var body: some View {
         navigationContent
