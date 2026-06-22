@@ -3,6 +3,47 @@ import Foundation
 import XCTest
 
 final class CurrencyExchangeRateTests: XCTestCase {
+    func testStandardCurrencySuiteIncludesMajorCurrencies() {
+        let codes = Set(CardValueDisplayCurrency.allCases.map(\.code))
+        for expected in ["USD", "EUR", "GBP", "AUD", "CAD", "JPY"] {
+            XCTAssertTrue(codes.contains(expected), "Missing currency \(expected)")
+        }
+    }
+
+    func testEachCurrencyExposesCodeNameAndTitle() {
+        for currency in CardValueDisplayCurrency.allCases {
+            XCTAssertEqual(currency.code, currency.rawValue)
+            XCTAssertFalse(currency.name.isEmpty)
+            XCTAssertEqual(currency.title, "\(currency.name) (\(currency.code))")
+        }
+    }
+
+    func testFrankfurterClientDecodesLatestUSDToEURRate() async throws {
+        let url = FrankfurterCurrencyExchangeRateClient.latestRateURL(from: .usd, to: .eur)
+        let network = RecordingNetworkClient(dataResponses: [
+            url: Data("""
+            [
+              {"date": "2026-05-19", "base": "USD", "quote": "EUR", "rate": 0.9213}
+            ]
+            """.utf8)
+        ])
+        let client = FrankfurterCurrencyExchangeRateClient(network: network)
+
+        let rate = try await client.latestRate(from: .usd, to: .eur)
+
+        XCTAssertEqual(
+            rate,
+            CurrencyExchangeRate(
+                baseCurrency: .usd,
+                quoteCurrency: .eur,
+                rate: 0.9213,
+                date: "2026-05-19",
+                providerName: "Frankfurter"
+            )
+        )
+        XCTAssertEqual(url.query?.contains("quotes=EUR"), true)
+    }
+
     func testFrankfurterClientDecodesLatestUSDToAUDRate() async throws {
         let url = FrankfurterCurrencyExchangeRateClient.latestRateURL(from: .usd, to: .aud)
         let network = RecordingNetworkClient(dataResponses: [

@@ -162,7 +162,7 @@ public struct GrimoraSettingsView: View {
       }
       .accessibilityIdentifier("value-currency-picker")
 
-      Text("AUD values are converted from USD with a cached daily exchange rate.")
+      Text("Non-USD values are converted from USD with a cached daily exchange rate.")
         .font(.caption)
         .foregroundStyle(.secondary)
     }

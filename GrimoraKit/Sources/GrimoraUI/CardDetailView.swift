@@ -1271,7 +1271,7 @@ public struct CardDetailView: View {
             }
 
             if displayCurrency != .usd && valueExchangeRate == nil {
-                Label("AUD rate unavailable", systemImage: "exclamationmark.triangle")
+                Label("\(displayCurrency.code) rate unavailable", systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(palette.secondaryText.color)
                     .accessibilityIdentifier("card-value-rate-unavailable")
@@ -1889,18 +1889,16 @@ public struct CardDetailView: View {
     }
 
     private func convertedPrice(_ usdPrice: Double) -> Double? {
-        switch displayCurrency {
-        case .usd:
+        guard displayCurrency != .usd else {
             return usdPrice
-        case .aud:
-            guard let valueExchangeRate,
-                  valueExchangeRate.baseCurrency == .usd,
-                  valueExchangeRate.quoteCurrency == .aud
-            else {
-                return nil
-            }
-            return usdPrice * valueExchangeRate.rate
         }
+        guard let valueExchangeRate,
+              valueExchangeRate.baseCurrency == .usd,
+              valueExchangeRate.quoteCurrency == displayCurrency
+        else {
+            return nil
+        }
+        return usdPrice * valueExchangeRate.rate
     }
 
     private func formattedPrice(_ value: Double?) -> String {
@@ -1963,9 +1961,9 @@ public struct CardDetailView: View {
 
     private func valueSourceText(for entry: CardValueGuideEntry, sourceName: String) -> String {
         var parts = ["\(sourceName). Updated \(entry.currentDate)."]
-        if displayCurrency == .aud, let valueExchangeRate {
+        if displayCurrency != .usd, let valueExchangeRate {
             parts.append(
-                "Converted with \(valueExchangeRate.providerName) rate from \(valueExchangeRate.date): 1 USD = \(price(valueExchangeRate.rate)) AUD."
+                "Converted with \(valueExchangeRate.providerName) rate from \(valueExchangeRate.date): 1 USD = \(price(valueExchangeRate.rate)) \(displayCurrency.code)."
             )
         }
         return parts.joined(separator: " ")
