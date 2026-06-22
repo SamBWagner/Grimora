@@ -20,11 +20,14 @@ struct SearchRefinementPanel: View {
         self.onApply = onApply
         self.onCancel = onCancel
         let refinements = groups.flatMap(\.refinements)
+        // `states` is seeded from these init args only on first mount, so this view
+        // relies on its call sites bumping a presentation id and applying `.id(...)`
+        // to force a remount each time it is presented (see CardArtworkContextMenu).
+        // Removing that `.id()` would leave this state stale on reopen.
         _states = State(
             initialValue: Dictionary(
-                uniqueKeysWithValues: refinements.map {
-                    ($0.id, SearchQuery.state(for: $0, in: currentQuery))
-                }
+                refinements.map { ($0.id, SearchQuery.state(for: $0, in: currentQuery)) },
+                uniquingKeysWith: { first, _ in first }
             )
         )
     }

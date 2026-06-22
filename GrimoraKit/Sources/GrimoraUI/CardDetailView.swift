@@ -292,6 +292,7 @@ public struct CardDetailView: View {
                 cardTypeLine
             }
 
+            let refinementGroups = model.candidateRefinements(for: card)
             if !refinementGroups.isEmpty {
                 CardRefinementButton(groups: refinementGroups)
             }
@@ -411,10 +412,6 @@ public struct CardDetailView: View {
             .font(usesInspectorPresentation ? .subheadline.weight(.semibold) : .headline)
             .foregroundStyle(palette.secondaryText.color)
             .textSelection(.enabled)
-    }
-
-    private var refinementGroups: [SearchRefinementGroup] {
-        model.candidateRefinements(for: card)
     }
 
     private func selectableOracleText(_ text: String) -> some View {

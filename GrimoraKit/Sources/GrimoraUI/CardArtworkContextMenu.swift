@@ -75,14 +75,18 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
             .confirmationDialog(
                 "Always Hide Matching Cards?",
                 isPresented: alwaysHideConfirmationPresented,
-                titleVisibility: .visible
-            ) {
-                Button("Always Hide", role: .destructive, action: confirmAlwaysHide)
+                titleVisibility: .visible,
+                presenting: pendingAlwaysHiddenRefinement
+            ) { refinement in
+                Button("Always Hide", role: .destructive) {
+                    model.addHiddenTerm(refinement)
+                    pendingAlwaysHiddenRefinement = nil
+                }
                 Button("Cancel", role: .cancel) {
                     pendingAlwaysHiddenRefinement = nil
                 }
-            } message: {
-                Text(alwaysHideConfirmationMessage)
+            } message: { refinement in
+                Text("Cards matching “\(refinement.displayLabel)” will be excluded from every search and synced through iCloud. You can undo this in Settings → Always Hidden.")
             }
     }
 
@@ -102,13 +106,6 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
         }
     }
 
-    private var alwaysHideConfirmationMessage: String {
-        guard let pendingAlwaysHiddenRefinement else {
-            return ""
-        }
-        return "Cards matching “\(pendingAlwaysHiddenRefinement.displayLabel)” will be excluded from every search and synced through iCloud. You can undo this in Settings → Always Hidden."
-    }
-
     private func presentRefinement() {
         refinementPresentationID += 1
         isRefinementPresented = true
@@ -117,14 +114,6 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
     private func applyRefinements(_ updates: [SearchRefinementUpdate]) {
         model.applySearchRefinements(updates)
         isRefinementPresented = false
-    }
-
-    private func confirmAlwaysHide() {
-        guard let pendingAlwaysHiddenRefinement else {
-            return
-        }
-        model.addHiddenTerm(pendingAlwaysHiddenRefinement)
-        self.pendingAlwaysHiddenRefinement = nil
     }
 }
 
@@ -142,6 +131,8 @@ private struct CardArtworkContextMenuContent: View {
     var onAlwaysHide: (SearchRefinement) -> Void
 
     var body: some View {
+        let refinementGroups = model.candidateRefinements(for: card)
+
         shareMenu
 
         Button {
@@ -169,7 +160,7 @@ private struct CardArtworkContextMenuContent: View {
             }
             .accessibilityIdentifier("card-artwork-refine-search-\(card.id)")
 
-            alwaysHideMenu
+            alwaysHideMenu(groups: refinementGroups)
         }
 
         if let openAction {
@@ -228,9 +219,9 @@ private struct CardArtworkContextMenuContent: View {
         .accessibilityIdentifier("card-artwork-add-to-list-menu-\(card.id)")
     }
 
-    private var alwaysHideMenu: some View {
+    private func alwaysHideMenu(groups: [SearchRefinementGroup]) -> some View {
         Menu {
-            ForEach(refinementGroups) { group in
+            ForEach(groups) { group in
                 Menu(group.title) {
                     ForEach(group.refinements) { refinement in
                         Button(refinement.displayLabel) {
@@ -243,10 +234,6 @@ private struct CardArtworkContextMenuContent: View {
             Label("Always Hide…", systemImage: "eye.slash")
         }
         .accessibilityIdentifier("card-artwork-always-hide-\(card.id)")
-    }
-
-    private var refinementGroups: [SearchRefinementGroup] {
-        model.candidateRefinements(for: card)
     }
 
     private var availableLists: [CardListRecord] {

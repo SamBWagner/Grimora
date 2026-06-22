@@ -13,6 +13,9 @@ struct CardGridQuantityStepper: View {
     @State private var incrementTrigger = 0
     @State private var decrementTrigger = 0
     @State private var hoveredSegment: Segment?
+    @ScaledMetric private var controlHeight: Double = 32
+    @ScaledMetric private var segmentWidth: Double = 38
+    @ScaledMetric private var hitHeight: Double = 44
 
     var quantity: Int
     var onIncrement: () -> Void
@@ -25,10 +28,6 @@ struct CardGridQuantityStepper: View {
         case decrement
         case increment
     }
-
-    private static let controlHeight: CGFloat = 32
-    private static let segmentWidth: CGFloat = 38
-    private static let hitHeight: CGFloat = 44
 
     var body: some View {
         HStack(spacing: 0) {
@@ -63,7 +62,7 @@ struct CardGridQuantityStepper: View {
             .accessibilityLabel(quantity > 1 ? "Decrease Quantity" : "Remove from List")
             .accessibilityIdentifier(decrementAccessibilityIdentifier)
         }
-        .frame(height: Self.controlHeight)
+        .frame(height: controlHeight)
         .background(.regularMaterial, in: Capsule())
         .overlay {
             Capsule()
@@ -71,7 +70,7 @@ struct CardGridQuantityStepper: View {
         }
         .clipShape(Capsule())
         .shadow(color: palette.shadow.color.opacity(0.12), radius: 3, x: 0, y: 2)
-        .frame(height: Self.hitHeight)
+        .frame(height: hitHeight)
         .fixedSize(horizontal: true, vertical: true)
         .grimoraIncreaseFeedback(trigger: incrementTrigger)
         .grimoraDecreaseFeedback(trigger: decrementTrigger)
@@ -79,7 +78,8 @@ struct CardGridQuantityStepper: View {
 
     private var quantityLabel: some View {
         Text(quantity.formatted())
-            .font(.system(size: 14, weight: .semibold))
+            .font(.subheadline)
+            .bold()
             .monospacedDigit()
             .foregroundStyle(palette.primaryText.color)
             .frame(minWidth: 20)
@@ -92,7 +92,7 @@ struct CardGridQuantityStepper: View {
     private var divider: some View {
         Rectangle()
             .fill(palette.hairline.color)
-            .frame(width: 1, height: Self.controlHeight * 0.5)
+            .frame(width: 1, height: controlHeight * 0.5)
     }
 
     private func segment(
@@ -105,10 +105,11 @@ struct CardGridQuantityStepper: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .symbolRenderingMode(.hierarchical)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.subheadline)
+                .bold()
                 .foregroundStyle(foreground ?? palette.primaryText.color)
                 .symbolEffect(.bounce, value: reduceMotion ? 0 : trigger)
-                .frame(width: Self.segmentWidth, height: Self.controlHeight)
+                .frame(width: segmentWidth, height: controlHeight)
                 .background(hoveredSegment == segment ? palette.accent.color.opacity(0.12) : Color.clear)
                 .contentShape(Rectangle())
         }
@@ -213,175 +214,5 @@ struct CardGridMoreMenu: View {
             Button("Remove", role: .destructive, action: onRemoveCompletely)
                 .accessibilityIdentifier("\(accessibilityIdentifier)-remove")
         }
-    }
-}
-
-// MARK: - Shared menu content
-
-/// The menu items for adding a card (or the active bulk selection) to a list.
-/// Extracted so the same items can back both the standalone add button and the
-/// consolidated more menu.
-struct CardListAddMenuContent: View {
-    @EnvironmentObject private var model: GrimoraAppModel
-
-    var card: CardRecord
-    var selectedCardIDs: [CardRecord.ID] = []
-    var selectedCardIDsProvider: (() -> [CardRecord.ID])?
-    var onCreateListForCard: (CardRecord) -> Void
-    var onCreateListForCards: (([CardRecord.ID]) -> Void)?
-    var onAddCardsToList: ((CardListRecord.ID, CardRecord) -> Bool)?
-    var onAdded: () -> Void = {}
-
-    var body: some View {
-        if !model.cardLists.isEmpty {
-            Section(addSectionTitle) {
-                ForEach(model.cardLists) { list in
-                    Button {
-                        addTargetCards(to: list.id)
-                    } label: {
-                        Text(list.name)
-                    }
-                    .accessibilityIdentifier("add-card-\(card.id)-to-list-\(list.name)")
-                }
-            }
-        }
-
-        Button {
-            createListForTargetCards()
-        } label: {
-            Text("New List...")
-        }
-        .accessibilityIdentifier("new-list-from-card-\(card.id)")
-    }
-
-    private var targetCardIDs: [CardRecord.ID] {
-        let providedIDs = selectedCardIDsProvider?() ?? []
-        let ids = providedIDs.isEmpty
-            ? (selectedCardIDs.isEmpty ? [card.id] : selectedCardIDs)
-            : providedIDs
-        var seenIDs: Set<CardRecord.ID> = []
-        return ids.filter { seenIDs.insert($0).inserted }
-    }
-
-    private var addSectionTitle: String {
-        let count = targetCardIDs.count
-        return count > 1 ? "Add \(count.formatted()) Selected Cards to List" : "Add to List"
-    }
-
-    private func addTargetCards(to listID: CardListRecord.ID) {
-        if onAddCardsToList?(listID, card) == true {
-            onAdded()
-            return
-        }
-
-        let ids = targetCardIDs
-        if ids.count == 1, ids.first == card.id {
-            model.addCard(card, toListID: listID)
-        } else {
-            model.addCards(ids, toListID: listID)
-        }
-        onAdded()
-    }
-
-    private func createListForTargetCards() {
-        let ids = targetCardIDs
-        if ids.count > 1, let onCreateListForCards {
-            onCreateListForCards(ids)
-        } else {
-            onCreateListForCard(card)
-        }
-    }
-}
-
-/// The menu items for moving a list entry to a category (or uncategorized).
-struct CardListMoveCategoryMenuContent: View {
-    @EnvironmentObject private var model: GrimoraAppModel
-
-    var entry: CardListEntryRecord
-    var categories: [CardListCategoryRecord]
-    var onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)?
-    var isDestinationDisabled: ((CardListCategoryRecord.ID?) -> Bool)?
-    var onMoved: () -> Void = {}
-
-    var body: some View {
-        Button {
-            move(to: nil)
-        } label: {
-            GrimoraMenuSelectionLabel(
-                title: "Uncategorized",
-                isSelected: entry.categoryID == nil
-            )
-        }
-        .disabled(isMoveDisabled(to: nil))
-        .accessibilityIdentifier("move-list-entry-\(entry.id)-category-uncategorized")
-
-        if !categories.isEmpty {
-            Divider()
-        }
-
-        ForEach(categories) { category in
-            Button {
-                move(to: category.id)
-            } label: {
-                GrimoraMenuSelectionLabel(
-                    title: category.name,
-                    isSelected: entry.categoryID == category.id
-                )
-            }
-            .disabled(isMoveDisabled(to: category.id))
-            .accessibilityIdentifier("move-list-entry-\(entry.id)-category-\(category.name)")
-        }
-    }
-
-    private func move(to categoryID: CardListCategoryRecord.ID?) {
-        if let onMoveToCategory {
-            onMoveToCategory(categoryID)
-        } else {
-            model.moveCardListEntry(id: entry.id, toCategoryID: categoryID)
-        }
-        onMoved()
-    }
-
-    private func isMoveDisabled(to categoryID: CardListCategoryRecord.ID?) -> Bool {
-        isDestinationDisabled?(categoryID) ?? (entry.categoryID == categoryID)
-    }
-}
-
-/// The menu items for moving a list entry to a different zone.
-struct CardListMoveZoneMenuContent: View {
-    @EnvironmentObject private var model: GrimoraAppModel
-
-    var entry: CardListEntryRecord
-    var onMoveToZone: ((CardListZone) -> Void)?
-    var onMoved: () -> Void = {}
-
-    var body: some View {
-        ForEach(availableZones) { zone in
-            Button {
-                move(to: zone)
-            } label: {
-                HStack {
-                    Text(zone.title)
-                    if entry.zone == zone {
-                        Image(systemName: "checkmark")
-                    }
-                }
-            }
-            .disabled(entry.zone == zone)
-            .accessibilityIdentifier("move-list-entry-\(entry.id)-zone-\(zone.rawValue)")
-        }
-    }
-
-    private var availableZones: [CardListZone] {
-        (model.selectedList?.ruleset ?? .none).allowedZones
-    }
-
-    private func move(to zone: CardListZone) {
-        if let onMoveToZone {
-            onMoveToZone(zone)
-        } else {
-            model.moveCardListEntry(id: entry.id, toZone: zone)
-        }
-        onMoved()
     }
 }
