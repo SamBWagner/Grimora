@@ -2,18 +2,59 @@ import Foundation
 
 public enum CardValueDisplayCurrency: String, CaseIterable, Codable, Equatable, Hashable, Identifiable, Sendable {
   case usd = "USD"
+  case eur = "EUR"
+  case gbp = "GBP"
   case aud = "AUD"
+  case cad = "CAD"
+  case jpy = "JPY"
+  case chf = "CHF"
+  case cny = "CNY"
+  case nzd = "NZD"
+  case sgd = "SGD"
+  case hkd = "HKD"
+  case sek = "SEK"
+  case nok = "NOK"
+  case dkk = "DKK"
+  case pln = "PLN"
+  case mxn = "MXN"
+  case brl = "BRL"
+  case inr = "INR"
+  case zar = "ZAR"
+  case krw = "KRW"
 
   public var id: String { rawValue }
 
-  public var title: String {
+  /// ISO 4217 code, used as the price prefix and exchange-rate query value.
+  public var code: String { rawValue }
+
+  /// Human-readable currency name, e.g. "Euro".
+  public var name: String {
     switch self {
-    case .usd:
-      "USD"
-    case .aud:
-      "AUD"
+    case .usd: "US Dollar"
+    case .eur: "Euro"
+    case .gbp: "British Pound"
+    case .aud: "Australian Dollar"
+    case .cad: "Canadian Dollar"
+    case .jpy: "Japanese Yen"
+    case .chf: "Swiss Franc"
+    case .cny: "Chinese Yuan"
+    case .nzd: "New Zealand Dollar"
+    case .sgd: "Singapore Dollar"
+    case .hkd: "Hong Kong Dollar"
+    case .sek: "Swedish Krona"
+    case .nok: "Norwegian Krone"
+    case .dkk: "Danish Krone"
+    case .pln: "Polish Złoty"
+    case .mxn: "Mexican Peso"
+    case .brl: "Brazilian Real"
+    case .inr: "Indian Rupee"
+    case .zar: "South African Rand"
+    case .krw: "South Korean Won"
     }
   }
+
+  /// Picker label combining name and code, e.g. "Euro (EUR)".
+  public var title: String { "\(name) (\(code))" }
 }
 
 public enum GrimoraValuePreferences {
