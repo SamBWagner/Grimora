@@ -34,22 +34,23 @@ struct LocalCardImage: View {
   }
 
   var body: some View {
+    let clipShape = CardArtClipShape(minimumRadius: cornerRadius)
     Group {
       if let image = platformImage {
         imageView(image)
       } else {
-        RoundedRectangle(cornerRadius: cornerRadius)
+        clipShape
           .fill(palette.placeholderFill.color)
           .overlay {
             placeholderContent
           }
           .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            clipShape
               .stroke(palette.hairline.color, lineWidth: 1)
           }
       }
     }
-    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    .clipShape(clipShape)
     .accessibilityHidden(accessibilityHidden)
     .task(id: path) {
       guard let path else {
@@ -146,6 +147,51 @@ struct LocalCardImage: View {
 enum LocalCardImageContentMode {
   case fit
   case fill
+}
+
+/// A rounded rectangle that masks card art with a *circular* corner matching a
+/// Magic card's true (round) die-cut, rather than a `.continuous` squircle. A
+/// continuous corner dips inward less along the diagonal, which exposes the
+/// scan's white background corner — the source of the "white fringing" on tiles.
+///
+/// The radius is the larger of `minimumRadius` (the caller's design radius, so
+/// small art still nests inside surrounding chrome) and a fixed fraction of the
+/// art's short side (so large/detail art rounds enough to clip the scan corner).
+struct CardArtClipShape: Shape {
+  /// Fraction of a card image's short side taken up by its printed corner radius.
+  /// Magic card scans from Scryfall are rectangular and leave a small white
+  /// triangle in each corner, outside the card's rounded die-cut. Measured from
+  /// modern scans the arc radius is ~0.029 of the width; this is set a touch
+  /// higher so a circular clip always reaches *past* that white corner across
+  /// card eras (older cards have a less aggressive radius) and display sizes.
+  static let cardCornerRadiusFraction: CGFloat = 0.04
+
+  var minimumRadius: CGFloat
+  var radiusFraction: CGFloat = CardArtClipShape.cardCornerRadiusFraction
+
+  func path(in rect: CGRect) -> Path {
+    let radius = cardArtClipRadius(
+      forShortSide: min(rect.width, rect.height),
+      minimumRadius: minimumRadius,
+      fraction: radiusFraction
+    )
+    return RoundedRectangle(cornerRadius: radius, style: .circular).path(in: rect)
+  }
+}
+
+/// Resolves the corner radius used to mask card art. Factored out as a pure
+/// function so the radius policy can be unit-tested without rendering a view.
+func cardArtClipRadius(
+  forShortSide shortSide: CGFloat,
+  minimumRadius: CGFloat,
+  fraction: CGFloat = CardArtClipShape.cardCornerRadiusFraction
+) -> CGFloat {
+  let floor = max(0, minimumRadius)
+  guard shortSide.isFinite, shortSide > 0, fraction > 0 else {
+    return floor
+  }
+
+  return max(floor, shortSide * fraction)
 }
 
 #if os(macOS)
