@@ -415,7 +415,7 @@ public struct CardDetailView: View {
     }
 
     private func selectableOracleText(_ text: String) -> some View {
-        SelectableOracleText(
+        CardOracleText(
             text: text,
             color: palette.primaryText,
             onIncludeSelection: { selectedText in
@@ -429,7 +429,6 @@ public struct CardDetailView: View {
                 )
             }
         )
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var shareMenu: some View {
