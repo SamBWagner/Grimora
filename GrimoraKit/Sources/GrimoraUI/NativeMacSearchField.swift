@@ -49,6 +49,7 @@ struct NativeMacSearchField: NSViewRepresentable {
         field.recentSearches = recentSearches
         field.searchMenuTemplate = context.coordinator.searchMenuTemplate()
         Self.configureSearchField(field)
+        context.coordinator.refreshSyntaxHighlighting(in: field, allowsHaptics: false)
 
         guard isFocused else {
             return
@@ -131,9 +132,85 @@ struct NativeMacSearchField: NSViewRepresentable {
         var lastAppliedFocusRequestID = -1
         var isEditing = false
         var lastEditedText = ""
+        private var lastInvalidClauseCount = 0
 
         init(parent: NativeMacSearchField) {
             self.parent = parent
+        }
+
+        /// Recolours each top-level clause of the query directly in the field and fires
+        /// a light haptic when a clause newly turns red. Mutating the field editor's
+        /// text storage in place preserves the insertion point while typing.
+        @MainActor
+        func refreshSyntaxHighlighting(in field: NSSearchField, allowsHaptics: Bool) {
+            let text = field.stringValue
+            let segments = ScryfallSyntaxHighlighter.segments(for: text)
+            applyHighlightColors(segments: segments, text: text, to: field)
+
+            let invalidCount = segments.reduce(into: 0) { count, segment in
+                if segment.highlight == .invalid {
+                    count += 1
+                }
+            }
+            if allowsHaptics, invalidCount > lastInvalidClauseCount {
+                NSHapticFeedbackManager.defaultPerformer.perform(
+                    .levelChange,
+                    performanceTime: .now
+                )
+            }
+            lastInvalidClauseCount = invalidCount
+        }
+
+        @MainActor
+        private func applyHighlightColors(
+            segments: [ScryfallHighlightSegment],
+            text: String,
+            to field: NSSearchField
+        ) {
+            let font = field.font ?? .systemFont(ofSize: 15, weight: .regular)
+
+            if let editor = field.currentEditor() as? NSTextView,
+               let storage = editor.textStorage {
+                let fullRange = NSRange(location: 0, length: storage.length)
+                storage.beginEditing()
+                storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: fullRange)
+                for segment in segments {
+                    storage.addAttribute(
+                        .foregroundColor,
+                        value: Self.highlightColor(for: segment.highlight),
+                        range: NSRange(segment.range, in: text)
+                    )
+                }
+                storage.endEditing()
+                editor.typingAttributes[.foregroundColor] = NSColor.labelColor
+                editor.typingAttributes[.font] = font
+            } else {
+                let attributed = NSMutableAttributedString(
+                    string: text,
+                    attributes: [.foregroundColor: NSColor.labelColor, .font: font]
+                )
+                for segment in segments {
+                    attributed.addAttribute(
+                        .foregroundColor,
+                        value: Self.highlightColor(for: segment.highlight),
+                        range: NSRange(segment.range, in: text)
+                    )
+                }
+                field.attributedStringValue = attributed
+            }
+        }
+
+        private static func highlightColor(for highlight: ScryfallClauseHighlight) -> NSColor {
+            switch highlight {
+            case .pending:
+                .labelColor
+            case .valid:
+                .systemGreen
+            case .invalid:
+                .systemRed
+            case .incomplete:
+                .systemYellow
+            }
         }
 
         func searchMenuTemplate() -> NSMenu {
@@ -220,6 +297,7 @@ struct NativeMacSearchField: NSViewRepresentable {
             isEditing = true
             lastEditedText = field.stringValue
             parent.text = field.stringValue
+            refreshSyntaxHighlighting(in: field, allowsHaptics: true)
         }
 
         func controlTextDidBeginEditing(_ notification: Notification) {

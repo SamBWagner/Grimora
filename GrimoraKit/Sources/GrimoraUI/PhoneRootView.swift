@@ -136,21 +136,25 @@ struct TouchRootView: View {
 
     private var searchTab: some View {
         NavigationStack {
-            SearchContentView(
-                gridZoom: gridZoom,
-                onSelect: { card in
-                    model.selectCard(card)
-                },
-                onCreateListForCard: { card in
-                    presentCreateListPrompt(adding: card, selectAfterCreate: false)
-                },
-                onCreateListForCards: { cardIDs in
-                    presentCreateListPrompt(addingCardIDs: cardIDs, selectAfterCreate: false)
-                },
-                onCreateListFromSearch: {
-                    presentCreateSearchListPrompt()
-                }
-            )
+            VStack(spacing: 0) {
+                SearchSyntaxHighlightBar(query: model.searchText)
+
+                SearchContentView(
+                    gridZoom: gridZoom,
+                    onSelect: { card in
+                        model.selectCard(card)
+                    },
+                    onCreateListForCard: { card in
+                        presentCreateListPrompt(adding: card, selectAfterCreate: false)
+                    },
+                    onCreateListForCards: { cardIDs in
+                        presentCreateListPrompt(addingCardIDs: cardIDs, selectAfterCreate: false)
+                    },
+                    onCreateListFromSearch: {
+                        presentCreateSearchListPrompt()
+                    }
+                )
+            }
             .navigationTitle("Cards")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
