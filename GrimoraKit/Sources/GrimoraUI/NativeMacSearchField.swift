@@ -196,7 +196,19 @@ struct NativeMacSearchField: NSViewRepresentable {
             isEditing = true
             lastEditedText = sender.stringValue
             parent.text = sender.stringValue
+            guard Self.isSubmitEvent(NSApp.currentEvent) else {
+                return
+            }
             parent.onSubmit()
+        }
+
+        private static func isSubmitEvent(_ event: NSEvent?) -> Bool {
+            guard let event, event.type == .keyDown else {
+                return false
+            }
+            // NSSearchField also sends its action when the built-in clear control is used.
+            // Restrict submission to Return (36) and keypad Enter (76).
+            return event.keyCode == 36 || event.keyCode == 76
         }
 
         func controlTextDidChange(_ notification: Notification) {

@@ -382,6 +382,30 @@ final class ArtworkPresentationUITests: XCTestCase {
     }
 
     @MainActor
+    func testTouchSearchWaitsForSubmit() throws {
+        let app = try launchPhoneSearchOptionsApp()
+        let total = app.staticTexts["search-results-total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 3))
+        searchField.tap()
+        searchField.typeText("alpha")
+
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+        XCTAssertTrue(firstElement(app, identifier: "open-card-beta-mage").exists)
+
+        let searchButton = app.keyboards.buttons["Search"]
+        XCTAssertTrue(searchButton.waitForExistence(timeout: 3))
+        searchButton.tap()
+
+        XCTAssertTrue(waitForValue(of: total, toEqual: "1 card"))
+        XCTAssertTrue(firstElement(app, identifier: "open-card-alpha-mage").exists)
+        XCTAssertFalse(firstElement(app, identifier: "open-card-beta-mage").exists)
+    }
+
+    @MainActor
     func testTouchSearchOptionsDoNotExposeLegacyFilters() throws {
         let app = try launchPhoneSearchOptionsApp()
         XCTAssertTrue(firstElement(app, identifier: "open-card-beta-mage").waitForExistence(timeout: 8))

@@ -86,6 +86,28 @@ final class VisionNavigationUITests: XCTestCase {
     }
 
     @MainActor
+    func testVisionSearchWaitsForSubmit() throws {
+        let app = try launchSeededApp()
+        let total = app.staticTexts["search-results-total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 8))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 3))
+        activate(searchField)
+        searchField.typeText("alpha")
+
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+        XCTAssertTrue(firstElement(app, identifier: "open-card-beta-mage").exists)
+
+        searchField.typeText(XCUIKeyboardKey.return.rawValue)
+
+        XCTAssertTrue(waitForValue(of: total, toEqual: "1 card"))
+        XCTAssertTrue(firstElement(app, identifier: "open-card-alpha-mage").exists)
+        XCTAssertFalse(firstElement(app, identifier: "open-card-beta-mage").exists)
+    }
+
+    @MainActor
     func testVisionListsTabExposesOverview() throws {
         let app = try launchSeededApp()
 

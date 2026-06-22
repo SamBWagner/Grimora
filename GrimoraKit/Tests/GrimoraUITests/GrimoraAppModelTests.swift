@@ -712,9 +712,11 @@ final class GrimoraAppModelTests: XCTestCase {
       ))
     await model.drainSearchForTesting()
 
-    model.searchText = "forest"
+    model.setSearchDraft("forest")
 
     XCTAssertFalse(model.isSearchingCards)
+    XCTAssertEqual(model.submittedSearchText, "")
+    XCTAssertTrue(model.hasUnsubmittedSearchText)
     XCTAssertNotEqual(model.cards.map(\.id), ["forest"])
 
     await model.drainSearchForTesting()
@@ -766,7 +768,7 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.cards.map(\.id), ["beta"])
   }
 
-  func testClearingSearchDraftReturnsToDefaultSearch() async throws {
+  func testClearingSearchDraftWaitsForSubmitBeforeReturningToDefaultSearch() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
     try markLibraryReady(database)
@@ -785,6 +787,13 @@ final class GrimoraAppModelTests: XCTestCase {
     await model.drainSearchForTesting()
 
     XCTAssertEqual(model.searchText, "")
+    XCTAssertEqual(model.submittedSearchText, "forest")
+    XCTAssertTrue(model.hasUnsubmittedSearchText)
+    XCTAssertEqual(model.cards.map(\.id), ["forest"])
+
+    await model.submitSearch()
+    await model.drainSearchForTesting()
+
     XCTAssertEqual(model.submittedSearchText, "")
     XCTAssertFalse(model.hasUnsubmittedSearchText)
     XCTAssertEqual(model.cards.map(\.id), ["forest", "beta", "alchemy", "token"])

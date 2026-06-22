@@ -11,26 +11,7 @@ extension GrimoraAppModel {
   }
 
   public func setSearchDraft(_ text: String) {
-    let normalized = GrimoraSearchHistoryStore.normalizedQuery(text)
-    if normalized.isEmpty, canClearSearch {
-      clearSearch()
-      return
-    }
-
     searchText = text
-    submitScryfallDraftSearchIfNeeded(normalized)
-  }
-
-  private func submitScryfallDraftSearchIfNeeded(_ normalizedQuery: String) {
-    guard searchInputMode == .scryfall, !normalizedQuery.isEmpty else {
-      return
-    }
-
-    generatedSearchQuery = nil
-    plainTextSearchStatusMessage = nil
-    plainTextSearchErrorMessage = nil
-    submittedSearchText = normalizedQuery
-    reloadSearch(debounce: true)
   }
 
   public func clearSearch() {
@@ -900,7 +881,7 @@ extension GrimoraAppModel {
     return "\(title) (\(Self.byteCountFormatter.string(fromByteCount: completed)) of \(Self.byteCountFormatter.string(fromByteCount: total)))"
   }
 
-  public func reloadSearch(debounce: Bool = false) {
+  public func reloadSearch() {
     guard !hasPendingPlainTextPrompt else {
       cancelSearchWorkForPendingPlainTextPrompt()
       return
@@ -918,21 +899,7 @@ extension GrimoraAppModel {
     resetSearchVisibleImageRequests()
     canLoadMoreCards = false
 
-    guard debounce, searchPerformance.textDebounceNanoseconds > 0 else {
-      runFirstSearchPage(generation: generation)
-      return
-    }
-
-    isSearchingCards = false
-    isLoadingMoreCards = false
-    searchDebounceTask = Task { [weak self, generation] in
-      try? await Task.sleep(nanoseconds: self?.searchPerformance.textDebounceNanoseconds ?? 0)
-      guard !Task.isCancelled else {
-        return
-      }
-
-      self?.runFirstSearchPage(generation: generation)
-    }
+    runFirstSearchPage(generation: generation)
   }
 
   public func loadMoreCardsIfNeeded(afterAppearing card: CardRecord) {

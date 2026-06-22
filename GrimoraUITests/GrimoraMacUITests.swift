@@ -41,6 +41,37 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertFalse(firstElement(app, identifier: "filter-real-cards").exists)
     }
 
+    func testSearchWaitsForReturn() throws {
+        let databaseURL = try seedDatabase(cards: allCardClassFixtureCards())
+        let app = launchApp(databaseURL: databaseURL)
+        let total = app.staticTexts["search-results-total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        searchField.click()
+        searchField.typeText("forest")
+
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+        XCTAssertTrue(app.buttons["open-card-token"].exists)
+
+        searchField.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(waitForValue(of: total, toEqual: "1 card"))
+        XCTAssertTrue(app.buttons["open-card-alpha"].exists)
+        XCTAssertFalse(app.buttons["open-card-token"].exists)
+
+        searchField.typeKey("a", modifierFlags: .command)
+        searchField.typeKey(.delete, modifierFlags: [])
+
+        XCTAssertTrue(waitForValue(of: total, toEqual: "1 card"))
+        XCTAssertFalse(app.buttons["open-card-token"].exists)
+
+        searchField.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+        XCTAssertTrue(app.buttons["open-card-token"].exists)
+    }
+
     func testSearchSupportsFirstPrintSyntax() throws {
         let databaseURL = try seedDatabase(cards: [
             CardRecord(
@@ -182,6 +213,10 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(searchField.waitForExistence(timeout: 5))
         searchField.click()
         searchField.typeText("forest")
+        XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "3 cards"))
+        XCTAssertTrue(app.buttons["open-card-beta"].exists)
+
+        searchField.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(app.buttons["open-card-alpha"].waitForExistence(timeout: 2))
         XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "1 card"))
         XCTAssertFalse(app.buttons["open-card-beta"].exists)
@@ -189,6 +224,10 @@ final class GrimoraMacUITests: XCTestCase {
         searchField.click()
         searchField.typeKey("a", modifierFlags: .command)
         searchField.typeKey(.delete, modifierFlags: [])
+        XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "1 card"))
+        XCTAssertFalse(app.buttons["open-card-beta"].exists)
+
+        searchField.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(app.buttons["open-card-beta"].waitForExistence(timeout: 2))
         XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "3 cards"))
         XCTAssertFalse(firstElement(app, identifier: "search-filter-menu").exists)
@@ -318,7 +357,9 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(searchField.waitForExistence(timeout: 5))
         searchField.click()
         searchField.typeText("atag:dragon")
+        XCTAssertFalse(app.staticTexts["Unsupported Search"].exists)
 
+        searchField.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(app.staticTexts["Unsupported Search"].waitForExistence(timeout: 2))
     }
 
@@ -419,6 +460,7 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(searchField.waitForExistence(timeout: 5))
         searchField.click()
         searchField.typeText("forest")
+        searchField.typeKey(.return, modifierFlags: [])
 
         let resultTotal = app.staticTexts["search-results-total"]
         XCTAssertTrue(resultTotal.waitForExistence(timeout: 2))
@@ -492,11 +534,13 @@ final class GrimoraMacUITests: XCTestCase {
         searchField.click()
         searchField.typeText("fo")
         XCTAssertTrue(app.buttons["open-card-alpha"].waitForExistence(timeout: 2))
-        XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "1 card"))
+        XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "2 cards"))
+        XCTAssertTrue(app.buttons["open-card-beta"].exists)
 
         searchField.typeKey("a", modifierFlags: .command)
         searchField.typeKey(.delete, modifierFlags: [])
         searchField.typeText("forest")
+        searchField.typeKey(.return, modifierFlags: [])
 
         XCTAssertTrue(waitForValue(of: searchField, toEqual: "forest"))
         XCTAssertTrue(app.buttons["open-card-alpha"].waitForExistence(timeout: 2))
@@ -1002,6 +1046,7 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["mac-search-expanded-header"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.descendants(matching: .any)["search-filter-menu"].exists)
         app.typeText("35")
+        app.typeKey(.return, modifierFlags: [])
 
         XCTAssertTrue(app.buttons["open-card-zoom-35"].waitForExistence(timeout: 3))
         XCTAssertTrue(waitForValue(of: app.staticTexts["search-results-total"], toEqual: "1 card"))
@@ -1011,6 +1056,7 @@ final class GrimoraMacUITests: XCTestCase {
         searchField.click()
         searchField.typeKey("a", modifierFlags: .command)
         searchField.typeKey(.delete, modifierFlags: [])
+        searchField.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(app.buttons["open-card-zoom-00"].waitForExistence(timeout: 3))
         XCTAssertTrue(waitForValue(of: app.staticTexts["search-results-total"], toEqual: "36 cards"))
 
@@ -1293,6 +1339,7 @@ final class GrimoraMacUITests: XCTestCase {
         app.typeKey("f", modifierFlags: .command)
         XCTAssertTrue(app.descendants(matching: .any)["mac-search-expanded-header"].waitForExistence(timeout: 3))
         app.typeText("35")
+        app.typeKey(.return, modifierFlags: [])
 
         XCTAssertTrue(app.buttons["open-card-zoom-35"].waitForExistence(timeout: 3))
         XCTAssertTrue(waitForValue(of: app.staticTexts["search-results-total"], toEqual: "1 card"))
