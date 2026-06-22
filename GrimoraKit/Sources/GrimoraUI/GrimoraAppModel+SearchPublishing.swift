@@ -162,7 +162,8 @@ extension GrimoraAppModel {
     switch record {
     case .scryfall(let query):
       guard searchInputMode == .scryfall,
-        GrimoraSearchHistoryStore.normalizedQuery(submittedSearchText) == query
+        GrimoraSearchHistoryStore.normalizedQuery(submittedSearchText) == query,
+        ScryfallSyntaxValidator.validate(query).isValidScryfall
       else {
         return
       }

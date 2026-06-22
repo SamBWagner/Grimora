@@ -1508,6 +1508,37 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.searchHistory, ["forest"])
   }
 
+  func testModelDoesNotRecordSyntacticallyInvalidScryfallQueryInHistory() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let historyStore = isolatedSearchHistoryStore()
+    let model = GrimoraAppModel(
+      environment: environment(database: database, searchHistoryStore: historyStore))
+    await model.drainSearchForTesting()
+
+    // `r:legendary` parses and compiles (matching no cards), so it reaches the
+    // result-publishing path, but it is not valid Scryfall syntax — so it must
+    // never be recorded in history.
+    XCTAssertFalse(ScryfallSyntaxValidator.validate("r:legendary").isValidScryfall)
+    model.searchText = "r:legendary"
+    await model.submitSearch()
+    await model.drainSearchForTesting()
+    await model.drainSearchHistoryForTesting()
+
+    XCTAssertEqual(model.searchHistory, [])
+    XCTAssertEqual(historyStore.load(), [])
+
+    // A valid submitted query is still recorded.
+    model.searchText = "forest"
+    await model.submitSearch()
+    await model.drainSearchForTesting()
+    await model.drainSearchHistoryForTesting()
+
+    XCTAssertEqual(model.searchHistory, ["forest"])
+    XCTAssertEqual(historyStore.load(), ["forest"])
+  }
+
   func testModelClearsSearchHistoryAndCancelsPendingHistoryRecord() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
