@@ -87,6 +87,36 @@ final class CardListCategoryPerformanceUITests: XCTestCase {
     }
 
     @MainActor
+    func testDashboardTileStaysTappableAfterLeavingAList() throws {
+        let app = try launchSeededApp()
+        XCTAssertTrue(firstElement(app, identifier: "touch-root-tab-view").waitForExistence(timeout: 8))
+
+        activate(button(app, labeled: "Lists"))
+
+        let tile = firstElement(app, identifier: "card-list-overview-tile-Large Categories")
+        XCTAssertTrue(tile.waitForExistence(timeout: 5))
+
+        // Open the list, then return to the dashboard via the navigation back button.
+        activate(tile)
+        XCTAssertTrue(firstElement(app, identifier: "card-list-detail-scroll").waitForExistence(timeout: 3))
+
+        let backButton = app.navigationBars.buttons.firstMatch
+        XCTAssertTrue(backButton.waitForExistence(timeout: 3))
+        activate(backButton)
+
+        // Re-tapping the just-visited tile must reopen the list. The regression was
+        // that the stale selection left this tile unresponsive after the first visit.
+        let reopenedTile = firstElement(app, identifier: "card-list-overview-tile-Large Categories")
+        XCTAssertTrue(reopenedTile.waitForExistence(timeout: 5))
+        activate(reopenedTile)
+        XCTAssertTrue(firstElement(app, identifier: "card-list-detail-scroll").waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForText(
+            of: firstElement(app, identifier: "card-list-entry-count"),
+            toEqual: "120 cards"
+        ))
+    }
+
+    @MainActor
     private func launchSeededApp() throws -> XCUIApplication {
         let databaseURL = try seedDatabase()
         let app = XCUIApplication()
