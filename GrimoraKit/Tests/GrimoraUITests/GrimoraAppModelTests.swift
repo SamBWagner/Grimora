@@ -2556,6 +2556,34 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.cards.map(\.id), ["token", "alchemy", "beta", "forest"])
   }
 
+  func testApplySearchPreferencesDefersSearchUntilConfigurationChanges() async throws {
+    // S4: editing default-search settings is held locally and only committed on
+    // dialog close, so applying preferences must not re-run a search unless the
+    // (normalized) configuration actually changed.
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+
+    let model = GrimoraAppModel(
+      environment: environment(database: database),
+      initialDefaultSearchConfiguration: GrimoraDefaultSearchConfiguration(text: "t:creature"))
+    await model.drainSearchForTesting()
+
+    let generationAfterInitialSearch = model.searchGeneration
+
+    // Closing Settings without an effective edit (here normalization collapses
+    // the whitespace back to the stored query) must not trigger a new search.
+    model.applySearchPreferences(GrimoraDefaultSearchConfiguration(text: " t:creature "))
+    await model.drainSearchForTesting()
+    XCTAssertEqual(model.searchGeneration, generationAfterInitialSearch)
+
+    // A genuine edit applies exactly once on commit.
+    model.applySearchPreferences(GrimoraDefaultSearchConfiguration(text: "t:land"))
+    await model.drainSearchForTesting()
+    XCTAssertEqual(model.searchGeneration, generationAfterInitialSearch + 1)
+    XCTAssertEqual(model.activeDefaultSearchText, "t:land")
+  }
+
   func testAlwaysIncludedSearchTextIsPrependedToDirectAndDefaultSearches() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards([

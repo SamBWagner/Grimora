@@ -25,6 +25,17 @@ public struct GrimoraSettingsView: View {
 
   @State private var pendingRecoverySnapshotID: CloudSyncRecoverySnapshot.ID?
 
+  // Default-search edits are held locally while the dialog is open so typing
+  // never triggers a live search; they are flushed to @AppStorage (which
+  // GrimoraRootView observes) only when the dialog closes/confirms (S4).
+  @State private var draftDefaultSearchText = GrimoraSearchPreferences.defaultSearchText
+  @State private var draftAlwaysIncludedSearchText =
+    GrimoraSearchPreferences.defaultAlwaysIncludedSearchText
+  @State private var draftSearchSortModeRawValue = GrimoraSearchPreferences.defaultSortMode.rawValue
+  @State private var draftSearchSortDirectionRawValue =
+    GrimoraSearchPreferences.defaultSortDirection.rawValue
+  @State private var hasLoadedDefaultSearchDraft = false
+
   public init() {}
 
   public var body: some View {
@@ -62,7 +73,7 @@ public struct GrimoraSettingsView: View {
       Section("Default Search") {
         TextField(
           "Query",
-          text: $defaultSearchText,
+          text: $draftDefaultSearchText,
           prompt: Text("is:commander mv<5")
         )
         .searchSyntaxTextInput()
@@ -70,7 +81,7 @@ public struct GrimoraSettingsView: View {
 
         TextField(
           "Always Included",
-          text: $alwaysIncludedSearchText,
+          text: $draftAlwaysIncludedSearchText,
           prompt: Text("legal:commander")
         )
         .searchSyntaxTextInput()
@@ -145,6 +156,8 @@ public struct GrimoraSettingsView: View {
       legalSections
       #endif
     }
+    .onAppear { loadDefaultSearchDraftIfNeeded() }
+    .onDisappear { commitDefaultSearchDraft() }
   }
 
   private var valueForm: some View {
@@ -259,26 +272,26 @@ public struct GrimoraSettingsView: View {
   }
 
   private var selectedSortMode: SortMode {
-    GrimoraSearchPreferences.sortMode(from: defaultSearchSortModeRawValue)
+    GrimoraSearchPreferences.sortMode(from: draftSearchSortModeRawValue)
   }
 
   private var sortMode: Binding<SortMode> {
     Binding {
       selectedSortMode
     } set: { newValue in
-      defaultSearchSortModeRawValue = newValue.rawValue
+      draftSearchSortModeRawValue = newValue.rawValue
     }
   }
 
   private var selectedSortDirection: SearchSortDirection {
-    GrimoraSearchPreferences.sortDirection(from: defaultSearchSortDirectionRawValue)
+    GrimoraSearchPreferences.sortDirection(from: draftSearchSortDirectionRawValue)
   }
 
   private var sortDirection: Binding<SearchSortDirection> {
     Binding {
       selectedSortDirection
     } set: { newValue in
-      defaultSearchSortDirectionRawValue = newValue.rawValue
+      draftSearchSortDirectionRawValue = newValue.rawValue
     }
   }
 
@@ -292,8 +305,8 @@ public struct GrimoraSettingsView: View {
 
   private var validationMessage: String? {
     let configuration = GrimoraDefaultSearchConfiguration(
-      text: defaultSearchText,
-      alwaysIncludedText: alwaysIncludedSearchText,
+      text: draftDefaultSearchText,
+      alwaysIncludedText: draftAlwaysIncludedSearchText,
       sortMode: selectedSortMode,
       sortDirection: selectedSortDirection
     )
@@ -327,6 +340,38 @@ public struct GrimoraSettingsView: View {
         pendingRecoverySnapshotID = nil
       }
     }
+  }
+
+  private func loadDefaultSearchDraftIfNeeded() {
+    guard !hasLoadedDefaultSearchDraft else {
+      return
+    }
+    draftDefaultSearchText = defaultSearchText
+    draftAlwaysIncludedSearchText = alwaysIncludedSearchText
+    draftSearchSortModeRawValue = defaultSearchSortModeRawValue
+    draftSearchSortDirectionRawValue = defaultSearchSortDirectionRawValue
+    hasLoadedDefaultSearchDraft = true
+  }
+
+  private func commitDefaultSearchDraft() {
+    guard hasLoadedDefaultSearchDraft else {
+      return
+    }
+    // Only write the keys that actually changed so an unedited open/close
+    // does not bump GrimoraRootView's preference observer at all.
+    if defaultSearchText != draftDefaultSearchText {
+      defaultSearchText = draftDefaultSearchText
+    }
+    if alwaysIncludedSearchText != draftAlwaysIncludedSearchText {
+      alwaysIncludedSearchText = draftAlwaysIncludedSearchText
+    }
+    if defaultSearchSortModeRawValue != draftSearchSortModeRawValue {
+      defaultSearchSortModeRawValue = draftSearchSortModeRawValue
+    }
+    if defaultSearchSortDirectionRawValue != draftSearchSortDirectionRawValue {
+      defaultSearchSortDirectionRawValue = draftSearchSortDirectionRawValue
+    }
+    hasLoadedDefaultSearchDraft = false
   }
 
   private func recoveryLabel(for snapshot: CloudSyncRecoverySnapshot) -> String {
