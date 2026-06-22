@@ -194,15 +194,24 @@ extension CardListDetailView {
     #endif
 
     #if os(iOS) || os(visionOS)
+    // Each control gets its own ToolbarItem rather than sharing a
+    // ToolbarItemGroup: a group renders its children in one container, and when
+    // the actions menu presents, SwiftUI hides the sibling view-mode picker but
+    // leaves the group's container behind — the "empty box" the brief flags.
+    // Separate items keep the picker visible (and its own container) while the
+    // menu is open.
     @ToolbarContentBuilder
     func touchListToolbar(snapshot: CardListDetailSnapshot) -> some ToolbarContent {
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            if let selectedList = model.selectedList {
+        if let selectedList = model.selectedList {
+            ToolbarItem(placement: .topBarTrailing) {
                 listViewModePicker(for: selectedList)
                     #if os(iOS)
                     .fixedSize(horizontal: true, vertical: false)
                     #endif
             }
+        }
+
+        ToolbarItem(placement: .topBarTrailing) {
             touchListActionsMenu(snapshot: snapshot)
         }
     }
@@ -220,27 +229,20 @@ extension CardListDetailView {
                 listActionsMenuLabel
                     .accessibilityIdentifier("list-detail-actions-menu")
             }
-            #if os(iOS)
-            .buttonStyle(.plain)
-            #endif
             .help("List Actions")
             .accessibilityLabel("List Actions")
         }
     }
 
+    // Standard system-styled menu button: the previous capsule/material chrome
+    // only wrapped the ellipsis (not the adjacent picker), which read as
+    // inconsistent and cluttered. Letting the toolbar style the button keeps the
+    // trailing cluster clean and on platform.
     @ViewBuilder
     private var listActionsMenuLabel: some View {
         Label("List Actions", systemImage: "ellipsis")
             .labelStyle(.iconOnly)
             .imageScale(.large)
-            #if os(iOS)
-            .frame(width: 44, height: 34)
-            .background(.regularMaterial, in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(palette.hairline.color, lineWidth: 1)
-            }
-            #endif
     }
 
     #if os(visionOS)
@@ -700,7 +702,7 @@ extension CardListDetailView {
     }
 }
 
-private extension CardListViewMode {
+extension CardListViewMode {
     var toolbarTitle: String {
         switch self {
         case .grid:
