@@ -67,19 +67,19 @@ struct SearchSyntaxHighlightBar: View {
         return attributed
     }
 
-    /// Maps a clause classification to its display colour. Mirrors the `NSColor`
-    /// mapping used by `NativeMacSearchField` so clauses look identical on every
-    /// platform.
+    /// Maps a clause classification to its muted, theme-tuned display colour. Mirrors
+    /// the `NSColor` mapping used by `NativeMacSearchField` so clauses look identical
+    /// on every platform.
     static func color(for highlight: ScryfallClauseHighlight, palette: GrimoraPalette) -> Color {
         switch highlight {
         case .pending:
             palette.primaryText.color
         case .valid:
-            Color.green.opacity(0.85)
+            palette.syntaxValid.color
         case .invalid:
-            Color.red
+            palette.syntaxInvalid.color
         case .incomplete:
-            Color.yellow
+            palette.syntaxIncomplete.color
         }
     }
 

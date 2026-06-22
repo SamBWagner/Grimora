@@ -205,11 +205,28 @@ struct NativeMacSearchField: NSViewRepresentable {
             case .pending:
                 .labelColor
             case .valid:
-                .systemGreen
+                themeColor(\.syntaxValid)
             case .invalid:
-                .systemRed
+                themeColor(\.syntaxInvalid)
             case .incomplete:
-                .systemYellow
+                themeColor(\.syntaxIncomplete)
+            }
+        }
+
+        /// Builds a dynamic `NSColor` from the light/dark palette so the field's
+        /// clause tints follow its effective appearance and match the touch surfaces.
+        private static func themeColor(
+            _ value: KeyPath<GrimoraPalette, GrimoraColorValue>
+        ) -> NSColor {
+            NSColor(name: nil) { appearance in
+                let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                let color = (isDark ? GrimoraPalette.dark : GrimoraPalette.light)[keyPath: value]
+                return NSColor(
+                    srgbRed: color.red,
+                    green: color.green,
+                    blue: color.blue,
+                    alpha: color.opacity
+                )
             }
         }
 

@@ -22,6 +22,10 @@ struct GrimoraPalette: Equatable, Sendable {
     var placeholderFill: GrimoraColorValue
     var hairline: GrimoraColorValue
     var shadow: GrimoraColorValue
+    // Muted, theme-tuned tints for live search-syntax clause colouring.
+    var syntaxValid: GrimoraColorValue
+    var syntaxInvalid: GrimoraColorValue
+    var syntaxIncomplete: GrimoraColorValue
 
     init(colorScheme: ColorScheme) {
         switch colorScheme {
@@ -36,6 +40,9 @@ struct GrimoraPalette: Equatable, Sendable {
             placeholderFill = GrimoraColorValue(red: 0.145, green: 0.145, blue: 0.155)
             hairline = GrimoraColorValue(red: 0.370, green: 0.370, blue: 0.390, opacity: 0.45)
             shadow = GrimoraColorValue(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.34)
+            syntaxValid = GrimoraColorValue(red: 0.560, green: 0.745, blue: 0.620)
+            syntaxInvalid = GrimoraColorValue(red: 0.875, green: 0.525, blue: 0.545)
+            syntaxIncomplete = GrimoraColorValue(red: 0.865, green: 0.745, blue: 0.520)
         default:
             appBackground = GrimoraColorValue(red: 1.0, green: 1.0, blue: 1.0)
             sidebarBackground = GrimoraColorValue(red: 0.955, green: 0.955, blue: 0.970)
@@ -47,6 +54,9 @@ struct GrimoraPalette: Equatable, Sendable {
             placeholderFill = GrimoraColorValue(red: 0.925, green: 0.925, blue: 0.940)
             hairline = GrimoraColorValue(red: 0.620, green: 0.620, blue: 0.650, opacity: 0.30)
             shadow = GrimoraColorValue(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.14)
+            syntaxValid = GrimoraColorValue(red: 0.235, green: 0.495, blue: 0.345)
+            syntaxInvalid = GrimoraColorValue(red: 0.690, green: 0.235, blue: 0.290)
+            syntaxIncomplete = GrimoraColorValue(red: 0.585, green: 0.435, blue: 0.140)
         }
     }
 }
