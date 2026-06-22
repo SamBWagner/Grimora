@@ -165,6 +165,35 @@ final class VisionNavigationUITests: XCTestCase {
     }
 
     @MainActor
+    func testVisionCompactDashboardTileStaysTappableAfterLeavingAList() throws {
+        let app = try launchListSeededApp(forceCompactLists: true)
+
+        XCTAssertTrue(firstElement(app, identifier: "touch-root-tab-view").waitForExistence(timeout: 8))
+        activate(button(app, labeled: "Lists"))
+
+        XCTAssertTrue(firstElement(app, identifier: "card-lists-compact-stack").waitForExistence(timeout: 3))
+
+        let draftsTile = firstElement(app, identifier: "card-list-overview-tile-Drafts")
+        XCTAssertTrue(draftsTile.waitForExistence(timeout: 3))
+
+        // Open the list, then return to the dashboard via the navigation back button.
+        activate(draftsTile)
+        XCTAssertTrue(firstElement(app, identifier: "list-detail-actions-menu").waitForExistence(timeout: 3))
+
+        let backButton = app.navigationBars.buttons.firstMatch
+        XCTAssertTrue(backButton.waitForExistence(timeout: 3))
+        activate(backButton)
+
+        // Re-tapping the just-visited tile must reopen it — the regression was that
+        // the stale selection left this tile unresponsive.
+        let reopenedTile = firstElement(app, identifier: "card-list-overview-tile-Drafts")
+        XCTAssertTrue(reopenedTile.waitForExistence(timeout: 3))
+        activate(reopenedTile)
+        XCTAssertTrue(firstElement(app, identifier: "list-detail-actions-menu").waitForExistence(timeout: 3))
+        XCTAssertTrue(firstElement(app, identifier: "card-list-entry-count").waitForExistence(timeout: 3))
+    }
+
+    @MainActor
     func testVisionListActionsToggleStatsDescriptionTransferRenameAndUndo() throws {
         let app = try launchListSeededApp()
 

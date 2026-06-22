@@ -58,6 +58,18 @@ struct CardListsBrowserView: View {
                 .onAppear {
                     model.selectCardList(id: listID)
                 }
+                .onDisappear {
+                    // Popping back to the dashboard leaves `selectedListID` set, so
+                    // re-tapping the tile we just left wouldn't change it and the
+                    // navigation-driving `onChange(of: selectedListID)` never fires —
+                    // the tile looks dead. Clearing the selection on the way out keeps
+                    // every tile tappable. Skip when the selection already moved on
+                    // (e.g. switching tabs or jumping straight to another list) so we
+                    // don't clobber that destination.
+                    if model.sidebarSelection == .list(listID) {
+                        model.selectListsOverview()
+                    }
+                }
             }
         }
     }
