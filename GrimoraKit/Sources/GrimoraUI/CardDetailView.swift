@@ -32,6 +32,7 @@ public struct CardDetailView: View {
     @State private var isValueDetailsExpanded = false
     @State private var artistPendingArtSearch: String?
     @State private var scrubbedValuePoint: CardValueChartPoint?
+    @State private var valueHistoryShareItem: PriceHistoryShareItem?
     @AppStorage(GrimoraValuePreferences.displayCurrencyKey)
     private var displayCurrencyRawValue = CardValueDisplayCurrency.usd.rawValue
 
@@ -1476,6 +1477,7 @@ public struct CardDetailView: View {
                             .fill(Color.clear)
                             .contentShape(Rectangle())
                             .gesture(valueScrubGesture(proxy: proxy, geometry: geometry, points: points))
+                            .simultaneousGesture(valueShareLongPressGesture)
                     }
                 }
             }
@@ -1486,6 +1488,16 @@ public struct CardDetailView: View {
             .accessibilityIdentifier("card-value-history-chart")
             .accessibilityLabel("90-day value chart")
             .accessibilityValue(chartAccessibilitySummary(points: points))
+            // The long-press share is gesture-only, so expose it to VoiceOver (which
+            // can't scrub the chart) as an accessibility action on the latest point.
+            .accessibilityAction(named: Text("Share Latest Price")) {
+                if let point = points.last {
+                    valueHistoryShareItem = PriceHistoryShareItem(
+                        text: priceHistorySnapshotText(for: point)
+                    )
+                }
+            }
+            .sheet(item: $valueHistoryShareItem) { valueHistoryShareSheet($0) }
         } else {
             Text("No 90-day chart is available for this printing.")
                 .font(.callout)
@@ -1554,6 +1566,52 @@ public struct CardDetailView: View {
         .shadow(color: palette.shadow.color.opacity(0.25), radius: 4, x: 0, y: 2)
         .fixedSize()
         .accessibilityHidden(true)
+    }
+
+    // A long press while scrubbing freezes the held point and offers a text
+    // snapshot to share. It runs simultaneously with the scrub drag, so the
+    // point under the finger is still set when the press completes.
+    private var valueShareLongPressGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.45)
+            .onEnded { _ in
+                guard let point = scrubbedValuePoint else {
+                    return
+                }
+                valueHistoryShareItem = PriceHistoryShareItem(
+                    text: priceHistorySnapshotText(for: point)
+                )
+                shareFeedbackTrigger += 1
+            }
+    }
+
+    private func priceHistorySnapshotText(for point: CardValueChartPoint) -> String {
+        let date = Self.chartDateAccessibilityFormatter.string(from: point.date)
+        return "\(card.name) — \(formattedPrice(point.price)) on \(date)"
+    }
+
+    private func valueHistoryShareSheet(_ item: PriceHistoryShareItem) -> some View {
+        VStack(spacing: 18) {
+            Text(item.text)
+                .font(.callout.weight(.medium))
+                .multilineTextAlignment(.center)
+                .foregroundStyle(palette.primaryText.color)
+
+            ShareLink(item: item.text) {
+                Label("Share Snapshot", systemImage: "square.and.arrow.up")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding(24)
+        .accessibilityIdentifier("card-value-history-share")
+        #if os(iOS) || os(visionOS)
+        .presentationDetents([.height(170)])
+        #endif
+    }
+
+    private struct PriceHistoryShareItem: Identifiable {
+        let id = UUID()
+        let text: String
     }
 
     private func valueMovementSummary(for entry: CardValueGuideEntry) -> some View {
