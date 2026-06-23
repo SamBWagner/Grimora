@@ -84,7 +84,7 @@ final class GrimoraOnboardingWalkthroughTests: XCTestCase {
   func testStepOrder() {
     XCTAssertEqual(
       GrimoraOnboardingWalkthroughStep.allCases,
-      [.welcome, .operators, .search, .lists, .favourites, .finish]
+      [.welcome, .operators, .search, .quiz, .lists, .favourites, .finish]
     )
   }
 
@@ -96,6 +96,9 @@ final class GrimoraOnboardingWalkthroughTests: XCTestCase {
     XCTAssertTrue(GrimoraOnboardingWalkthroughStep.finish.isLast)
     XCTAssertNil(GrimoraOnboardingWalkthroughStep.finish.next)
     XCTAssertEqual(GrimoraOnboardingWalkthroughStep.finish.previous, .favourites)
+
+    XCTAssertEqual(GrimoraOnboardingWalkthroughStep.search.next, .quiz)
+    XCTAssertEqual(GrimoraOnboardingWalkthroughStep.quiz.previous, .search)
   }
 
   func testStepIndexMatchesPosition() {
