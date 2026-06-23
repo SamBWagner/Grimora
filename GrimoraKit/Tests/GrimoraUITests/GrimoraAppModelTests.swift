@@ -729,6 +729,29 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.cards.map(\.id), ["forest"])
   }
 
+  func testApplyAdvancedSearchRunsGeneratedQueryThroughScryfallSubmit() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    // An empty form must not submit anything (S7c apply path no-ops).
+    await model.applyAdvancedSearch(AdvancedSearchBuilder())
+    XCTAssertEqual(model.submittedSearchText, "")
+
+    var builder = AdvancedSearchBuilder()
+    builder.name = .init(text: "forest")
+    XCTAssertEqual(builder.scryfallQuery, "name:forest")
+
+    await model.applyAdvancedSearch(builder)
+    await model.drainSearchForTesting()
+
+    XCTAssertEqual(model.searchInputMode, .scryfall)
+    XCTAssertEqual(model.submittedSearchText, "name:forest")
+    XCTAssertEqual(model.cards.map(\.id), ["forest"])
+  }
+
   func testScryfallDraftCancelAndHistoryHydrationWaitForSubmit() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())

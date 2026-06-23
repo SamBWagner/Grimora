@@ -17,6 +17,9 @@ public struct GrimoraSettingsView: View {
   private var defaultSearchSortDirectionRawValue =
     GrimoraSearchPreferences.defaultSortDirection.rawValue
 
+  @AppStorage(GrimoraSearchPreferences.advancedSearchEnabledKey)
+  private var advancedSearchEnabled = GrimoraSearchPreferences.defaultAdvancedSearchEnabled
+
   @AppStorage(GrimoraCloudSyncPreferences.modeKey)
   private var cloudSyncModeRawValue = GrimoraCloudSyncMode.undecided.rawValue
 
@@ -108,6 +111,12 @@ public struct GrimoraSettingsView: View {
             .foregroundStyle(.orange)
             .accessibilityIdentifier("default-search-validation")
         }
+
+        Toggle("Show advanced search builder", isOn: $advancedSearchEnabled)
+          .accessibilityIdentifier("advanced-search-enabled-toggle")
+        Text("Adds an on-screen button to build Scryfall queries with toggles and pickers.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
 
       Section("Always Hidden") {

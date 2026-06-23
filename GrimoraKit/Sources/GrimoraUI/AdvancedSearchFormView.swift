@@ -253,7 +253,8 @@ private struct ColorPipToggle: View {
                     Circle().strokeBorder(palette.accent.color, lineWidth: 2)
                 }
             }
-            .contentShape(Circle())
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(color.displayName)
