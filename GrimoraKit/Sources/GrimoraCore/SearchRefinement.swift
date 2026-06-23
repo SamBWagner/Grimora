@@ -146,6 +146,19 @@ public struct SearchRefinement: Codable, Equatable, Hashable, Identifiable, Send
         SearchRefinement(field: "set", value: code, intent: intent, displayLabel: name)
     }
 
+    public static func forArtist(
+        _ artist: String,
+        intent: RefinementIntent = .include
+    ) -> SearchRefinement {
+        let trimmed = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        return SearchRefinement(
+            field: "artist",
+            value: trimmed,
+            intent: intent,
+            displayLabel: trimmed
+        )
+    }
+
     public static func forSelectedOracleText(
         _ text: String,
         intent: RefinementIntent = .include

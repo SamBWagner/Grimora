@@ -116,6 +116,73 @@ final class SearchRefinementTests: XCTestCase {
         )
     }
 
+    func testArtistFragmentQuotesMultiWordNamesAndTrims() {
+        XCTAssertEqual(
+            SearchRefinement.forArtist("Johannes Voss").queryFragment,
+            #"artist:"Johannes Voss""#
+        )
+        // A single bare token needs no quotes.
+        XCTAssertEqual(SearchRefinement.forArtist("Rebecca").queryFragment, "artist:Rebecca")
+        // Surrounding whitespace is trimmed before quoting.
+        XCTAssertEqual(
+            SearchRefinement.forArtist("  Seb McKinnon  ").queryFragment,
+            #"artist:"Seb McKinnon""#
+        )
+        XCTAssertEqual(SearchRefinement.forArtist("   ").queryFragment, #"artist:"""#)
+        // The generated clause is valid Scryfall syntax.
+        XCTAssertNil(
+            SearchQuery.unsupportedReason(for: SearchRefinement.forArtist("Johannes Voss").queryFragment)
+        )
+    }
+
+    func testArtistUniqueArtSearchReturnsEachArtworkOnce() throws {
+        // D3: tapping an artist runs `artist:"…" unique:art`, which must surface
+        // each distinct illustration once even when prints reuse the same art.
+        let database = try CardDatabase(storage: .inMemory)
+        try database.replaceAllCards([
+            artistCard(id: "voss-a1", artist: "Johannes Voss", illustration: "art-1"),
+            artistCard(id: "voss-a2", artist: "Johannes Voss", illustration: "art-1"),
+            artistCard(id: "voss-b", artist: "Johannes Voss", illustration: "art-2"),
+            artistCard(id: "other", artist: "Amy Artist", illustration: "art-9"),
+        ])
+
+        // Casing differs from the stored name to exercise normalized matching.
+        let query = #"artist:"johannes voss" unique:art"#
+        let response = try database.search(CardSearchRequest(text: query))
+        guard case .results(let results, _) = response else {
+            return XCTFail("Expected search results.")
+        }
+
+        // Only Voss's cards, with the duplicated illustration collapsed to one.
+        XCTAssertEqual(Set(results.map(\.illustrationID)), ["art-1", "art-2"])
+        XCTAssertFalse(results.contains { $0.id == "other" })
+        XCTAssertEqual(results.count, 2)
+        // Exactly one of the two prints that share art-1 survives.
+        XCTAssertEqual(results.filter { $0.illustrationID == "art-1" }.count, 1)
+    }
+
+    private func artistCard(id: String, artist: String, illustration: String) -> CardRecord {
+        CardRecord(
+            id: id,
+            name: id,
+            releasedAt: "2020-01-01",
+            setCode: "tst",
+            setName: "Test Set",
+            setType: "expansion",
+            collectorNumber: id,
+            collectorNumberNumber: 1,
+            rarity: "common",
+            rarityRank: 0,
+            artist: artist,
+            colorSortKey: 0,
+            layout: "normal",
+            typeLine: "Creature",
+            oracleText: "",
+            illustrationID: illustration,
+            isRealCard: true
+        )
+    }
+
     func testComposedHiddenTermExcludesMatchingCards() throws {
         let database = try CardDatabase(storage: .inMemory)
         var cards = Fixtures.records()
