@@ -172,7 +172,13 @@ private struct CardListImportForm: View {
 
     private var panelForm: some View {
         VStack(alignment: .leading, spacing: 18) {
-            header
+            CardListImportHeader(
+                title: title,
+                subtitle: subtitle,
+                headerFont: headerFont,
+                titleAccessibilityIdentifier: titleAccessibilityIdentifier,
+                palette: palette
+            )
 
             VStack(alignment: .leading, spacing: 18) {
                 if mode.isCreate {
@@ -241,20 +247,6 @@ private struct CardListImportForm: View {
     }
     #endif
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title)
-                .font(headerFont)
-                .foregroundStyle(palette.primaryText.color)
-                .accessibilityIdentifier(titleAccessibilityIdentifier ?? "list-import-title")
-
-            Text(subtitle)
-                .font(.subheadline)
-                .foregroundStyle(palette.secondaryText.color)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     private var listNameSection: some View {
         VStack(alignment: .leading, spacing: 7) {
             Text("List name")
@@ -316,7 +308,12 @@ private struct CardListImportForm: View {
         case .pasteOrLink:
             pasteOrLinkInput
         case .file:
-            fileInput
+            CardListImportFileInput(
+                fileTitle: fileTitle,
+                fileSubtitle: fileSubtitle,
+                palette: palette,
+                onChooseFile: { isShowingFileImporter = true }
+            )
         }
     }
 
@@ -338,43 +335,6 @@ private struct CardListImportForm: View {
                         .stroke(palette.hairline.color, lineWidth: 1)
                 }
                 .accessibilityIdentifier("list-import-source-text")
-        }
-    }
-
-    private var fileInput: some View {
-        VStack(alignment: .leading, spacing: 13) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "doc.badge.plus")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(palette.accent.color)
-                    .frame(width: 28, height: 28)
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(fileTitle)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(palette.primaryText.color)
-
-                    Text(fileSubtitle)
-                        .font(.caption)
-                        .foregroundStyle(palette.secondaryText.color)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Button {
-                isShowingFileImporter = true
-            } label: {
-                Label("Choose File...", systemImage: "folder")
-            }
-            .accessibilityIdentifier("list-import-file-button")
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(palette.placeholderFill.color.opacity(0.42), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(palette.hairline.color, lineWidth: 1)
         }
     }
 
