@@ -31,6 +31,7 @@ public struct CardDetailView: View {
     @State private var shareFeedbackTrigger = 0
     @State private var isValueDetailsExpanded = false
     @State private var artistPendingArtSearch: String?
+    @State private var scrubbedValuePoint: CardValueChartPoint?
     @AppStorage(GrimoraValuePreferences.displayCurrencyKey)
     private var displayCurrencyRawValue = CardValueDisplayCurrency.usd.rawValue
 
@@ -1421,13 +1422,35 @@ public struct CardDetailView: View {
         let points = chartPoints(for: entry)
         if points.count > 1 {
             VStack {
-                Chart(points) { point in
-                    LineMark(
-                        x: .value("Date", point.date),
-                        y: .value("Price", point.price)
-                    )
-                    .foregroundStyle(palette.accent.color)
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                Chart {
+                    ForEach(points) { point in
+                        LineMark(
+                            x: .value("Date", point.date),
+                            y: .value("Price", point.price)
+                        )
+                        .foregroundStyle(palette.accent.color)
+                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    }
+
+                    if let scrubbed = scrubbedValuePoint {
+                        RuleMark(x: .value("Date", scrubbed.date))
+                            .foregroundStyle(palette.secondaryText.color.opacity(0.7))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                            .annotation(
+                                position: .top,
+                                spacing: 6,
+                                overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
+                            ) {
+                                scrubReadout(for: scrubbed)
+                            }
+
+                        PointMark(
+                            x: .value("Date", scrubbed.date),
+                            y: .value("Price", scrubbed.price)
+                        )
+                        .foregroundStyle(palette.accent.color)
+                        .symbolSize(90)
+                    }
                 }
                 .chartYAxis {
                     AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
@@ -1447,8 +1470,18 @@ public struct CardDetailView: View {
                         AxisValueLabel(format: .dateTime.month(.abbreviated).day())
                     }
                 }
+                .chartOverlay { proxy in
+                    GeometryReader { geometry in
+                        Rectangle()
+                            .fill(Color.clear)
+                            .contentShape(Rectangle())
+                            .gesture(valueScrubGesture(proxy: proxy, geometry: geometry, points: points))
+                    }
+                }
             }
             .frame(height: 150)
+            .animation(.easeOut(duration: 0.12), value: scrubbedValuePoint?.id)
+            .onDisappear { scrubbedValuePoint = nil }
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("card-value-history-chart")
             .accessibilityLabel("90-day value chart")
@@ -1460,6 +1493,67 @@ public struct CardDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("card-value-chart-unavailable")
         }
+    }
+
+    // Drag anywhere over the plot to read the value on that day; release snaps
+    // the readout away. Works with mouse drags on macOS and touch elsewhere.
+    private func valueScrubGesture(
+        proxy: ChartProxy,
+        geometry: GeometryProxy,
+        points: [CardValueChartPoint]
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                updateScrub(at: value.location, proxy: proxy, geometry: geometry, points: points)
+            }
+            .onEnded { _ in
+                if scrubbedValuePoint != nil {
+                    scrubbedValuePoint = nil
+                }
+            }
+    }
+
+    private func updateScrub(
+        at location: CGPoint,
+        proxy: ChartProxy,
+        geometry: GeometryProxy,
+        points: [CardValueChartPoint]
+    ) {
+        guard let plotFrame = proxy.plotFrame else {
+            return
+        }
+        let xPosition = location.x - geometry[plotFrame].origin.x
+        guard let date = proxy.value(atX: xPosition, as: Date.self),
+              let nearest = nearestChartPoint(to: date, in: points)
+        else {
+            return
+        }
+        if scrubbedValuePoint?.id != nearest.id {
+            scrubbedValuePoint = nearest
+            detailFeedbackTrigger += 1
+        }
+    }
+
+    private func scrubReadout(for point: CardValueChartPoint) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(Self.chartDateAccessibilityFormatter.string(from: point.date))
+                .font(.caption2)
+                .foregroundStyle(palette.secondaryText.color)
+            Text(formattedPrice(point.price))
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .foregroundStyle(palette.primaryText.color)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(palette.cardSurface.color)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(palette.hairline.color, lineWidth: 1)
+        }
+        .shadow(color: palette.shadow.color.opacity(0.25), radius: 4, x: 0, y: 2)
+        .fixedSize()
+        .accessibilityHidden(true)
     }
 
     private func valueMovementSummary(for entry: CardValueGuideEntry) -> some View {
@@ -2208,10 +2302,19 @@ func compactPrintingDotDiameter(
     return 6
 }
 
-private struct CardValueChartPoint: Identifiable {
+struct CardValueChartPoint: Identifiable, Equatable {
     var id: Date { date }
     var date: Date
     var price: Double
+}
+
+/// Returns the charted point whose day is closest to `date`, used to snap the
+/// price-history scrub readout to a real reading. Factored out as a pure
+/// function so the nearest-point policy can be unit-tested without a chart.
+func nearestChartPoint(to date: Date, in points: [CardValueChartPoint]) -> CardValueChartPoint? {
+    points.min {
+        abs($0.date.timeIntervalSince(date)) < abs($1.date.timeIntervalSince(date))
+    }
 }
 
 private struct PrintingThumbnailImageCacheTaskID: Equatable {
