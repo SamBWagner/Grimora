@@ -54,6 +54,32 @@ public enum CardListEntrySearchResponse: Equatable, Sendable {
     case unsupported(SearchQueryUnsupportedReason)
 }
 
+/// One list whose cards matched a cross-list search, together with the matching entries.
+public struct CrossListSearchMatch: Equatable, Sendable {
+    public var listID: String
+    public var entries: [CardListEntryRecord]
+
+    public init(listID: String, entries: [CardListEntryRecord]) {
+        self.listID = listID
+        self.entries = entries
+    }
+
+    /// Number of matching entries (distinct rows) within the list.
+    public var matchedEntryCount: Int {
+        entries.count
+    }
+
+    /// Total quantity of matching cards within the list.
+    public var matchedCardQuantity: Int {
+        entries.reduce(0) { $0 + $1.quantity }
+    }
+}
+
+public enum CrossListSearchResponse: Equatable, Sendable {
+    case results([CrossListSearchMatch])
+    case unsupported(SearchQueryUnsupportedReason)
+}
+
 public struct SearchQueryUnsupportedReason: Error, Equatable, Sendable {
     public var query: String
     public var token: String

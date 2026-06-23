@@ -931,6 +931,35 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.statusMessage, "Added 2 cards to Deck Box.")
   }
 
+  func testSearchAllListsSurfacesOnlyMatchingListsAndReportsSyntax() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let creatures = try XCTUnwrap(model.createCardList(named: "Creatures"))
+    model.addCards(["forest", "beta"], toListID: creatures.id)
+    let tokens = try XCTUnwrap(model.createCardList(named: "Tokens"))
+    model.addCards(["token"], toListID: tokens.id)
+
+    guard case .results(let tokenMatches) = model.searchAllLists(query: "t:token") else {
+      return XCTFail("Expected token matches")
+    }
+    XCTAssertEqual(tokenMatches.map(\.listID), [tokens.id])
+    XCTAssertEqual(tokenMatches.first?.entries.map(\.cardID), ["token"])
+
+    guard case .results(let blankMatches) = model.searchAllLists(query: "   ") else {
+      return XCTFail("Expected empty results for blank query")
+    }
+    XCTAssertTrue(blankMatches.isEmpty)
+
+    guard case .unsupported(let reason) = model.searchAllLists(query: "cube:vintage") else {
+      return XCTFail("Expected unsupported response")
+    }
+    XCTAssertEqual(reason.token, "cube:vintage")
+  }
+
   func testModelAddsCardsToAutoCreatedFavouritesIdempotently() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())

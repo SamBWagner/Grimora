@@ -124,6 +124,23 @@ extension GrimoraAppModel {
     selectedListSearchUnsupportedMessage = nil
   }
 
+  /// Runs a Scryfall query across every list, returning the lists whose cards match together with
+  /// the matching entries. The query is compiled once in the database layer. An empty query yields
+  /// no matches so the dashboard can treat it as "show everything".
+  public func searchAllLists(query: String) -> CrossListSearchResponse {
+    let normalizedQuery = GrimoraSearchHistoryStore.normalizedQuery(query)
+    guard !normalizedQuery.isEmpty else {
+      return .results([])
+    }
+
+    do {
+      return try database.searchAllCardListEntries(text: normalizedQuery)
+    } catch {
+      statusMessage = "List search failed."
+      return .results([])
+    }
+  }
+
   public func undoLastListAction() {
     guard let undoState = listUndoStack.popLast() else {
       canUndoListAction = false

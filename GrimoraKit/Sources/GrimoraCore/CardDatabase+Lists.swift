@@ -56,6 +56,100 @@ extension CardDatabase {
     }
   }
 
+  /// Searches every list at once, compiling the Scryfall query a single time and returning the
+  /// lists whose cards match together with the matching entries. Returns `.results([])` for an
+  /// empty query so callers can treat "no filter" as "no matches surfaced".
+  public func searchAllCardListEntries(text: String) throws -> CrossListSearchResponse {
+    try withDatabaseLock {
+      let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !query.isEmpty else {
+        return .results([])
+      }
+
+      let plan: SearchQueryPlan
+      switch SearchQuery.compile(query) {
+      case .success(let compiledPlan):
+        plan = compiledPlan
+      case .failure(let reason):
+        return .unsupported(reason)
+      }
+
+      var entries = try allMatchingCardListEntriesUnlocked(
+        cardWhereSQL: plan.whereSQL,
+        cardWhereBindings: plan.bindings
+      )
+
+      if plan.hasPostFilters {
+        entries = entries.filter { entry in
+          guard let card = entry.card else {
+            return false
+          }
+          return plan.postFilters.allSatisfy { $0.matches(card) }
+        }
+      }
+
+      return .results(Self.groupedCrossListMatches(from: entries))
+    }
+  }
+
+  /// Fetches the entries across all lists whose card matches the compiled query, hydrating each
+  /// entry's card once per distinct card id to avoid repeated lookups over large libraries.
+  func allMatchingCardListEntriesUnlocked(
+    cardWhereSQL: String?,
+    cardWhereBindings: [SearchQuery.SQLBinding] = []
+  ) throws -> [CardListEntryRecord] {
+    let searchClause = cardWhereSQL.map { whereSQL in
+      """
+      AND card_id IN (
+          SELECT id
+          FROM cards
+          WHERE \(whereSQL)
+      )
+      """
+    } ?? ""
+    let statement = try database.prepare(
+      """
+      SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at
+      FROM card_list_entries
+      WHERE 1 = 1
+      \(searchClause)
+      ORDER BY list_id ASC, zone ASC, position ASC, created_at ASC, id ASC
+      """)
+    for (index, binding) in cardWhereBindings.enumerated() {
+      try binding.apply(to: statement, index: Int32(index + 1))
+    }
+
+    var entries: [CardListEntryRecord] = []
+    var cardsByID: [String: CardRecord?] = [:]
+    while try statement.step() {
+      var entry = readCardListEntry(from: statement)
+      if let cached = cardsByID[entry.cardID] {
+        entry.card = cached
+      } else {
+        let card = try card(id: entry.cardID)
+        cardsByID[entry.cardID] = card
+        entry.card = card
+      }
+      entries.append(entry)
+    }
+    return entries
+  }
+
+  /// Groups matching entries into per-list matches, preserving first-seen list order.
+  static func groupedCrossListMatches(
+    from entries: [CardListEntryRecord]
+  ) -> [CrossListSearchMatch] {
+    var order: [String] = []
+    var grouped: [String: [CardListEntryRecord]] = [:]
+    for entry in entries {
+      if grouped[entry.listID] == nil {
+        order.append(entry.listID)
+      }
+      grouped[entry.listID, default: []].append(entry)
+    }
+    return order.map { CrossListSearchMatch(listID: $0, entries: grouped[$0] ?? []) }
+  }
+
   func cardListEntriesUnlocked(
     forListID listID: String,
     cardWhereSQL: String? = nil,
