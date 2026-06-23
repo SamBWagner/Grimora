@@ -33,7 +33,13 @@ struct CardListTextRowView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            leadingIcon
+            CardListTextRowLeadingIcon(
+                showsSelectionIndicator: showsSelectionIndicator,
+                isSelectedInSelection: isSelectedInSelection,
+                palette: palette,
+                selectionAccessibilityIdentifier: selectionAccessibilityIdentifier,
+                isDragEnabled: isDragEnabled
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -96,7 +102,7 @@ struct CardListTextRowView: View {
         .cardListNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
             onCreateCategory?(name)
         }
-        .listRowBackground(rowBackground)
+        .listRowBackground(CardListTextRowBackground(card: card, palette: palette, isActiveDetail: isActiveDetail))
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("card-list-text-row-\(entry.id)")
@@ -104,59 +110,6 @@ struct CardListTextRowView: View {
         .accessibilityValue(accessibilityValue)
         .accessibilityAction {
             activateRow()
-        }
-    }
-
-    @ViewBuilder
-    private var leadingIcon: some View {
-        if showsSelectionIndicator || isSelectedInSelection {
-            CardGridSelectionIndicator(
-                isSelected: isSelectedInSelection,
-                palette: palette,
-                accessibilityIdentifier: selectionAccessibilityIdentifier
-            )
-            .frame(width: 30)
-        } else {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(palette.secondaryText.color.opacity(isDragEnabled ? 0.72 : 0.35))
-                .frame(width: 30, height: 30)
-                .help("Drag Card")
-                .accessibilityHidden(true)
-        }
-    }
-
-    @ViewBuilder
-    private var colorIdentityBackground: some View {
-        switch colorIdentityStyle {
-        case .colorless:
-            rowColorlessColor
-                .opacity(rowColorlessBackgroundOpacity)
-        case let .mono(symbol):
-            rowColor(for: symbol)
-                .opacity(rowBackgroundOpacity)
-        case let .pair(left, right):
-            LinearGradient(
-                colors: [
-                    rowColor(for: left).opacity(rowBackgroundOpacity),
-                    rowColor(for: right).opacity(rowBackgroundOpacity)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-        case .gold:
-            rowGoldColor
-                .opacity(rowBackgroundOpacity)
-        }
-    }
-
-    private var rowBackground: some View {
-        ZStack {
-            colorIdentityBackground
-            if isActiveDetail {
-                palette.accent.color
-                    .opacity(palette.appBackground.red < 0.5 ? 0.22 : 0.14)
-            }
         }
     }
 
@@ -298,43 +251,6 @@ struct CardListTextRowView: View {
 
     private var manaCostAccessibilityText: String {
         ManaCostSymbolParser.accessibilityText(for: card?.manaCost ?? "")
-    }
-
-    private var colorIdentityStyle: CardListTextRowColorIdentityStyle {
-        CardListTextRowColorIdentityStyle(card: card)
-    }
-
-    private var rowBackgroundOpacity: Double {
-        palette.appBackground.red < 0.5 ? 0.18 : 0.11
-    }
-
-    private var rowGoldColor: Color {
-        Color(red: 0.86, green: 0.66, blue: 0.24)
-    }
-
-    private var rowColorlessColor: Color {
-        Color(red: 0.54, green: 0.54, blue: 0.50)
-    }
-
-    private var rowColorlessBackgroundOpacity: Double {
-        palette.appBackground.red < 0.5 ? 0.16 : 0.09
-    }
-
-    private func rowColor(for symbol: String) -> Color {
-        switch symbol {
-        case "W":
-            return Color(red: 0.86, green: 0.78, blue: 0.56)
-        case "U":
-            return Color(red: 0.18, green: 0.48, blue: 0.86)
-        case "B":
-            return Color(red: 0.30, green: 0.24, blue: 0.36)
-        case "R":
-            return Color(red: 0.86, green: 0.24, blue: 0.18)
-        case "G":
-            return Color(red: 0.22, green: 0.62, blue: 0.32)
-        default:
-            return Color.clear
-        }
     }
 
     private var accessibilityLabel: String {
