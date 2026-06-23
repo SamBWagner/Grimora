@@ -4,7 +4,6 @@ import SwiftUI
 struct CardListsOverviewView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var model: GrimoraAppModel
-    @State private var createListFeedbackTrigger = 0
 
     var onCreateList: () -> Void
     var onSelectList: (CardListRecord.ID) -> Void
@@ -15,14 +14,21 @@ struct CardListsOverviewView: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                header
+                CardListsOverviewHeader(
+                    countText: listCountText,
+                    palette: palette,
+                    onCreateList: onCreateList
+                )
 
                 if let unsupportedMessage = model.dashboardSearchUnsupportedMessage {
-                    dashboardSearchNotice(unsupportedMessage)
+                    CardListsOverviewSearchNotice(message: unsupportedMessage, palette: palette)
                 }
 
                 if items.isEmpty {
-                    overviewEmptyState
+                    CardListsOverviewEmptyState(
+                        hasActiveSearch: model.hasActiveDashboardSearch,
+                        searchText: model.dashboardSearchText
+                    )
                 } else {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
                         ForEach(items) { item in
@@ -45,7 +51,11 @@ struct CardListsOverviewView: View {
                             // apply here — the context menu is the dashboard's action affordance
                             // (long-press on iOS/visionOS, right-click on macOS).
                             .contextMenu {
-                                listActions(for: item)
+                                CardListOverviewActions(
+                                    model: model,
+                                    item: item,
+                                    onRenameList: onRenameList
+                                )
                             }
                         }
                     }
@@ -85,56 +95,6 @@ struct CardListsOverviewView: View {
             model.dashboardSearchText
         } set: { newValue in
             model.setDashboardSearchDraft(newValue)
-        }
-    }
-
-    @ViewBuilder
-    private var overviewEmptyState: some View {
-        if model.hasActiveDashboardSearch {
-            ContentUnavailableView.search(text: model.dashboardSearchText)
-                .frame(maxWidth: .infinity, minHeight: 320)
-                .accessibilityIdentifier("dashboard-search-no-matches")
-        } else {
-            ContentUnavailableView("No Lists", systemImage: "square.grid.2x2")
-                .frame(maxWidth: .infinity, minHeight: 320)
-                .accessibilityIdentifier("empty-lists-overview")
-        }
-    }
-
-    private func dashboardSearchNotice(_ message: String) -> some View {
-        Label(message, systemImage: "exclamationmark.triangle")
-            .font(.footnote)
-            .foregroundStyle(palette.secondaryText.color)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityIdentifier("dashboard-search-unsupported")
-    }
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Lists")
-                    .font(.title.weight(.semibold))
-                    .foregroundStyle(palette.primaryText.color)
-                    .lineLimit(1)
-
-                Text(listCountText)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(palette.secondaryText.color)
-                    .lineLimit(1)
-                    .accessibilityIdentifier("card-lists-overview-count")
-            }
-
-            Spacer(minLength: 0)
-
-            Button {
-                createListFeedbackTrigger += 1
-                onCreateList()
-            } label: {
-                Label("New List", systemImage: "plus")
-            }
-            .buttonStyle(.borderedProminent)
-            .accessibilityIdentifier("create-list-button")
-            .grimoraSelectionFeedback(trigger: createListFeedbackTrigger)
         }
     }
 
@@ -232,32 +192,6 @@ struct CardListsOverviewView: View {
         return CardListOverviewTile.MatchPreview(count: match.matchedEntryCount, names: Array(names))
     }
 
-    @ViewBuilder
-    private func listActions(for item: CardListOverviewItem) -> some View {
-        // Mirrors the sidebar row actions (CardListBrowserRowActions): the protected
-        // Favourites list isn't pinnable, renamable, or deletable.
-        if !model.isProtectedFavouritesList(item.list) {
-            Button {
-                model.setCardListPinned(id: item.list.id, isPinned: !item.list.isPinned)
-            } label: {
-                Label(item.list.isPinned ? "Unpin" : "Pin",
-                      systemImage: item.list.isPinned ? "pin.slash" : "pin")
-            }
-
-            Button {
-                onRenameList(item.list)
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-
-            Button(role: .destructive) {
-                model.deleteCardList(id: item.list.id)
-            } label: {
-                Label("Delete", systemImage: "trash")
-            }
-        }
-    }
-
     private func overviewImageTaskID(for item: CardListOverviewItem) -> String {
         [
             item.list.id,
@@ -292,7 +226,14 @@ private struct CardListOverviewTile: View {
             onSelect()
         } label: {
             VStack(alignment: .leading, spacing: 9) {
-                artwork
+                CardListOverviewTileArtwork(
+                    item: item,
+                    isSystemList: isSystemList,
+                    palette: palette,
+                    shadowOpacity: shadowOpacity,
+                    shadowRadius: shadowRadius,
+                    shadowYOffset: shadowYOffset
+                )
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
@@ -363,46 +304,6 @@ private struct CardListOverviewTile: View {
             return entryCountText
         }
         return "\(entryCountText), \(matchSummaryText(matchPreview))"
-    }
-
-    private var artwork: some View {
-        Color.clear
-            .aspectRatio(Self.artworkAspectRatio, contentMode: .fit)
-            .overlay {
-                artworkContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-            .frame(maxWidth: .infinity)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(palette.hairline.color, lineWidth: 1)
-            }
-            .shadow(color: Color.black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowYOffset)
-    }
-
-    private static let artworkAspectRatio: CGFloat = 8.0 / 5.0
-
-    @ViewBuilder
-    private var artworkContent: some View {
-        if let imagePath = item.topCard?.listOverviewImagePath {
-            LocalCardImage(
-                path: imagePath,
-                cornerRadius: 8,
-                contentMode: .fill
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(palette.placeholderFill.color)
-
-                Image(systemName: isSystemList ? "star" : "rectangle.stack")
-                    .font(.system(size: 38, weight: .semibold))
-                    .foregroundStyle(palette.secondaryText.color)
-                    .accessibilityHidden(true)
-            }
-        }
     }
 
     private var shadowOpacity: Double {
