@@ -20,8 +20,23 @@ public enum GrimoraOnboardingPreferences {
   /// library and shouldn't be interrupted by the tour).
   static let disableEnvironmentKey = "GRIMORA_DISABLE_ONBOARDING"
 
+  /// Forces the walkthrough's *initial* state for UI tests (e.g. `inProgress` to
+  /// show the tour at launch, `completed` to keep it hidden). Persisted writes
+  /// still go to the resolved (suite-isolated) defaults, so this never touches the
+  /// real defaults domain.
+  static let stateEnvironmentKey = "GRIMORA_TEST_ONBOARDING_STATE"
+
   public static func state(from rawValue: String?) -> GrimoraOnboardingState {
     rawValue.flatMap(GrimoraOnboardingState.init(rawValue:)) ?? .notStarted
+  }
+
+  /// The `UserDefaults` onboarding state persists to. Honours
+  /// `GRIMORA_TEST_USER_DEFAULTS_SUITE` (mirroring `GrimoraEnvironment`) so UI
+  /// tests stay isolated from the real defaults domain and can seed the tour's
+  /// state deterministically; falls back to `.standard` in production.
+  public static func resolvedUserDefaults(processInfo: ProcessInfo = .processInfo) -> UserDefaults {
+    processInfo.environment["GRIMORA_TEST_USER_DEFAULTS_SUITE"]
+      .flatMap(UserDefaults.init(suiteName:)) ?? .standard
   }
 }
 
@@ -208,18 +223,22 @@ public final class GrimoraOnboardingModel: ObservableObject {
   private let isDisabled: Bool
 
   public init(
-    userDefaults: UserDefaults = .standard,
+    userDefaults: UserDefaults? = nil,
     sampleCards: [GrimoraOnboardingSampleCard] = GrimoraOnboardingSampleSet.cards,
     processInfo: ProcessInfo = .processInfo
   ) {
-    self.userDefaults = userDefaults
+    let resolvedDefaults =
+      userDefaults ?? GrimoraOnboardingPreferences.resolvedUserDefaults(processInfo: processInfo)
+    self.userDefaults = resolvedDefaults
     self.sampleCards = sampleCards
     self.isDisabled =
       processInfo.environment[GrimoraOnboardingPreferences.disableEnvironmentKey] == "1"
     let storedState = GrimoraOnboardingPreferences.state(
-      from: userDefaults.string(forKey: GrimoraOnboardingPreferences.stateKey)
+      from: resolvedDefaults.string(forKey: GrimoraOnboardingPreferences.stateKey)
     )
-    self.state = isDisabled ? .completed : storedState
+    let seededState = processInfo.environment[GrimoraOnboardingPreferences.stateEnvironmentKey]
+      .flatMap(GrimoraOnboardingState.init(rawValue:))
+    self.state = isDisabled ? .completed : (seededState ?? storedState)
   }
 
   /// `true` while the walkthrough should be presented over the app.

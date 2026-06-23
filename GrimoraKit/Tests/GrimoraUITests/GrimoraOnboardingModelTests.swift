@@ -87,6 +87,38 @@ final class GrimoraOnboardingModelTests: XCTestCase {
     XCTAssertEqual(model.state, .completed)
   }
 
+  func testResolvedUserDefaultsHonoursTestSuiteAndFallsBackToStandard() throws {
+    let suiteName = "GrimoraOnboardingResolved-\(UUID().uuidString)"
+    addTeardownBlock { UserDefaults().removePersistentDomain(forName: suiteName) }
+
+    let withSuite = StubProcessInfo(environment: ["GRIMORA_TEST_USER_DEFAULTS_SUITE": suiteName])
+    let resolved = GrimoraOnboardingPreferences.resolvedUserDefaults(processInfo: withSuite)
+    // Writing through the resolved defaults lands in the named suite, not .standard.
+    resolved.set("inProgress", forKey: GrimoraOnboardingPreferences.stateKey)
+    XCTAssertEqual(
+      UserDefaults(suiteName: suiteName)?.string(forKey: GrimoraOnboardingPreferences.stateKey),
+      "inProgress"
+    )
+
+    let noSuite = StubProcessInfo(environment: [:])
+    XCTAssertEqual(GrimoraOnboardingPreferences.resolvedUserDefaults(processInfo: noSuite), .standard)
+  }
+
+  func testModelSeededInProgressViaSuiteIsActiveAtLaunch() throws {
+    // Mirrors how a UI test forces the tour on: pre-seed the suite, construct the
+    // model with only a processInfo pointing at it.
+    let suiteName = "GrimoraOnboardingSeeded-\(UUID().uuidString)"
+    let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    addTeardownBlock { suite.removePersistentDomain(forName: suiteName) }
+    suite.set(GrimoraOnboardingState.inProgress.rawValue, forKey: GrimoraOnboardingPreferences.stateKey)
+
+    let processInfo = StubProcessInfo(environment: ["GRIMORA_TEST_USER_DEFAULTS_SUITE": suiteName])
+    let model = GrimoraOnboardingModel(processInfo: processInfo)
+
+    XCTAssertEqual(model.state, .inProgress)
+    XCTAssertTrue(model.isActive)
+  }
+
   func testSampleSetTeachesTheElfQuiz() {
     let cards = GrimoraOnboardingSampleSet.cards
 

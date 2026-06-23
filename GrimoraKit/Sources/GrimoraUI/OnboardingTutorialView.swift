@@ -41,7 +41,6 @@ struct OnboardingTutorialView: View {
     }
     .tint(palette.accent.color)
     .animation(.easeInOut(duration: 0.2), value: step)
-    .accessibilityIdentifier("onboarding-tutorial")
   }
 
   private var topBar: some View {

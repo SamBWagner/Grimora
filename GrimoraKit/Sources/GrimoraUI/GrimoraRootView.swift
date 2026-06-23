@@ -110,6 +110,9 @@ public struct GrimoraRootView: View {
                 onboarding.libraryDidBecomeReady()
             }
         }
+        .onChange(of: model.onboardingReplayRequestID) { _, _ in
+            onboarding.restart()
+        }
         .animation(.easeInOut(duration: 0.18), value: model.libraryActivity)
         .animation(.easeInOut(duration: 0.18), value: onboarding.isActive)
     }
