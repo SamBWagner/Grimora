@@ -189,6 +189,15 @@ struct TouchRootView: View {
             #endif
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    SearchHistoryMenu { query in
+                        model.setSearchDraft(query)
+                        Task {
+                            await model.submitSearch()
+                        }
+                    }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
                     SearchOptionsMenu(
                         gridZoom: gridZoom,
                         onCreateListFromSearch: {
