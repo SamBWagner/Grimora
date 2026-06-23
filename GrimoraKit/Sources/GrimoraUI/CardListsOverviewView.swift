@@ -29,7 +29,8 @@ struct CardListsOverviewView: View {
                             CardListOverviewTile(
                                 item: item,
                                 palette: palette,
-                                isSystemList: model.isProtectedFavouritesList(item.list)
+                                isSystemList: model.isProtectedFavouritesList(item.list),
+                                matchPreview: matchPreview(for: item.list.id)
                             ) {
                                 model.selectCardList(id: item.list.id)
                                 onSelectList(item.list.id)
@@ -218,6 +219,19 @@ struct CardListsOverviewView: View {
         #endif
     }
 
+    // L6c: while a cross-list search is active, surface which cards matched on each
+    // tile. The matched entries already carry their CardRecord, so this needs no extra
+    // fetch; we cap the preview at the first few names to keep it cheap.
+    private func matchPreview(for listID: CardListRecord.ID) -> CardListOverviewTile.MatchPreview? {
+        guard model.hasActiveDashboardSearch,
+              let match = model.dashboardListMatches[listID]
+        else {
+            return nil
+        }
+        let names = match.entries.prefix(3).compactMap { $0.card?.name }
+        return CardListOverviewTile.MatchPreview(count: match.matchedEntryCount, names: Array(names))
+    }
+
     @ViewBuilder
     private func listActions(for item: CardListOverviewItem) -> some View {
         // Mirrors the sidebar row actions (CardListBrowserRowActions): the protected
@@ -259,7 +273,13 @@ private struct CardListOverviewTile: View {
     var item: CardListOverviewItem
     var palette: GrimoraPalette
     var isSystemList: Bool
+    var matchPreview: MatchPreview? = nil
     var onSelect: () -> Void
+
+    struct MatchPreview: Equatable {
+        var count: Int
+        var names: [String]
+    }
 
     #if os(macOS) || os(visionOS)
     @State private var isHovered = false
@@ -293,6 +313,16 @@ private struct CardListOverviewTile: View {
                         .font(.subheadline)
                         .foregroundStyle(palette.secondaryText.color)
                         .lineLimit(1)
+
+                    if let matchPreview {
+                        Label(matchSummaryText(matchPreview), systemImage: "magnifyingglass")
+                            .font(.caption)
+                            .foregroundStyle(palette.accent.color)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .accessibilityHidden(true)
+                            .accessibilityIdentifier("card-list-overview-tile-matches-\(item.list.name)")
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -317,7 +347,22 @@ private struct CardListOverviewTile: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityIdentifier("card-list-overview-tile-\(item.list.name)")
         .accessibilityLabel(item.list.name)
-        .accessibilityValue(entryCountText)
+        .accessibilityValue(accessibilityValueText)
+    }
+
+    private func matchSummaryText(_ preview: MatchPreview) -> String {
+        let countText = "\(preview.count) \(preview.count == 1 ? "match" : "matches")"
+        guard !preview.names.isEmpty else {
+            return countText
+        }
+        return "\(countText) · \(preview.names.joined(separator: ", "))"
+    }
+
+    private var accessibilityValueText: String {
+        guard let matchPreview else {
+            return entryCountText
+        }
+        return "\(entryCountText), \(matchSummaryText(matchPreview))"
     }
 
     private var artwork: some View {

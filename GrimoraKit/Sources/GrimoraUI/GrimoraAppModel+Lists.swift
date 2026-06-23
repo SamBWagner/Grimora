@@ -175,14 +175,17 @@ extension GrimoraAppModel {
     dashboardSearchUnsupportedMessage = nil
     guard !query.isEmpty else {
       dashboardListMatchIDs = nil
+      dashboardListMatches = [:]
       return
     }
 
     switch searchAllLists(query: query) {
     case .results(let matches):
       dashboardListMatchIDs = Set(matches.map(\.listID))
+      dashboardListMatches = Dictionary(uniqueKeysWithValues: matches.map { ($0.listID, $0) })
     case .unsupported(let reason):
       dashboardListMatchIDs = nil
+      dashboardListMatches = [:]
       dashboardSearchUnsupportedMessage = reason.message
     }
   }
