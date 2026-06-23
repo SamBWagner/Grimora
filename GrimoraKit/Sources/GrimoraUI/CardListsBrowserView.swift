@@ -29,14 +29,16 @@ struct CardListsBrowserView: View {
     var body: some View {
         CardListsOverviewView(
             onCreateList: onCreateList,
-            onSelectList: { _ in }
+            onSelectList: { _ in },
+            onRenameList: onRenameList
         )
         .navigationDestination(for: CardListsBrowserRoute.self) { route in
             switch route {
             case .overview:
                 CardListsOverviewView(
                     onCreateList: onCreateList,
-                    onSelectList: { _ in }
+                    onSelectList: { _ in },
+                    onRenameList: onRenameList
                 )
             case .newList:
                 CardListCreateDestinationView(

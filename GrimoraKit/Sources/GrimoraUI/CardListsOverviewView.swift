@@ -8,6 +8,7 @@ struct CardListsOverviewView: View {
 
     var onCreateList: () -> Void
     var onSelectList: (CardListRecord.ID) -> Void
+    var onRenameList: (CardListRecord) -> Void = { _ in }
 
     var body: some View {
         let items = model.filteredCardListOverviewItems
@@ -38,6 +39,12 @@ struct CardListsOverviewView: View {
                                     return
                                 }
                                 await model.cacheVisibleImages(for: card, quality: .artCrop)
+                            }
+                            // Tiles live in a LazyVGrid, so `.swipeActions` (List-only) doesn't
+                            // apply here — the context menu is the dashboard's action affordance
+                            // (long-press on iOS/visionOS, right-click on macOS).
+                            .contextMenu {
+                                listActions(for: item)
                             }
                         }
                     }
@@ -209,6 +216,32 @@ struct CardListsOverviewView: View {
         #else
         300
         #endif
+    }
+
+    @ViewBuilder
+    private func listActions(for item: CardListOverviewItem) -> some View {
+        // Mirrors the sidebar row actions (CardListBrowserRowActions): the protected
+        // Favourites list isn't pinnable, renamable, or deletable.
+        if !model.isProtectedFavouritesList(item.list) {
+            Button {
+                model.setCardListPinned(id: item.list.id, isPinned: !item.list.isPinned)
+            } label: {
+                Label(item.list.isPinned ? "Unpin" : "Pin",
+                      systemImage: item.list.isPinned ? "pin.slash" : "pin")
+            }
+
+            Button {
+                onRenameList(item.list)
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+
+            Button(role: .destructive) {
+                model.deleteCardList(id: item.list.id)
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
     }
 
     private func overviewImageTaskID(for item: CardListOverviewItem) -> String {

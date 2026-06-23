@@ -154,7 +154,8 @@ private struct SplitRootView: View {
                 onCreateList: {
                     presentCreateListDestination()
                 },
-                onSelectList: { _ in }
+                onSelectList: { _ in },
+                onRenameList: { presentRenameListPrompt($0) }
             )
         case .newList:
             CardListCreateDestinationView(
@@ -208,7 +209,8 @@ private struct SplitRootView: View {
                 onCreateList: {
                     presentCreateListDestination()
                 },
-                onSelectList: { _ in }
+                onSelectList: { _ in },
+                onRenameList: { presentRenameListPrompt($0) }
             )
         case .search:
             searchDestination

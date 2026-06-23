@@ -320,7 +320,8 @@ struct TouchRootView: View {
                 onCreateList: {
                     presentCreateListDestinationInSplit()
                 },
-                onSelectList: { _ in }
+                onSelectList: { _ in },
+                onRenameList: { presentRenameListPrompt($0) }
             )
         case .newList:
             CardListCreateDestinationView(
@@ -358,7 +359,8 @@ struct TouchRootView: View {
                 onCreateList: {
                     presentCreateListDestinationInSplit()
                 },
-                onSelectList: { _ in }
+                onSelectList: { _ in },
+                onRenameList: { presentRenameListPrompt($0) }
             )
         }
     }
