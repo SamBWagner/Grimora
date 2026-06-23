@@ -5,6 +5,7 @@ import SwiftUI
 struct CardListTextRowView: View {
     @EnvironmentObject private var model: GrimoraAppModel
     @State private var selectionFeedbackTrigger = 0
+    @State private var isNamingNewCategory = false
 
     var entry: CardListEntryRecord
     var card: CardRecord?
@@ -23,6 +24,7 @@ struct CardListTextRowView: View {
     var usesSelectionModeGestures: Bool
     var onSelectionInteraction: (CardGridSelectionInteraction) -> Void
     var onMoveToCategory: (CardListCategoryRecord.ID?) -> Void
+    var onCreateCategory: ((String) -> Void)?
     var onMoveToZone: (CardListZone) -> Void
     var isMoveDestinationDisabled: (CardListCategoryRecord.ID?) -> Bool
     var dragPayload: String
@@ -91,6 +93,9 @@ struct CardListTextRowView: View {
             )
         )
         .grimoraSelectionFeedback(trigger: selectionFeedbackTrigger)
+        .cardListNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
+            onCreateCategory?(name)
+        }
         .listRowBackground(rowBackground)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
@@ -199,8 +204,19 @@ struct CardListTextRowView: View {
 
     @ViewBuilder
     private var moveCategoryMenu: some View {
-        if !categories.isEmpty || entry.categoryID != nil {
+        if onCreateCategory != nil || !categories.isEmpty || entry.categoryID != nil {
             Menu {
+                if onCreateCategory != nil {
+                    Button {
+                        isNamingNewCategory = true
+                    } label: {
+                        Label("New Category…", systemImage: "folder.badge.plus")
+                    }
+                    .accessibilityIdentifier("move-list-entry-\(entry.id)-new-category")
+
+                    Divider()
+                }
+
                 Button {
                     onMoveToCategory(nil)
                 } label: {

@@ -153,6 +153,9 @@ extension CardListDetailView {
                     onMoveToCategory: { categoryID in
                         moveEntryIDs(dragEntryIDs, toCategoryID: categoryID)
                     },
+                    onCreateCategory: { name in
+                        createCategory(named: name, movingEntryIDs: dragEntryIDs)
+                    },
                     onMoveToZone: { zone in
                         moveEntryIDs(dragEntryIDs, toZone: zone)
                     },
@@ -202,6 +205,9 @@ extension CardListDetailView {
                 onMoveToCategory: { categoryID in
                     moveEntryIDs(dragEntryIDs, toCategoryID: categoryID)
                 },
+                onCreateCategory: { name in
+                    createCategory(named: name, movingEntryIDs: dragEntryIDs)
+                },
                 onMoveToZone: { zone in
                     moveEntryIDs(dragEntryIDs, toZone: zone)
                 },
@@ -243,6 +249,9 @@ extension CardListDetailView {
             },
             onMoveToCategory: { categoryID in
                 moveEntryIDs(dragEntryIDs, toCategoryID: categoryID)
+            },
+            onCreateCategory: { name in
+                createCategory(named: name, movingEntryIDs: dragEntryIDs)
             },
             onMoveToZone: { zone in
                 moveEntryIDs(dragEntryIDs, toZone: zone)
