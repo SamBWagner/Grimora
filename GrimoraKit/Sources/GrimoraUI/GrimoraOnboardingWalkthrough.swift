@@ -10,6 +10,7 @@ public enum GrimoraOnboardingWalkthroughStep: String, CaseIterable, Identifiable
   case welcome
   case operators
   case search
+  case quiz
   case lists
   case favourites
   case finish
@@ -22,6 +23,7 @@ public enum GrimoraOnboardingWalkthroughStep: String, CaseIterable, Identifiable
     case .welcome: "Welcome to Grimora"
     case .operators: "Search operators"
     case .search: "Try a search"
+    case .quiz: "Quick quiz"
     case .lists: "Save cards to lists"
     case .favourites: "Favourite the best"
     case .finish: "You're all set"
@@ -37,6 +39,8 @@ public enum GrimoraOnboardingWalkthroughStep: String, CaseIterable, Identifiable
       "Operators narrow a search. Here are the ones you'll reach for most."
     case .search:
       "Tap an operator to filter the sample set and see what it matches."
+    case .quiz:
+      "Your turn — pick the operator that answers each question."
     case .lists:
       "Lists keep cards together — a deck, a wishlist, a binder. Tap a card to file it."
     case .favourites:

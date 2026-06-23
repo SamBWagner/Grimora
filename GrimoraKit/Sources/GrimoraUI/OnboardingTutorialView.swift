@@ -107,6 +107,11 @@ struct OnboardingTutorialView: View {
         operators: GrimoraOnboardingOperatorCatalog.playground,
         palette: palette
       )
+    case .quiz:
+      OnboardingQuizStepView(
+        questions: GrimoraOnboardingQuizCatalog.questions,
+        palette: palette
+      )
     case .lists:
       OnboardingListsStepView(
         cards: Array(onboarding.sampleCards.prefix(4)),
