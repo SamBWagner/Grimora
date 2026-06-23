@@ -5358,6 +5358,59 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.selectedListEntries.map(\.quantity), [2])
   }
 
+  func testReorderOverlayMovesMatchNativeReorderAndPersist() async throws {
+    // Exercises the touch reorder overlay end to end: SwiftUI `.onMove` offsets are mapped through
+    // CardListCategoryReorder.destinationPosition into moveCardListCategory, and the resulting order
+    // must match a native Array.move (what List.onMove performs) and survive in the database.
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let list = try XCTUnwrap(model.createCardList(named: "Deck", selectAfterCreate: true))
+    _ = try XCTUnwrap(model.createCardListCategory(named: "Aggro"))
+    _ = try XCTUnwrap(model.createCardListCategory(named: "Bounce"))
+    _ = try XCTUnwrap(model.createCardListCategory(named: "Combo"))
+    _ = try XCTUnwrap(model.createCardListCategory(named: "Defense"))
+
+    var expected = ["Aggro", "Bounce", "Combo", "Defense"]
+    XCTAssertEqual(model.selectedListCategories.map(\.name), expected)
+
+    // Drag the last category to the top.
+    try applyReorderOverlayMove(in: model, expected: &expected, from: IndexSet(integer: 3), to: 0)
+    XCTAssertEqual(model.selectedListCategories.map(\.name), expected)
+
+    // Drag the new second category to the very end.
+    try applyReorderOverlayMove(in: model, expected: &expected, from: IndexSet(integer: 1), to: 4)
+    XCTAssertEqual(model.selectedListCategories.map(\.name), expected)
+
+    // Drag a middle category up by one.
+    try applyReorderOverlayMove(in: model, expected: &expected, from: IndexSet(integer: 2), to: 1)
+    XCTAssertEqual(model.selectedListCategories.map(\.name), expected)
+
+    // The reordered sequence is persisted, not just reflected in the published snapshot.
+    let persisted = try database.cardListCategories(forListID: list.id).map(\.name)
+    XCTAssertEqual(persisted, expected)
+  }
+
+  /// Reproduces `CardListCategoryReorderSheet.move(from:to:)`: maps the SwiftUI offset, drives the
+  /// model, and applies the same `Array.move` to the expected names so the two stay verified in lockstep.
+  private func applyReorderOverlayMove(
+    in model: GrimoraAppModel,
+    expected: inout [String],
+    from source: IndexSet,
+    to offset: Int
+  ) throws {
+    let sourceIndex = try XCTUnwrap(source.first)
+    let destination = try XCTUnwrap(
+      CardListCategoryReorder.destinationPosition(forMoveFrom: source, to: offset)
+    )
+    let movedID = model.selectedListCategories[sourceIndex].id
+    expected.move(fromOffsets: source, toOffset: offset)
+    model.moveCardListCategory(id: movedID, toPosition: destination)
+  }
+
   func testModelBulkMovesAndRemovesListEntries() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())

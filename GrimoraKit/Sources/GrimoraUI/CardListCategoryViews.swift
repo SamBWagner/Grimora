@@ -132,6 +132,9 @@ struct CardListCategorySectionView: View {
 struct CardListCategoryReorderView: View {
     @EnvironmentObject private var model: GrimoraAppModel
     @State private var draggedCategoryID: CardListCategoryRecord.ID?
+    #if os(iOS) || os(visionOS)
+    @State private var isPresentingReorderOverlay = false
+    #endif
 
     var categories: [CardListCategoryRecord]
     var palette: GrimoraPalette
@@ -148,12 +151,28 @@ struct CardListCategoryReorderView: View {
                     draggedCategoryID: $draggedCategoryID,
                     model: model,
                     categories: categories,
-                    onRenameCategory: onRenameCategory
+                    onRenameCategory: onRenameCategory,
+                    onRequestReorderOverlay: requestReorderOverlay
                 )
             }
         }
         .frame(maxWidth: 720)
         .frame(maxWidth: .infinity, alignment: .leading)
+        #if os(iOS) || os(visionOS)
+        .sheet(isPresented: $isPresentingReorderOverlay) {
+            CardListCategoryReorderSheet(palette: palette, model: model)
+        }
+        #endif
+    }
+
+    /// Touch platforms open a focused reorder overlay (dragging headings around the live layout
+    /// feels awkward on mobile); macOS reorders inline via drag-and-drop, so it has no overlay.
+    private var requestReorderOverlay: (() -> Void)? {
+        #if os(iOS) || os(visionOS)
+        { isPresentingReorderOverlay = true }
+        #else
+        nil
+        #endif
     }
 }
 
@@ -166,15 +185,11 @@ struct CardListCategoryReorderRow: View {
     var model: GrimoraAppModel
     var categories: [CardListCategoryRecord]
     var onRenameCategory: (CardListCategoryRecord) -> Void
+    var onRequestReorderOverlay: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "line.3.horizontal")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(palette.secondaryText.color.opacity(0.72))
-                .frame(width: 18)
-                .help("Drag Category")
-                .accessibilityLabel("Drag Category")
+            dragHandle
 
             Image(systemName: "folder")
                 .foregroundStyle(palette.secondaryText.color)
@@ -231,6 +246,36 @@ struct CardListCategoryReorderRow: View {
         .accessibilityIdentifier("compact-list-category-row-\(category.name)")
     }
 
+    /// Leading grab affordance. On touch platforms it is a 44×44 button that opens the focused
+    /// reorder overlay; on macOS it stays a passive handle because the whole row is drag-and-drop
+    /// reorderable inline.
+    @ViewBuilder
+    private var dragHandle: some View {
+        #if os(iOS) || os(visionOS)
+        Button {
+            onRequestReorderOverlay?()
+        } label: {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(palette.secondaryText.color.opacity(0.72))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Reorder Categories")
+        .accessibilityLabel("Reorder Categories")
+        .accessibilityHint("Opens the category reorder overlay.")
+        .accessibilityIdentifier("open-list-category-reorder-\(category.name)")
+        #else
+        Image(systemName: "line.3.horizontal")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(palette.secondaryText.color.opacity(0.72))
+            .frame(width: 18)
+            .help("Drag Category")
+            .accessibilityLabel("Drag Category")
+        #endif
+    }
+
     private var isDragging: Bool {
         draggedCategoryID == category.id
     }
@@ -281,6 +326,139 @@ struct CardListCategoryDropDelegate: DropDelegate {
         }
 
         model.moveCardListCategory(id: draggedCategoryID, toPosition: toIndex)
+    }
+}
+
+#if os(iOS) || os(visionOS)
+/// Focused "grey-box" overlay for reordering list categories on touch platforms.
+///
+/// Dragging a category heading around the live list-detail layout feels awkward on mobile, so the
+/// reorder happens here instead: a native drag-to-reorder `List` (`.onMove`) where the dragged row
+/// lifts and the others reflow. macOS keeps inline drag-and-drop
+/// (`CardListCategoryReorderRow` + `CardListCategoryDropDelegate`).
+struct CardListCategoryReorderSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var model: GrimoraAppModel
+    @State private var workingCategories: [CardListCategoryRecord]
+    @State private var moveFeedbackTrigger = 0
+
+    var palette: GrimoraPalette
+
+    init(palette: GrimoraPalette, model: GrimoraAppModel) {
+        self.palette = palette
+        self.model = model
+        _workingCategories = State(initialValue: model.selectedListCategories)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(workingCategories) { category in
+                        row(for: category)
+                    }
+                    .onMove(perform: move)
+                } footer: {
+                    Text("Drag a category to change its order. Changes save automatically.")
+                        .font(.footnote)
+                        .foregroundStyle(palette.secondaryText.color)
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("Reorder Categories")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                    .accessibilityIdentifier("finish-list-category-reorder-button")
+                }
+            }
+            .onChange(of: model.selectedListCategories) { _, newValue in
+                // Keep in sync with the persisted order (e.g. zone normalisation in the database).
+                workingCategories = newValue
+            }
+            .grimoraDropSuccessFeedback(trigger: moveFeedbackTrigger)
+        }
+        .accessibilityIdentifier("list-category-reorder-overlay")
+        #if os(iOS)
+        .presentationDetents([.medium, .large])
+        #endif
+    }
+
+    private func row(for category: CardListCategoryRecord) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "folder")
+                .foregroundStyle(palette.secondaryText.color)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(category.name)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(palette.primaryText.color)
+                    .lineLimit(1)
+
+                Text(entryCountText(for: category))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.secondaryText.color)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(palette.cardSurface.color.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(palette.hairline.color, lineWidth: 1)
+        }
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("reorder-sheet-category-row-\(category.name)")
+    }
+
+    private func move(from source: IndexSet, to offset: Int) {
+        guard let sourceIndex = source.first,
+              sourceIndex < workingCategories.count,
+              let destination = CardListCategoryReorder.destinationPosition(forMoveFrom: source, to: offset)
+        else {
+            return
+        }
+
+        let movedID = workingCategories[sourceIndex].id
+        workingCategories.move(fromOffsets: source, toOffset: offset)
+        model.moveCardListCategory(id: movedID, toPosition: destination)
+        moveFeedbackTrigger += 1
+    }
+
+    private func entryCountText(for category: CardListCategoryRecord) -> String {
+        let count = category.entryCount
+        let noun = count == 1 ? "card" : "cards"
+        return "\(count.formatted()) \(noun)"
+    }
+}
+#endif
+
+/// Reorder math shared by the touch reorder overlay. Kept platform-agnostic so it is unit-testable
+/// on the host where the iOS/visionOS overlay view does not compile.
+enum CardListCategoryReorder {
+    /// Maps SwiftUI's `.onMove` destination offset (expressed in pre-removal indices) to the
+    /// post-removal insertion index expected by `GrimoraAppModel.moveCardListCategory(id:toPosition:)`,
+    /// which removes the category before inserting it (`CardDatabase+Lists.swift`).
+    static func destinationPosition(forMoveFrom source: IndexSet, to offset: Int) -> Int? {
+        guard let from = source.first else {
+            return nil
+        }
+        return offset > from ? offset - 1 : offset
     }
 }
 
