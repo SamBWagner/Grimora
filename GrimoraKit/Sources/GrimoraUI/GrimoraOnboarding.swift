@@ -42,19 +42,36 @@ public struct GrimoraOnboardingSampleCard: Identifiable, Equatable, Sendable {
   public let teachingPoint: String
   /// A Scryfall query that surfaces this card (or its group) within the sample set.
   public let exampleQuery: String
+  /// Colours the card includes (empty for colourless), used by the interactive
+  /// `c:` filters in the walkthrough.
+  public let colors: Set<GrimoraOnboardingColor>
+  /// Card types, lowercased (e.g. "creature", "instant"), used by `t:` filters.
+  public let types: Set<String>
+  /// Creature/permanent subtypes, lowercased (e.g. "elf"), also matched by `t:`.
+  public let subtypes: Set<String>
+  /// Total mana value, used by `mv=` filters.
+  public let manaValue: Int
 
   public init(
     id: String,
     name: String,
     summary: String,
     teachingPoint: String,
-    exampleQuery: String
+    exampleQuery: String,
+    colors: Set<GrimoraOnboardingColor>,
+    types: Set<String>,
+    subtypes: Set<String> = [],
+    manaValue: Int
   ) {
     self.id = id
     self.name = name
     self.summary = summary
     self.teachingPoint = teachingPoint
     self.exampleQuery = exampleQuery
+    self.colors = colors
+    self.types = types
+    self.subtypes = subtypes
+    self.manaValue = manaValue
   }
 }
 
@@ -71,70 +88,105 @@ public enum GrimoraOnboardingSampleSet {
       name: "Llanowar Elves",
       summary: "Green · Elf Creature",
       teachingPoint: "Creature types · t:elf",
-      exampleQuery: "t:elf"
+      exampleQuery: "t:elf",
+      colors: [.green],
+      types: ["creature"],
+      subtypes: ["elf"],
+      manaValue: 1
     ),
     GrimoraOnboardingSampleCard(
       id: "elvish-mystic",
       name: "Elvish Mystic",
       summary: "Green · Elf Creature",
       teachingPoint: "Creature types · t:elf",
-      exampleQuery: "t:elf"
+      exampleQuery: "t:elf",
+      colors: [.green],
+      types: ["creature"],
+      subtypes: ["elf"],
+      manaValue: 1
     ),
     GrimoraOnboardingSampleCard(
       id: "birds-of-paradise",
       name: "Birds of Paradise",
       summary: "Green · Bird Creature",
       teachingPoint: "Mana value · mv=1",
-      exampleQuery: "mv=1"
+      exampleQuery: "mv=1",
+      colors: [.green],
+      types: ["creature"],
+      subtypes: ["bird"],
+      manaValue: 1
     ),
     GrimoraOnboardingSampleCard(
       id: "lightning-bolt",
       name: "Lightning Bolt",
       summary: "Red · Instant",
       teachingPoint: "Card types · t:instant",
-      exampleQuery: "t:instant"
+      exampleQuery: "t:instant",
+      colors: [.red],
+      types: ["instant"],
+      manaValue: 1
     ),
     GrimoraOnboardingSampleCard(
       id: "shivan-dragon",
       name: "Shivan Dragon",
       summary: "Red · Dragon Creature",
       teachingPoint: "Colours · c:r",
-      exampleQuery: "c:r"
+      exampleQuery: "c:r",
+      colors: [.red],
+      types: ["creature"],
+      subtypes: ["dragon"],
+      manaValue: 6
     ),
     GrimoraOnboardingSampleCard(
       id: "counterspell",
       name: "Counterspell",
       summary: "Blue · Instant",
       teachingPoint: "Colours · c:u",
-      exampleQuery: "c:u"
+      exampleQuery: "c:u",
+      colors: [.blue],
+      types: ["instant"],
+      manaValue: 2
     ),
     GrimoraOnboardingSampleCard(
       id: "dark-ritual",
       name: "Dark Ritual",
       summary: "Black · Instant",
       teachingPoint: "Colours · c:b",
-      exampleQuery: "c:b"
+      exampleQuery: "c:b",
+      colors: [.black],
+      types: ["instant"],
+      manaValue: 1
     ),
     GrimoraOnboardingSampleCard(
       id: "serra-angel",
       name: "Serra Angel",
       summary: "White · Angel Creature",
       teachingPoint: "Creature types · t:angel",
-      exampleQuery: "t:angel"
+      exampleQuery: "t:angel",
+      colors: [.white],
+      types: ["creature"],
+      subtypes: ["angel"],
+      manaValue: 5
     ),
     GrimoraOnboardingSampleCard(
       id: "wrath-of-god",
       name: "Wrath of God",
       summary: "White · Sorcery",
       teachingPoint: "Card types · t:sorcery",
-      exampleQuery: "t:sorcery"
+      exampleQuery: "t:sorcery",
+      colors: [.white],
+      types: ["sorcery"],
+      manaValue: 4
     ),
     GrimoraOnboardingSampleCard(
       id: "sol-ring",
       name: "Sol Ring",
       summary: "Colourless · Artifact",
       teachingPoint: "Card types · t:artifact",
-      exampleQuery: "t:artifact"
+      exampleQuery: "t:artifact",
+      colors: [],
+      types: ["artifact"],
+      manaValue: 1
     ),
   ]
 }
