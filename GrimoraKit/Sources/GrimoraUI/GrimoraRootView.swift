@@ -6,6 +6,7 @@ public struct GrimoraRootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: GrimoraAppModel
+    @StateObject private var onboarding = GrimoraOnboardingModel()
     @AppStorage(GrimoraSearchPreferences.defaultSearchTextKey)
     private var defaultSearchText = GrimoraSearchPreferences.defaultSearchText
     @AppStorage(GrimoraSearchPreferences.alwaysIncludedSearchTextKey)
@@ -42,6 +43,12 @@ public struct GrimoraRootView: View {
             } else {
                 root
                     .transition(.opacity)
+            }
+
+            if onboarding.isActive, model.libraryActivity == nil {
+                OnboardingTutorialView(onboarding: onboarding)
+                    .transition(.opacity)
+                    .zIndex(1)
             }
         }
         .environmentObject(model)
@@ -98,7 +105,13 @@ public struct GrimoraRootView: View {
                 model.refreshCloudSyncWhenActive()
             }
         }
+        .onChange(of: model.hasLibrary) { _, isReady in
+            if isReady {
+                onboarding.libraryDidBecomeReady()
+            }
+        }
         .animation(.easeInOut(duration: 0.18), value: model.libraryActivity)
+        .animation(.easeInOut(duration: 0.18), value: onboarding.isActive)
     }
 
     private var palette: GrimoraPalette {
