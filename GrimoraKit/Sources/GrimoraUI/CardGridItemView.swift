@@ -45,6 +45,7 @@ struct CardGridItemView: View {
     var onAddCardsToList: ((CardListRecord.ID, CardRecord) -> Bool)?
     var onPrepareAddMenu: ((CardRecord) -> Void)?
     var onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)?
+    var onCreateCategory: ((String) -> Void)?
     var onMoveToZone: ((CardListZone) -> Void)?
     var isMoveDestinationDisabled: ((CardListCategoryRecord.ID?) -> Bool)?
     var dragPayload: String?
@@ -161,6 +162,11 @@ struct CardGridItemView: View {
                 onCreateListForCard: onCreateListForCard,
                 onCreateListForCards: onCreateListForCards,
                 onAddCardsToList: onAddCardsToList,
+                categoryEntry: categoryEntry,
+                categories: categories,
+                onMoveToCategory: onMoveToCategory,
+                onCreateCategory: onCreateCategory,
+                isMoveDestinationDisabled: isMoveDestinationDisabled,
                 openAction: CardArtworkContextMenuAction(
                     title: "Open Details",
                     systemImage: "rectangle.portrait.and.arrow.right",
@@ -215,6 +221,7 @@ struct CardGridItemView: View {
                 categoryEntry: categoryEntry,
                 categories: categories,
                 onMoveToCategory: onMoveToCategory,
+                onCreateCategory: onCreateCategory,
                 onMoveToZone: onMoveToZone,
                 isMoveDestinationDisabled: isMoveDestinationDisabled,
                 onEditQuantity: onEditQuantity,

@@ -160,6 +160,18 @@ extension CardListDetailView {
         listMoveFeedbackTrigger += 1
     }
 
+    /// Creates a new category in the current list and files the given entries
+    /// into it, powering the on-card "New Category…" action.
+    func createCategory(
+        named name: String,
+        movingEntryIDs ids: [CardListEntryRecord.ID]
+    ) {
+        guard let category = model.createCardListCategory(named: name) else {
+            return
+        }
+        moveEntryIDs(ids, toCategoryID: category.id)
+    }
+
     func moveEntryIDs(
         _ ids: [CardListEntryRecord.ID],
         toZone zone: CardListZone,

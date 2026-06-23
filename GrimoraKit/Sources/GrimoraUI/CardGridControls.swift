@@ -137,6 +137,7 @@ struct CardGridQuantityStepper: View {
 /// and this "more" control, keeping the bottom bar uncluttered.
 struct CardGridMoreMenu: View {
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isNamingNewCategory = false
 
     var card: CardRecord?
     var selectedCardIDs: [CardRecord.ID] = []
@@ -147,6 +148,8 @@ struct CardGridMoreMenu: View {
     var categoryEntry: CardListEntryRecord?
     var categories: [CardListCategoryRecord] = []
     var onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)?
+    /// Creates a new category (named via the prompt) and files the entry into it.
+    var onCreateCategory: ((String) -> Void)?
     var onMoveToZone: ((CardListZone) -> Void)?
     var isMoveDestinationDisabled: ((CardListCategoryRecord.ID?) -> Bool)?
     var onEditQuantity: (() -> Void)?
@@ -164,6 +167,9 @@ struct CardGridMoreMenu: View {
         .help("More Actions")
         .accessibilityLabel("More Actions")
         .accessibilityIdentifier(accessibilityIdentifier)
+        .cardListNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
+            onCreateCategory?(name)
+        }
     }
 
     @ViewBuilder
@@ -182,13 +188,14 @@ struct CardGridMoreMenu: View {
             .accessibilityIdentifier("\(accessibilityIdentifier)-add-to-list")
         }
 
-        if let categoryEntry, !categories.isEmpty || categoryEntry.categoryID != nil {
+        if let categoryEntry, onCreateCategory != nil || !categories.isEmpty || categoryEntry.categoryID != nil {
             Menu("Move to Category") {
                 CardListMoveCategoryMenuContent(
                     entry: categoryEntry,
                     categories: categories,
                     onMoveToCategory: onMoveToCategory,
-                    isDestinationDisabled: isMoveDestinationDisabled
+                    isDestinationDisabled: isMoveDestinationDisabled,
+                    onCreateCategory: onCreateCategory == nil ? nil : { isNamingNewCategory = true }
                 )
             }
             .accessibilityIdentifier("move-list-entry-\(categoryEntry.id)-category")

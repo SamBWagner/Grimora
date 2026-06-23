@@ -5284,6 +5284,39 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.statusMessage, "Removed 2 cards from list.")
   }
 
+  func testOnCardCreateCategoryFilesEntryIntoNewCategory() async throws {
+    // Mirrors the on-card "New Category…" action (CardListDetailView.createCategory):
+    // create a brand-new category from a card's own context and move it straight in.
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let list = try XCTUnwrap(model.createCardList(named: "Deck", selectAfterCreate: true))
+    let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
+    model.addCard(forest, toListID: list.id)
+
+    // No categories exist yet — the card should still be able to seed the first one.
+    XCTAssertTrue(model.selectedListCategories.isEmpty)
+    let entryID = try XCTUnwrap(model.selectedListEntries.first?.id)
+
+    let ramp = try XCTUnwrap(model.createCardListCategory(named: "Ramp", inListID: list.id))
+    model.moveCardListEntry(id: entryID, toCategoryID: ramp.id)
+
+    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp"])
+    XCTAssertEqual(model.selectedListCategories.map(\.entryCount), [1])
+    XCTAssertEqual(model.selectedListEntries.map(\.categoryID), [ramp.id])
+    XCTAssertEqual(model.statusMessage, "Moved card to Ramp.")
+
+    // Filing into a second new category moves the card out of the first.
+    let removal = try XCTUnwrap(model.createCardListCategory(named: "Removal", inListID: list.id))
+    model.moveCardListEntry(id: entryID, toCategoryID: removal.id)
+
+    XCTAssertEqual(model.selectedListEntries.map(\.categoryID), [removal.id])
+    XCTAssertEqual(model.selectedListCategories.map(\.entryCount), [0, 1])
+  }
+
   func testModelRulesetWarningsZonesAndExactQuantityActions() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards([

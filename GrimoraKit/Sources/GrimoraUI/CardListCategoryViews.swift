@@ -6,6 +6,45 @@ import UniformTypeIdentifiers
 import AppKit
 #endif
 
+/// Hosts the "name a new category" alert used by a card's own menus
+/// (more-menu, long-press, right-click) so a card can be filed into a brand-new
+/// category without leaving its context. `onCreate` receives the trimmed name and
+/// is responsible for creating the category and moving the target entries into it.
+struct CardListNewCategoryPromptModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    @State private var name = ""
+    var onCreate: (String) -> Void
+
+    func body(content: Content) -> some View {
+        content.alert("New Category", isPresented: $isPresented) {
+            TextField("Name", text: $name)
+            Button("Create") {
+                let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+                name = ""
+                guard !trimmed.isEmpty else {
+                    return
+                }
+                onCreate(trimmed)
+            }
+            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Cancel", role: .cancel) {
+                name = ""
+            }
+        } message: {
+            Text("Create a category and move this card into it.")
+        }
+    }
+}
+
+extension View {
+    func cardListNewCategoryPrompt(
+        isPresented: Binding<Bool>,
+        onCreate: @escaping (String) -> Void
+    ) -> some View {
+        modifier(CardListNewCategoryPromptModifier(isPresented: isPresented, onCreate: onCreate))
+    }
+}
+
 struct CardListCategorySectionView: View {
     @State private var dropFeedbackTrigger = 0
 
@@ -467,6 +506,7 @@ struct MissingCardListEntryView: View {
     var usesSelectionModeGestures = false
     var onSelectionInteraction: ((CardGridSelectionInteraction) -> Void)?
     var onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)?
+    var onCreateCategory: ((String) -> Void)?
     var onMoveToZone: ((CardListZone) -> Void)?
     var isMoveDestinationDisabled: ((CardListCategoryRecord.ID?) -> Bool)?
     var dragPayload: String?
@@ -642,6 +682,7 @@ struct MissingCardListEntryView: View {
                 categoryEntry: entry,
                 categories: categories,
                 onMoveToCategory: onMoveToCategory,
+                onCreateCategory: onCreateCategory,
                 onMoveToZone: onMoveToZone,
                 isMoveDestinationDisabled: isMoveDestinationDisabled,
                 onEditQuantity: onEditQuantity,

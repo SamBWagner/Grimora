@@ -9,9 +9,21 @@ struct CardListMoveCategoryMenuContent: View {
     var categories: [CardListCategoryRecord]
     var onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)?
     var isDestinationDisabled: ((CardListCategoryRecord.ID?) -> Bool)?
+    /// When provided, surfaces a "New Category…" item that lets the user file
+    /// this entry into a brand-new category without leaving the card's context.
+    var onCreateCategory: (() -> Void)?
     var onMoved: () -> Void = {}
 
     var body: some View {
+        if let onCreateCategory {
+            Button(action: onCreateCategory) {
+                Label("New Category…", systemImage: "folder.badge.plus")
+            }
+            .accessibilityIdentifier("move-list-entry-\(entry.id)-new-category")
+
+            Divider()
+        }
+
         Button {
             move(to: nil)
         } label: {
