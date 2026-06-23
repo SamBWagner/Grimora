@@ -10,17 +10,21 @@ struct CardListsOverviewView: View {
     var onSelectList: (CardListRecord.ID) -> Void
 
     var body: some View {
+        let items = model.filteredCardListOverviewItems
+
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 header
 
-                if model.cardListOverviewItems.isEmpty {
-                    ContentUnavailableView("No Lists", systemImage: "square.grid.2x2")
-                        .frame(maxWidth: .infinity, minHeight: 320)
-                        .accessibilityIdentifier("empty-lists-overview")
+                if let unsupportedMessage = model.dashboardSearchUnsupportedMessage {
+                    dashboardSearchNotice(unsupportedMessage)
+                }
+
+                if items.isEmpty {
+                    overviewEmptyState
                 } else {
                     LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
-                        ForEach(model.cardListOverviewItems) { item in
+                        ForEach(items) { item in
                             CardListOverviewTile(
                                 item: item,
                                 palette: palette,
@@ -48,6 +52,53 @@ struct CardListsOverviewView: View {
         }
         .navigationTitle("Lists")
         .accessibilityIdentifier("card-lists-overview")
+        #if os(macOS)
+        .searchable(
+            text: dashboardSearchTextBinding,
+            placement: .toolbar,
+            prompt: Text("Filter lists by card")
+        )
+        #elseif os(iOS)
+        .searchable(
+            text: dashboardSearchTextBinding,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: Text("Filter lists by card")
+        )
+        #elseif os(visionOS)
+        .searchable(
+            text: dashboardSearchTextBinding,
+            prompt: Text("Filter lists by card")
+        )
+        #endif
+    }
+
+    private var dashboardSearchTextBinding: Binding<String> {
+        Binding {
+            model.dashboardSearchText
+        } set: { newValue in
+            model.setDashboardSearchDraft(newValue)
+        }
+    }
+
+    @ViewBuilder
+    private var overviewEmptyState: some View {
+        if model.hasActiveDashboardSearch {
+            ContentUnavailableView.search(text: model.dashboardSearchText)
+                .frame(maxWidth: .infinity, minHeight: 320)
+                .accessibilityIdentifier("dashboard-search-no-matches")
+        } else {
+            ContentUnavailableView("No Lists", systemImage: "square.grid.2x2")
+                .frame(maxWidth: .infinity, minHeight: 320)
+                .accessibilityIdentifier("empty-lists-overview")
+        }
+    }
+
+    private func dashboardSearchNotice(_ message: String) -> some View {
+        Label(message, systemImage: "exclamationmark.triangle")
+            .font(.footnote)
+            .foregroundStyle(palette.secondaryText.color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("dashboard-search-unsupported")
     }
 
     private var header: some View {
@@ -94,9 +145,14 @@ struct CardListsOverviewView: View {
     }
 
     private var listCountText: String {
-        let count = model.cardListOverviewItems.count
-        let noun = count == 1 ? "list" : "lists"
-        return "\(count.formatted()) \(noun)"
+        let total = model.cardListOverviewItems.count
+        if model.hasActiveDashboardSearch, model.dashboardListMatchIDs != nil {
+            let shown = model.filteredCardListOverviewItems.count
+            let noun = total == 1 ? "list" : "lists"
+            return "\(shown.formatted()) of \(total.formatted()) \(noun)"
+        }
+        let noun = total == 1 ? "list" : "lists"
+        return "\(total.formatted()) \(noun)"
     }
 
     private var horizontalPadding: CGFloat {

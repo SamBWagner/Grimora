@@ -141,6 +141,52 @@ extension GrimoraAppModel {
     }
   }
 
+  /// Whether the dashboard is currently filtering its tiles by a cross-list search query.
+  public var hasActiveDashboardSearch: Bool {
+    !GrimoraSearchHistoryStore.normalizedQuery(dashboardSearchText).isEmpty
+  }
+
+  /// The dashboard overview items narrowed to the lists matching the active cross-list search.
+  /// Returns every item when no filter is active (or when the query can't be compiled).
+  public var filteredCardListOverviewItems: [CardListOverviewItem] {
+    guard let dashboardListMatchIDs else {
+      return cardListOverviewItems
+    }
+    return cardListOverviewItems.filter { dashboardListMatchIDs.contains($0.list.id) }
+  }
+
+  public func setDashboardSearchDraft(_ text: String) {
+    guard dashboardSearchText != text else {
+      return
+    }
+
+    dashboardSearchText = text
+    reloadDashboardSearch()
+  }
+
+  public func clearDashboardSearch() {
+    setDashboardSearchDraft("")
+  }
+
+  /// Recomputes which lists match the dashboard cross-list query. A `nil` match set means "no
+  /// filter" (show every tile); an empty set means the query was valid but matched nothing.
+  func reloadDashboardSearch() {
+    let query = GrimoraSearchHistoryStore.normalizedQuery(dashboardSearchText)
+    dashboardSearchUnsupportedMessage = nil
+    guard !query.isEmpty else {
+      dashboardListMatchIDs = nil
+      return
+    }
+
+    switch searchAllLists(query: query) {
+    case .results(let matches):
+      dashboardListMatchIDs = Set(matches.map(\.listID))
+    case .unsupported(let reason):
+      dashboardListMatchIDs = nil
+      dashboardSearchUnsupportedMessage = reason.message
+    }
+  }
+
   public func undoLastListAction() {
     guard let undoState = listUndoStack.popLast() else {
       canUndoListAction = false

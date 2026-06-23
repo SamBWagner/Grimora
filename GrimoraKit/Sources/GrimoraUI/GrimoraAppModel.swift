@@ -98,6 +98,9 @@ public final class GrimoraAppModel: ObservableObject {
   @Published public internal(set) var selectedListSearchText = ""
   @Published public internal(set) var searchedSelectedListEntries: [CardListEntryRecord]?
   @Published public internal(set) var selectedListSearchUnsupportedMessage: String?
+  @Published public internal(set) var dashboardSearchText = ""
+  @Published public internal(set) var dashboardListMatchIDs: Set<CardListRecord.ID>?
+  @Published public internal(set) var dashboardSearchUnsupportedMessage: String?
   @Published public internal(set) var selectedListRulesetWarnings: [CardListRulesetWarning] = []
   @Published public internal(set) var selectedCardListEntryID: CardListEntryRecord.ID?
   @Published public internal(set) var canUndoListAction = false

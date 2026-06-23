@@ -225,6 +225,7 @@ extension GrimoraAppModel {
         topCard: topEntry?.card
       )
     }
+    reloadDashboardSearch()
   }
 
   private func topOverviewEntry(for list: CardListRecord) -> CardListEntryRecord? {
