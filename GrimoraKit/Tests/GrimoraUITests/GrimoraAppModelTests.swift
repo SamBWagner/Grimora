@@ -1561,6 +1561,30 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(historyStore.load(), [])
   }
 
+  // S6: the touch recent-searches menu surfaces seeded history and, on
+  // selection, applies the query and runs it through the submit path.
+  func testSelectingRecentSearchAppliesAndSubmitsQuery() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let historyStore = isolatedSearchHistoryStore()
+    historyStore.save(["forest"])
+    let model = GrimoraAppModel(
+      environment: environment(database: database, searchHistoryStore: historyStore))
+    await model.drainSearchForTesting()
+
+    // The menu shows whatever `visibleSearchHistory` reports for the active mode.
+    XCTAssertEqual(model.visibleSearchHistory, ["forest"])
+
+    // Selecting a recent entry mirrors the menu's action: apply then submit.
+    model.setSearchDraft("forest")
+    await model.submitSearch()
+    await model.drainSearchForTesting()
+
+    XCTAssertEqual(model.searchText, "forest")
+    XCTAssertEqual(model.submittedSearchText, "forest")
+  }
+
   func testSearchHistoryPreviewWarmerDecodesRecentCachedLocalPathsWithoutResolver() async throws {
     LocalCardImageLoader.shared.clearForTesting()
     let database = try CardDatabase(storage: .inMemory)

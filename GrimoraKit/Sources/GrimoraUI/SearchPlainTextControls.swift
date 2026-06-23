@@ -54,6 +54,78 @@ struct SearchHistorySuggestions: View {
     }
 }
 
+/// Dedicated recent-searches affordance for touch platforms, mirroring the
+/// native recents menu macOS gets from `NSSearchField`. The `.searchSuggestions`
+/// dropdown only appears while the field is focused and offers no way to clear
+/// history, so this surfaces the same list (plus a clear action) from a toolbar
+/// button. History selection and clearing follow the active search input mode
+/// via `GrimoraAppModel`.
+struct SearchHistoryMenu: View {
+    @EnvironmentObject private var model: GrimoraAppModel
+    @State private var feedbackTrigger = 0
+
+    /// Applies a recent query to the search field and runs it.
+    var onSelect: (String) -> Void
+
+    var body: some View {
+        Menu {
+            SearchHistoryMenuContent(
+                history: model.visibleSearchHistory,
+                onSelect: { query in
+                    feedbackTrigger += 1
+                    onSelect(query)
+                },
+                onClear: {
+                    feedbackTrigger += 1
+                    model.clearSearchHistory()
+                }
+            )
+        } label: {
+            Label("Recent Searches", systemImage: "clock.arrow.circlepath")
+                .labelStyle(.iconOnly)
+                .imageScale(.large)
+        }
+        .accessibilityLabel("Recent Searches")
+        .accessibilityIdentifier("search-history-menu")
+        .help("Recent Searches")
+        .disabled(model.visibleSearchHistory.isEmpty)
+        .grimoraSelectionFeedback(trigger: feedbackTrigger)
+    }
+}
+
+struct SearchHistoryMenuContent: View {
+    var history: [String]
+    var onSelect: (String) -> Void
+    var onClear: () -> Void
+
+    var body: some View {
+        if history.isEmpty {
+            Text("No Recent Searches")
+                .accessibilityIdentifier("search-history-empty")
+        } else {
+            Section("Recent Searches") {
+                ForEach(history, id: \.self) { query in
+                    Button {
+                        onSelect(query)
+                    } label: {
+                        Label(query, systemImage: "clock.arrow.circlepath")
+                    }
+                    .accessibilityIdentifier("search-history-menu-item-\(query)")
+                }
+            }
+
+            Section {
+                Button(role: .destructive) {
+                    onClear()
+                } label: {
+                    Label("Clear Recent Searches", systemImage: "trash")
+                }
+                .accessibilityIdentifier("clear-search-history-button")
+            }
+        }
+    }
+}
+
 struct SearchInputModeToggle: View {
     @EnvironmentObject private var model: GrimoraAppModel
 
