@@ -11,7 +11,32 @@ struct SearchContentView: View {
     var onCreateListForCards: ([CardRecord.ID]) -> Void = { _ in }
     var onCreateListFromSearch: () -> Void
 
+    @EnvironmentObject private var model: GrimoraAppModel
+    @AppStorage(GrimoraSearchPreferences.advancedSearchEnabledKey)
+    private var advancedSearchEnabled = GrimoraSearchPreferences.defaultAdvancedSearchEnabled
+    @State private var advancedSearchBuilder = AdvancedSearchBuilder()
+    @State private var isAdvancedSearchPresented = false
+
     var body: some View {
+        platformContent
+            .overlay(alignment: .bottomLeading) {
+                if advancedSearchEnabled {
+                    AdvancedSearchLaunchButton {
+                        isAdvancedSearchPresented = true
+                    }
+                    .padding(.leading)
+                    .padding(.bottom, 12)
+                }
+            }
+            .sheet(isPresented: $isAdvancedSearchPresented) {
+                AdvancedSearchSheet(builder: $advancedSearchBuilder) { builder in
+                    Task { await model.applyAdvancedSearch(builder) }
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var platformContent: some View {
         #if os(macOS)
         MacSearchContentView(
             gridZoom: gridZoom,

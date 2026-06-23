@@ -53,6 +53,7 @@ public enum GrimoraSearchPreferences {
   public static let searchHistoryKey = "Grimora.searchHistory.queries"
   public static let plainTextSearchHistoryKey = "Grimora.plainTextSearchHistory.queries"
   public static let hiddenSearchTermsKey = "Grimora.search.hiddenTerms"
+  public static let advancedSearchEnabledKey = "Grimora.search.advancedFormEnabled"
 
   public static let defaultSearchText = ""
   public static let defaultAlwaysIncludedSearchText = ""
@@ -60,6 +61,9 @@ public enum GrimoraSearchPreferences {
   public static let defaultSortDirection = SearchSortDirection.ascending
   public static let defaultSearchInputMode = SearchInputMode.scryfall
   public static let isPlainTextSearchInterfaceEnabled = false
+  /// Whether the on-screen advanced-search builder affordance is offered. On by
+  /// default; users who only use raw Scryfall syntax can hide it in Settings.
+  public static let defaultAdvancedSearchEnabled = true
 
   public static func configuration(
     text: String,
