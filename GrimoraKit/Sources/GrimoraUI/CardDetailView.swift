@@ -1,5 +1,4 @@
 import GrimoraCore
-import Charts
 import SwiftUI
 #if os(macOS)
 import AppKit
@@ -31,8 +30,6 @@ public struct CardDetailView: View {
     @State private var shareFeedbackTrigger = 0
     @State private var isValueDetailsExpanded = false
     @State private var artistPendingArtSearch: String?
-    @State private var scrubbedValuePoint: CardValueChartPoint?
-    @State private var valueHistoryShareItem: PriceHistoryShareItem?
     @AppStorage(GrimoraValuePreferences.displayCurrencyKey)
     private var displayCurrencyRawValue = CardValueDisplayCurrency.usd.rawValue
 
@@ -1298,19 +1295,21 @@ public struct CardDetailView: View {
             }
 
             HStack(alignment: .top, spacing: 16) {
-                valueMetric(
+                CardValueMetric(
                     title: "Current",
-                    value: convertedPrice(entry.currentPrice),
-                    identifier: "card-value-current"
+                    valueText: formattedPrice(convertedPrice(entry.currentPrice)),
+                    identifier: "card-value-current",
+                    palette: palette
                 )
 
                 Divider()
                     .overlay(palette.hairline.color)
 
-                valueMetric(
+                CardValueMetric(
                     title: "90-Day High",
-                    value: convertedPrice(entry.highestPrice),
-                    identifier: "card-value-high"
+                    valueText: formattedPrice(convertedPrice(entry.highestPrice)),
+                    identifier: "card-value-high",
+                    palette: palette
                 )
             }
 
@@ -1343,8 +1342,21 @@ public struct CardDetailView: View {
 
             if isValueDetailsExpanded {
                 VStack(alignment: .leading, spacing: 12) {
-                    valueHistoryBackgroundStatus
-                    valueHistoryChart(for: entry)
+                    CardValueHistoryBackgroundStatus(
+                        activity: valueHistoryBackgroundActivity,
+                        palette: palette
+                    )
+                    CardValueHistoryChart(
+                        points: chartPoints(for: entry),
+                        palette: palette,
+                        detailFeedbackTrigger: $detailFeedbackTrigger,
+                        shareFeedbackTrigger: $shareFeedbackTrigger,
+                        priceText: formattedPrice,
+                        compactPriceText: compactFormattedPrice,
+                        dateText: { Self.chartDateAccessibilityFormatter.string(from: $0) },
+                        snapshotText: priceHistorySnapshotText,
+                        accessibilitySummary: chartAccessibilitySummary(points: chartPoints(for: entry))
+                    )
                     valueMovementSummary(for: entry)
                     Text(valueSourceText(for: entry, sourceName: sourceName))
                         .font(.caption)
@@ -1359,259 +1371,9 @@ public struct CardDetailView: View {
         .accessibilityValue(valueAccessibilitySummary(for: entry, sourceName: sourceName))
     }
 
-    @ViewBuilder
-    private var valueHistoryBackgroundStatus: some View {
-        if let valueHistoryBackgroundActivity {
-            HStack(alignment: .center, spacing: 8) {
-                if valueHistoryBackgroundActivity.state == .running {
-                    if let progress = valueHistoryBackgroundActivity.progress {
-                        ProgressView(value: progress)
-                            .controlSize(.small)
-                            .frame(width: 42)
-                            .accessibilityHidden(true)
-                    } else {
-                        ProgressView()
-                            .controlSize(.small)
-                            .frame(width: 42)
-                            .accessibilityHidden(true)
-                    }
-                }
-
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(valueHistoryBackgroundActivity.title)
-                            .font(.caption.weight(.semibold))
-                        Text(valueHistoryBackgroundActivity.message)
-                            .font(.caption2)
-                    }
-                } icon: {
-                    Image(systemName: valueHistoryBackgroundActivity.state == .running ? "clock.arrow.circlepath" : "exclamationmark.triangle")
-                }
-                .labelStyle(.titleAndIcon)
-                .foregroundStyle(palette.secondaryText.color)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(palette.cardSurface.color.opacity(0.65))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("card-value-history-background-status")
-        }
-    }
-
-    private func valueMetric(title: String, value: Double?, identifier: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(palette.secondaryText.color)
-
-            Text(formattedPrice(value))
-                .font(.title3.monospacedDigit().weight(.semibold))
-                .foregroundStyle(palette.primaryText.color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-                .textSelection(.enabled)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier(identifier)
-    }
-
-    @ViewBuilder
-    private func valueHistoryChart(for entry: CardValueGuideEntry) -> some View {
-        let points = chartPoints(for: entry)
-        if points.count > 1 {
-            VStack {
-                Chart {
-                    ForEach(points) { point in
-                        LineMark(
-                            x: .value("Date", point.date),
-                            y: .value("Price", point.price)
-                        )
-                        .foregroundStyle(palette.accent.color)
-                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                    }
-
-                    if let scrubbed = scrubbedValuePoint {
-                        RuleMark(x: .value("Date", scrubbed.date))
-                            .foregroundStyle(palette.secondaryText.color.opacity(0.7))
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                            .annotation(
-                                position: .top,
-                                spacing: 6,
-                                overflowResolution: .init(x: .fit(to: .chart), y: .disabled)
-                            ) {
-                                scrubReadout(for: scrubbed)
-                            }
-
-                        PointMark(
-                            x: .value("Date", scrubbed.date),
-                            y: .value("Price", scrubbed.price)
-                        )
-                        .foregroundStyle(palette.accent.color)
-                        .symbolSize(90)
-                    }
-                }
-                .chartYAxis {
-                    AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
-                        AxisGridLine()
-                            .foregroundStyle(palette.hairline.color)
-                        AxisValueLabel {
-                            if let price = value.as(Double.self) {
-                                Text(compactFormattedPrice(price))
-                            }
-                        }
-                    }
-                }
-                .chartXAxis {
-                    AxisMarks(values: .automatic(desiredCount: 3)) {
-                        AxisGridLine()
-                            .foregroundStyle(palette.hairline.color.opacity(0.55))
-                        AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-                    }
-                }
-                .chartOverlay { proxy in
-                    GeometryReader { geometry in
-                        Rectangle()
-                            .fill(Color.clear)
-                            .contentShape(Rectangle())
-                            .gesture(valueScrubGesture(proxy: proxy, geometry: geometry, points: points))
-                            .simultaneousGesture(valueShareLongPressGesture)
-                    }
-                }
-            }
-            .frame(height: 150)
-            .animation(.easeOut(duration: 0.12), value: scrubbedValuePoint?.id)
-            .onDisappear { scrubbedValuePoint = nil }
-            .accessibilityElement(children: .ignore)
-            .accessibilityIdentifier("card-value-history-chart")
-            .accessibilityLabel("90-day value chart")
-            .accessibilityValue(chartAccessibilitySummary(points: points))
-            // The long-press share is gesture-only, so expose it to VoiceOver (which
-            // can't scrub the chart) as an accessibility action on the latest point.
-            .accessibilityAction(named: Text("Share Latest Price")) {
-                if let point = points.last {
-                    valueHistoryShareItem = PriceHistoryShareItem(
-                        text: priceHistorySnapshotText(for: point)
-                    )
-                }
-            }
-            .sheet(item: $valueHistoryShareItem) { valueHistoryShareSheet($0) }
-        } else {
-            Text("No 90-day chart is available for this printing.")
-                .font(.callout)
-                .foregroundStyle(palette.secondaryText.color)
-                .fixedSize(horizontal: false, vertical: true)
-                .accessibilityIdentifier("card-value-chart-unavailable")
-        }
-    }
-
-    // Drag anywhere over the plot to read the value on that day; release snaps
-    // the readout away. Works with mouse drags on macOS and touch elsewhere.
-    private func valueScrubGesture(
-        proxy: ChartProxy,
-        geometry: GeometryProxy,
-        points: [CardValueChartPoint]
-    ) -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { value in
-                updateScrub(at: value.location, proxy: proxy, geometry: geometry, points: points)
-            }
-            .onEnded { _ in
-                if scrubbedValuePoint != nil {
-                    scrubbedValuePoint = nil
-                }
-            }
-    }
-
-    private func updateScrub(
-        at location: CGPoint,
-        proxy: ChartProxy,
-        geometry: GeometryProxy,
-        points: [CardValueChartPoint]
-    ) {
-        guard let plotFrame = proxy.plotFrame else {
-            return
-        }
-        let xPosition = location.x - geometry[plotFrame].origin.x
-        guard let date = proxy.value(atX: xPosition, as: Date.self),
-              let nearest = nearestChartPoint(to: date, in: points)
-        else {
-            return
-        }
-        if scrubbedValuePoint?.id != nearest.id {
-            scrubbedValuePoint = nearest
-            detailFeedbackTrigger += 1
-        }
-    }
-
-    private func scrubReadout(for point: CardValueChartPoint) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(Self.chartDateAccessibilityFormatter.string(from: point.date))
-                .font(.caption2)
-                .foregroundStyle(palette.secondaryText.color)
-            Text(formattedPrice(point.price))
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .foregroundStyle(palette.primaryText.color)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(palette.cardSurface.color)
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(palette.hairline.color, lineWidth: 1)
-        }
-        .shadow(color: palette.shadow.color.opacity(0.25), radius: 4, x: 0, y: 2)
-        .fixedSize()
-        .accessibilityHidden(true)
-    }
-
-    // A long press while scrubbing freezes the held point and offers a text
-    // snapshot to share. It runs simultaneously with the scrub drag, so the
-    // point under the finger is still set when the press completes.
-    private var valueShareLongPressGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.45)
-            .onEnded { _ in
-                guard let point = scrubbedValuePoint else {
-                    return
-                }
-                valueHistoryShareItem = PriceHistoryShareItem(
-                    text: priceHistorySnapshotText(for: point)
-                )
-                shareFeedbackTrigger += 1
-            }
-    }
-
     private func priceHistorySnapshotText(for point: CardValueChartPoint) -> String {
         let date = Self.chartDateAccessibilityFormatter.string(from: point.date)
         return "\(card.name) — \(formattedPrice(point.price)) on \(date)"
-    }
-
-    private func valueHistoryShareSheet(_ item: PriceHistoryShareItem) -> some View {
-        VStack(spacing: 18) {
-            Text(item.text)
-                .font(.callout.weight(.medium))
-                .multilineTextAlignment(.center)
-                .foregroundStyle(palette.primaryText.color)
-
-            ShareLink(item: item.text) {
-                Label("Share Snapshot", systemImage: "square.and.arrow.up")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .padding(24)
-        .accessibilityIdentifier("card-value-history-share")
-        #if os(iOS) || os(visionOS)
-        .presentationDetents([.height(170)])
-        #endif
-    }
-
-    private struct PriceHistoryShareItem: Identifiable {
-        let id = UUID()
-        let text: String
     }
 
     private func valueMovementSummary(for entry: CardValueGuideEntry) -> some View {
