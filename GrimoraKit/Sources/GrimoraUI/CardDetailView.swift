@@ -30,6 +30,7 @@ public struct CardDetailView: View {
     @State private var detailFeedbackTrigger = 0
     @State private var shareFeedbackTrigger = 0
     @State private var isValueDetailsExpanded = false
+    @State private var artistPendingArtSearch: String?
     @AppStorage(GrimoraValuePreferences.displayCurrencyKey)
     private var displayCurrencyRawValue = CardValueDisplayCurrency.usd.rawValue
 
@@ -45,6 +46,7 @@ public struct CardDetailView: View {
     public var onLoadAvailablePrintingPreviewImages: ([CardRecord]) async -> Void
     public var onLoadValueExchangeRate: (CardValueDisplayCurrency) async -> Void
     public var onCreateListForCard: (CardRecord) -> Void
+    public var onSearchArtist: (String) -> Void
     public var onClose: (() -> Void)?
 
     public init(
@@ -60,6 +62,7 @@ public struct CardDetailView: View {
         onLoadAvailablePrintingPreviewImages: @escaping ([CardRecord]) async -> Void = { _ in },
         onLoadValueExchangeRate: @escaping (CardValueDisplayCurrency) async -> Void = { _ in },
         onCreateListForCard: @escaping (CardRecord) -> Void = { _ in },
+        onSearchArtist: @escaping (String) -> Void = { _ in },
         onClose: (() -> Void)? = nil
     ) {
         self.card = card
@@ -74,6 +77,7 @@ public struct CardDetailView: View {
         self.onLoadAvailablePrintingPreviewImages = onLoadAvailablePrintingPreviewImages
         self.onLoadValueExchangeRate = onLoadValueExchangeRate
         self.onCreateListForCard = onCreateListForCard
+        self.onSearchArtist = onSearchArtist
         self.onClose = onClose
     }
 
@@ -1480,7 +1484,7 @@ public struct CardDetailView: View {
             VStack(spacing: 8) {
                 detailRow("Set", "\(card.setName) (\(card.setCode.uppercased()) #\(card.collectorNumber))")
                 detailRow("Rarity", card.rarity.capitalized)
-                detailRow("Artist", card.artist ?? "Unknown")
+                artistDetailRow(card.artist)
                 detailRow("Mana Value", manaValueText(for: card))
                 if let power = card.power, let toughness = card.toughness {
                     detailRow("Power/Toughness", "\(power)/\(toughness)")
@@ -1503,9 +1507,77 @@ public struct CardDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .foregroundStyle(palette.primaryText.color)
+        .confirmationDialog(
+            artistPendingArtSearch.map { "See all of \($0)’s art?" } ?? "See all of this artist’s art?",
+            isPresented: artistArtSearchConfirmationPresented,
+            titleVisibility: .visible,
+            presenting: artistPendingArtSearch
+        ) { artist in
+            Button("See Artworks") {
+                artistPendingArtSearch = nil
+                onSearchArtist(artist)
+            }
+            Button("Cancel", role: .cancel) {
+                artistPendingArtSearch = nil
+            }
+        } message: { artist in
+            Text("Clears the current search and shows every distinct artwork \(artist) has illustrated.")
+        }
+    }
+
+    private var artistArtSearchConfirmationPresented: Binding<Bool> {
+        Binding {
+            artistPendingArtSearch != nil
+        } set: { isPresented in
+            if !isPresented {
+                artistPendingArtSearch = nil
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func artistDetailRow(_ artist: String?) -> some View {
+        if let artist, !artist.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            detailRow("Artist") {
+                Button {
+                    detailFeedbackTrigger += 1
+                    artistPendingArtSearch = artist
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(artist)
+                            .multilineTextAlignment(.leading)
+                        Image(systemName: "magnifyingglass")
+                            .font(.caption2)
+                            .foregroundStyle(palette.secondaryText.color)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(palette.accent.color)
+                .accessibilityLabel(artist)
+                .accessibilityHint("Searches for all of this artist’s artwork")
+                .accessibilityIdentifier("card-detail-artist-button")
+            }
+        } else {
+            detailRow("Artist", "Unknown")
+        }
     }
 
     private func detailRow(_ label: String, _ value: String) -> some View {
+        detailRow(label) {
+            Text(value)
+                .foregroundStyle(palette.primaryText.color)
+                .textSelection(.enabled)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func detailRow<Value: View>(
+        _ label: String,
+        @ViewBuilder value: () -> Value
+    ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
             Text(label)
                 .fontWeight(.semibold)
@@ -1514,14 +1586,9 @@ public struct CardDetailView: View {
                 .minimumScaleFactor(0.82)
                 .frame(width: Self.detailLabelColumnWidth, alignment: .trailing)
 
-            Text(value)
-                .foregroundStyle(palette.primaryText.color)
-                .textSelection(.enabled)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            value()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 
     private var palette: GrimoraPalette {

@@ -463,6 +463,9 @@ struct TouchRootView: View {
                 onCreateListForCard: { card in
                     presentCreateListPrompt(adding: card, selectAfterCreate: false)
                 },
+                onSearchArtist: { artist in
+                    Task { await model.searchArtworks(byArtist: artist) }
+                },
                 onClose: onClose
             )
             .task(id: card.id) {

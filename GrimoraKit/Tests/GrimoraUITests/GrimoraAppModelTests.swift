@@ -6256,4 +6256,83 @@ extension GrimoraAppModelTests {
     XCTAssertEqual(model.submittedSearchText, #"t:creature -o:"reveal a card""#)
     XCTAssertEqual(model.hiddenSearchTerms, [])
   }
+
+  func testArtistArtworksQueryAppendsUniqueArt() {
+    XCTAssertEqual(
+      GrimoraAppModel.artistArtworksQuery(forArtist: "Amy Artist"),
+      #"artist:"Amy Artist" unique:art"#
+    )
+  }
+
+  // D3: tapping the artist clears the open card, switches to Scryfall mode, and
+  // runs an `artist:"…" unique:art` search that de-duplicates identical art.
+  func testSearchArtworksByArtistRunsDedupedArtistSearch() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(artistArtworkRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    model.selectCard(model.cards.first { $0.id == "amy-1" } ?? artistArtworkRecords()[0])
+    XCTAssertNotNil(model.selectedCard)
+
+    await model.searchArtworks(byArtist: "Amy Artist")
+    await model.drainSearchForTesting()
+
+    XCTAssertEqual(model.searchInputMode, .scryfall)
+    XCTAssertEqual(model.submittedSearchText, #"artist:"Amy Artist" unique:art"#)
+    XCTAssertNil(model.selectedCard, "Tapping the artist should dismiss the open card.")
+
+    // Only Amy's cards, with the two prints that share art collapsed to one.
+    XCTAssertEqual(Set(model.cards.map(\.illustrationID)), ["amy-art-1", "amy-art-2"])
+    XCTAssertFalse(model.cards.contains { $0.id == "zed-1" })
+    XCTAssertEqual(model.cards.count, 2)
+  }
+
+  func testSearchArtworksByBlankArtistIsIgnored() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(artistArtworkRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    await model.searchArtworks(byArtist: "   ")
+
+    XCTAssertEqual(model.submittedSearchText, "")
+  }
+
+  private func artistArtworkRecords() -> [CardRecord] {
+    [
+      artistArtworkRecord(id: "amy-1", artist: "Amy Artist", illustration: "amy-art-1"),
+      artistArtworkRecord(id: "amy-2", artist: "Amy Artist", illustration: "amy-art-1"),
+      artistArtworkRecord(id: "amy-3", artist: "Amy Artist", illustration: "amy-art-2"),
+      artistArtworkRecord(id: "zed-1", artist: "Zed Artist", illustration: "zed-art-1"),
+    ]
+  }
+
+  private func artistArtworkRecord(
+    id: String,
+    artist: String,
+    illustration: String
+  ) -> CardRecord {
+    CardRecord(
+      id: id,
+      name: id,
+      releasedAt: "2020-01-01",
+      setCode: "tst",
+      setName: "Test Set",
+      setType: "expansion",
+      collectorNumber: id,
+      collectorNumberNumber: 1,
+      rarity: "common",
+      rarityRank: 0,
+      artist: artist,
+      colorSortKey: 0,
+      layout: "normal",
+      typeLine: "Creature",
+      oracleText: "",
+      illustrationID: illustration,
+      isRealCard: true
+    )
+  }
 }

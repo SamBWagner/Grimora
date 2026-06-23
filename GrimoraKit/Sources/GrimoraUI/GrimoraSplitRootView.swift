@@ -132,6 +132,8 @@ private struct SplitRootView: View {
                 await model.loadValueExchangeRateIfNeeded(for: currency)
             } onCreateListForCard: { card in
                 presentCreateListPrompt(adding: card, selectAfterCreate: false)
+            } onSearchArtist: { artist in
+                Task { await model.searchArtworks(byArtist: artist) }
             } onClose: {
                 model.closeSelectedCard()
             }
