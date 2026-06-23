@@ -983,6 +983,102 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(reason.token, "cube:vintage")
   }
 
+  func testDashboardSearchFiltersOverviewItemsToMatchingLists() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let creatures = try XCTUnwrap(model.createCardList(named: "Creatures"))
+    model.addCards(["forest", "beta"], toListID: creatures.id)
+    let tokens = try XCTUnwrap(model.createCardList(named: "Tokens"))
+    model.addCards(["token"], toListID: tokens.id)
+
+    // The auto-managed Favourites list is present too, so compare against the live total.
+    let totalListCount = model.cardListOverviewItems.count
+    XCTAssertGreaterThanOrEqual(totalListCount, 2)
+    XCTAssertFalse(model.hasActiveDashboardSearch)
+    XCTAssertNil(model.dashboardListMatchIDs)
+    XCTAssertEqual(model.filteredCardListOverviewItems.count, totalListCount)
+
+    model.setDashboardSearchDraft("t:token")
+
+    XCTAssertTrue(model.hasActiveDashboardSearch)
+    XCTAssertEqual(model.dashboardListMatchIDs, [tokens.id])
+    XCTAssertEqual(model.filteredCardListOverviewItems.map(\.list.id), [tokens.id])
+    XCTAssertNil(model.dashboardSearchUnsupportedMessage)
+
+    model.clearDashboardSearch()
+
+    XCTAssertFalse(model.hasActiveDashboardSearch)
+    XCTAssertNil(model.dashboardListMatchIDs)
+    XCTAssertEqual(model.filteredCardListOverviewItems.count, totalListCount)
+  }
+
+  func testDashboardSearchValidQueryWithNoMatchesHidesEveryTile() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let creatures = try XCTUnwrap(model.createCardList(named: "Creatures"))
+    model.addCards(["forest", "beta"], toListID: creatures.id)
+
+    model.setDashboardSearchDraft("t:planeswalker")
+
+    XCTAssertTrue(model.hasActiveDashboardSearch)
+    XCTAssertEqual(model.dashboardListMatchIDs, [])
+    XCTAssertTrue(model.filteredCardListOverviewItems.isEmpty)
+    XCTAssertNil(model.dashboardSearchUnsupportedMessage)
+  }
+
+  func testDashboardSearchUnsupportedSyntaxKeepsAllTilesVisible() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let creatures = try XCTUnwrap(model.createCardList(named: "Creatures"))
+    model.addCards(["forest", "beta"], toListID: creatures.id)
+
+    let totalListCount = model.cardListOverviewItems.count
+    model.setDashboardSearchDraft("cube:vintage")
+
+    XCTAssertTrue(model.hasActiveDashboardSearch)
+    XCTAssertNil(model.dashboardListMatchIDs)
+    XCTAssertEqual(model.filteredCardListOverviewItems.count, totalListCount)
+    XCTAssertNotNil(model.dashboardSearchUnsupportedMessage)
+  }
+
+  func testDashboardFilterStaysFreshWhenListsChange() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let firstTokens = try XCTUnwrap(model.createCardList(named: "First Tokens"))
+    model.addCards(["token"], toListID: firstTokens.id)
+    let creatures = try XCTUnwrap(model.createCardList(named: "Creatures"))
+    model.addCards(["forest"], toListID: creatures.id)
+
+    model.setDashboardSearchDraft("t:token")
+    XCTAssertEqual(model.dashboardListMatchIDs, [firstTokens.id])
+
+    // Adding a second token list must re-run the filter so the new match appears.
+    let secondTokens = try XCTUnwrap(model.createCardList(named: "Second Tokens"))
+    model.addCards(["token"], toListID: secondTokens.id)
+
+    XCTAssertEqual(model.dashboardListMatchIDs, [firstTokens.id, secondTokens.id])
+    XCTAssertEqual(
+      Set(model.filteredCardListOverviewItems.map(\.list.id)),
+      [firstTokens.id, secondTokens.id]
+    )
+  }
+
   func testModelAddsCardsToAutoCreatedFavouritesIdempotently() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
