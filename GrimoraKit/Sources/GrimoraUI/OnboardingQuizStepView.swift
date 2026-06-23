@@ -108,6 +108,7 @@ private struct OnboardingQuizQuestionCard: View {
         .foregroundStyle(palette.secondaryText.color)
         .fixedSize(horizontal: false, vertical: true)
     }
+    .accessibilityElement(children: .combine)
     .accessibilityIdentifier("onboarding-quiz-feedback-\(question.id)")
   }
 

@@ -3,6 +3,7 @@ import SwiftUI
 
 public struct GrimoraSettingsView: View {
   @EnvironmentObject private var model: GrimoraAppModel
+  @Environment(\.dismiss) private var dismiss
 
   @AppStorage(GrimoraSearchPreferences.defaultSearchTextKey)
   private var defaultSearchText = GrimoraSearchPreferences.defaultSearchText
@@ -157,6 +158,8 @@ public struct GrimoraSettingsView: View {
         }
       }
 
+      tutorialSection
+
       #if os(iOS) || os(visionOS)
       valueSection
 
@@ -167,6 +170,20 @@ public struct GrimoraSettingsView: View {
     }
     .onAppear { loadDefaultSearchDraftIfNeeded() }
     .onDisappear { commitDefaultSearchDraft() }
+  }
+
+  private var tutorialSection: some View {
+    Section("Tutorial") {
+      Button("Replay Tutorial") {
+        model.requestOnboardingReplay()
+        dismiss()
+      }
+      .accessibilityIdentifier("replay-tutorial-button")
+
+      Text("Replays the first-run walkthrough with the sample cards.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
   }
 
   private var valueForm: some View {

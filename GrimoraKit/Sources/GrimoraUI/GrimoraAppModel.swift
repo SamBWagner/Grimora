@@ -73,6 +73,11 @@ public final class GrimoraAppModel: ObservableObject {
   @Published public internal(set) var unsupportedSearchMessage: String?
   @Published public internal(set) var statusMessage: String = ""
   @Published public internal(set) var libraryActivity: GrimoraLibraryActivity?
+  /// Bumped whenever something (e.g. the Settings "Replay Tutorial" button) asks
+  /// to replay onboarding; `GrimoraRootView` observes it and restarts the tour.
+  /// Routed through the model because the macOS Settings scene can only reach
+  /// `GrimoraAppModel`, not the root view's private onboarding object.
+  @Published public internal(set) var onboardingReplayRequestID = 0
   @Published public internal(set) var updateManifest: BulkDataManifest?
   @Published public internal(set) var isWorking = false
   @Published public internal(set) var canLoadMoreCards = false

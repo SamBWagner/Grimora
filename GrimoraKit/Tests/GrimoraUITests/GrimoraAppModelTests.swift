@@ -6455,3 +6455,18 @@ extension GrimoraAppModelTests {
     )
   }
 }
+
+extension GrimoraAppModelTests {
+  func testRequestOnboardingReplayBumpsRequestID() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let model = GrimoraAppModel(environment: environment(database: database))
+
+    XCTAssertEqual(model.onboardingReplayRequestID, 0)
+
+    model.requestOnboardingReplay()
+    XCTAssertEqual(model.onboardingReplayRequestID, 1)
+
+    model.requestOnboardingReplay()
+    XCTAssertEqual(model.onboardingReplayRequestID, 2)
+  }
+}
