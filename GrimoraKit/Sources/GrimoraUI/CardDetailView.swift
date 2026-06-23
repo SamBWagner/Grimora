@@ -761,7 +761,12 @@ public struct CardDetailView: View {
             if isShowingAllPrintings {
                 compactPrintingGrid
             } else {
-                compactPrintingPager
+                VStack(spacing: 12) {
+                    compactPrintingPager
+                    if canToggleCompactPrintingsGrid {
+                        compactPrintingPageIndicator
+                    }
+                }
             }
         }
         .animation(.easeInOut(duration: 0.18), value: isShowingAllPrintings)
@@ -825,6 +830,39 @@ public struct CardDetailView: View {
         .frame(maxWidth: .infinity, alignment: .center)
         .accessibilityIdentifier("card-printings-gallery")
         .simultaneousGesture(compactGalleryMagnifyGesture)
+    }
+
+    // A page-control style dot strip under the pager so it reads as swipeable.
+    // The dots sit on a material capsule so they stay legible over light or
+    // dark artwork, and the strip windows down for cards with many printings.
+    private var compactPrintingPageIndicator: some View {
+        let ids = displayPrintingIDs
+        let currentIndex = ids.firstIndex(of: currentCompactPrintingID) ?? 0
+        let window = compactPrintingDotWindow(
+            count: ids.count, current: currentIndex, maxVisible: Self.maxVisiblePrintingDots)
+        return HStack(spacing: 6) {
+            ForEach(Array(window), id: \.self) { index in
+                let diameter = compactPrintingDotDiameter(
+                    index: index, current: currentIndex, count: ids.count, window: window)
+                Circle()
+                    .fill(palette.primaryText.color.opacity(index == currentIndex ? 1 : 0.3))
+                    .frame(width: diameter, height: diameter)
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: currentIndex)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay {
+            Capsule().stroke(palette.hairline.color.opacity(0.5), lineWidth: 0.5)
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Printing \(currentIndex + 1) of \(ids.count)")
+        .accessibilityIdentifier("card-printings-page-indicator")
+    }
+
+    private var currentCompactPrintingID: CardRecord.ID {
+        gallerySelectionID ?? card.id
     }
 
     private var compactPrintingGrid: some View {
@@ -2060,6 +2098,7 @@ public struct CardDetailView: View {
     }()
 
     private static let compactPrintingLimit = 4
+    private static let maxVisiblePrintingDots = 7
     private static let cardAspectRatio: CGFloat = 0.716
     private static let detailSectionSpacing: CGFloat = 28
     private static let detailLabelColumnWidth: CGFloat = 120
@@ -2075,6 +2114,31 @@ public struct CardDetailView: View {
     private static let expandedPreviewColumnWidth: CGFloat = 330
     private static let expandedPreviewWidth: CGFloat = 300
     private static let thumbnailWidth: CGFloat = 150
+}
+
+/// Index range of printing dots the compact page indicator renders. Small print
+/// counts show every dot; larger counts slide a fixed-width window centred on
+/// the current page so the strip never overflows. Factored out as a pure
+/// function so the windowing policy can be unit-tested without rendering a view.
+func compactPrintingDotWindow(count: Int, current: Int, maxVisible: Int) -> Range<Int> {
+    let clampedCount = max(count, 0)
+    guard maxVisible > 0, clampedCount > maxVisible else { return 0..<clampedCount }
+    let clampedCurrent = min(max(current, 0), clampedCount - 1)
+    let half = maxVisible / 2
+    let start = min(max(clampedCurrent - half, 0), clampedCount - maxVisible)
+    return start..<(start + maxVisible)
+}
+
+/// Diameter for the dot at `index`. The current page reads largest; the
+/// outermost dot on a side that still hides printings shrinks to hint that more
+/// art exists beyond the window.
+func compactPrintingDotDiameter(
+    index: Int, current: Int, count: Int, window: Range<Int>
+) -> CGFloat {
+    if index == current { return 8 }
+    if window.lowerBound > 0, index == window.lowerBound { return 4 }
+    if window.upperBound < count, index == window.upperBound - 1 { return 4 }
+    return 6
 }
 
 private struct CardValueChartPoint: Identifiable {
