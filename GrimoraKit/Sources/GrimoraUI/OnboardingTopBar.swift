@@ -1,16 +1,21 @@
 import SwiftUI
 
-/// Top chrome of the first-run walkthrough: the progress dots and an
-/// always-available Skip button.
+/// Header chrome of the first-run walkthrough: a leading Back affordance (touch
+/// platforms only, hidden on the first step) and an always-available Skip
+/// button. The progress dots, and on macOS the Back button, live in the footer
+/// (``OnboardingNavigationBar``).
 struct OnboardingTopBar: View {
-  let steps: [GrimoraOnboardingWalkthroughStep]
-  let current: GrimoraOnboardingWalkthroughStep
-  var palette: GrimoraPalette
+  let step: GrimoraOnboardingWalkthroughStep
+  var goBack: () -> Void
   var skip: () -> Void
 
   var body: some View {
     HStack {
-      OnboardingProgressDots(steps: steps, current: current, palette: palette)
+      #if !os(macOS)
+      if !step.isFirst {
+        OnboardingBackButton(action: goBack)
+      }
+      #endif
       Spacer()
       Button("Skip", action: skip)
         .font(.callout.weight(.medium))

@@ -22,7 +22,7 @@ struct OnboardingTutorialView: View {
         .ignoresSafeArea()
 
       VStack(spacing: 0) {
-        OnboardingTopBar(steps: steps, current: step, palette: palette, skip: skip)
+        OnboardingTopBar(step: step, goBack: goBack, skip: skip)
 
         ScrollView {
           VStack(alignment: .leading, spacing: 18) {
@@ -36,7 +36,8 @@ struct OnboardingTutorialView: View {
           .frame(maxWidth: .infinity)
         }
 
-        OnboardingNavigationBar(step: step, goBack: goBack, goNext: goNext)
+        OnboardingNavigationBar(
+          steps: steps, step: step, palette: palette, goBack: goBack, goNext: goNext)
       }
     }
     .tint(palette.accent.color)
