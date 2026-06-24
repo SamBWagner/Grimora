@@ -10,7 +10,7 @@ struct CardListDetailView: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.colorScheme) var colorScheme
     @EnvironmentObject var model: GrimoraAppModel
-    @ObservedObject var gridZoom: GridZoomController
+    var gridZoom: GridZoomController
     @State var isShowingExportSheet = false
     @State var importMode: CardListImportMode?
     @State var isShowingDescription = false

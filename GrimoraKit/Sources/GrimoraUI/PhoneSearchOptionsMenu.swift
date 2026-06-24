@@ -4,7 +4,7 @@ import SwiftUI
 
 struct SearchOptionsMenu: View {
     @EnvironmentObject private var model: GrimoraAppModel
-    @ObservedObject var gridZoom: GridZoomController
+    var gridZoom: GridZoomController
     @State private var feedbackTrigger = 0
 
     var onCreateListFromSearch: () -> Void

@@ -10,8 +10,8 @@ import UIKit
 struct TouchRootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var model: GrimoraAppModel
-    @StateObject private var gridZoom = GridZoomController()
-    @StateObject private var libraryMaintenance = GrimoraLibraryMaintenanceController()
+    @State private var gridZoom = GridZoomController()
+    @State private var libraryMaintenance = GrimoraLibraryMaintenanceController()
     @State private var selectedTab = TouchRootTab.search
     @State private var listNavigationPath: [CardListsBrowserRoute] = []
     @State private var listNameAction: ListNameAction?
@@ -27,9 +27,9 @@ struct TouchRootView: View {
             .sheet(isPresented: $isSearchSettingsPresented) {
                 searchSettingsSheet
             }
-            .focusedSceneObject(GridZoomAvailability.isSupported ? gridZoom : nil)
-            .focusedSceneObject(libraryMaintenance)
-            .environmentObject(libraryMaintenance)
+            .focusedSceneValue(\.gridZoomController, GridZoomAvailability.isSupported ? gridZoom : nil)
+            .focusedSceneValue(\.libraryMaintenanceController, libraryMaintenance)
+            .environment(libraryMaintenance)
             .libraryMaintenanceConfirmationDialog(controller: libraryMaintenance)
             .alert(listNameAction?.title ?? "List", isPresented: listNamePromptBinding) {
                 TextField("Name", text: $listNameDraft)

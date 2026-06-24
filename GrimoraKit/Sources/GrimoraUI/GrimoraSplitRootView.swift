@@ -2,11 +2,12 @@ import GrimoraCore
 import SwiftUI
 
 #if os(macOS)
+@Observable
 @MainActor
-public final class GrimoraSearchFocusController: ObservableObject {
+public final class GrimoraSearchFocusController {
     public static let shared = GrimoraSearchFocusController()
 
-    @Published var focusRequestID = 0
+    var focusRequestID = 0
 
     public init() {}
 
@@ -23,10 +24,10 @@ struct MacRootView: View {
 
 private struct SplitRootView: View {
     @EnvironmentObject private var model: GrimoraAppModel
-    @StateObject private var gridZoom = GridZoomController()
-    @StateObject private var searchFocus = GrimoraSearchFocusController.shared
-    @StateObject private var listCommands = GrimoraListCommandController()
-    @StateObject private var libraryMaintenance = GrimoraLibraryMaintenanceController()
+    @State private var gridZoom = GridZoomController()
+    @State private var searchFocus = GrimoraSearchFocusController.shared
+    @State private var listCommands = GrimoraListCommandController()
+    @State private var libraryMaintenance = GrimoraLibraryMaintenanceController()
     @State private var listNameAction: ListNameAction?
     @State private var previousSidebarSelection: GrimoraSidebarSelection = .search
     @State private var listNameDraft = ""
@@ -40,12 +41,11 @@ private struct SplitRootView: View {
 
     var body: some View {
         navigationContent
-        .focusedSceneObject(gridZoom)
-        .focusedSceneObject(searchFocus)
-        .focusedSceneObject(listCommands)
+        .focusedSceneValue(\.gridZoomController, gridZoom)
+        .focusedSceneValue(\.listCommandController, listCommands)
         .focusedSceneObject(model)
-        .focusedSceneObject(libraryMaintenance)
-        .environmentObject(libraryMaintenance)
+        .focusedSceneValue(\.libraryMaintenanceController, libraryMaintenance)
+        .environment(libraryMaintenance)
         .libraryMaintenanceConfirmationDialog(controller: libraryMaintenance)
         .onAppear {
             GridZoomController.activeForCommands = gridZoom

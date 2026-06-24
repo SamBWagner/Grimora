@@ -14,7 +14,7 @@ enum CardListsBrowserRoute: Hashable {
 
 struct CardListsBrowserView: View {
     @EnvironmentObject private var model: GrimoraAppModel
-    @ObservedObject var gridZoom: GridZoomController
+    var gridZoom: GridZoomController
 
     var onCreateList: () -> Void
     var onCancelCreateList: () -> Void = {}

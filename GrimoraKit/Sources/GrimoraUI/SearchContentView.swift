@@ -2,9 +2,9 @@ import GrimoraCore
 import SwiftUI
 
 struct SearchContentView: View {
-    @ObservedObject var gridZoom: GridZoomController
+    var gridZoom: GridZoomController
     #if os(macOS)
-    @ObservedObject var searchFocus: GrimoraSearchFocusController
+    var searchFocus: GrimoraSearchFocusController
     #endif
     var onSelect: (CardRecord) -> Void
     var onCreateListForCard: (CardRecord) -> Void
@@ -66,7 +66,7 @@ struct SearchContentView: View {
 
 #if os(visionOS)
 private struct VisionSearchContentView: View {
-    @ObservedObject var gridZoom: GridZoomController
+    var gridZoom: GridZoomController
     var onSelect: (CardRecord) -> Void
     var onCreateListForCard: (CardRecord) -> Void
     var onCreateListForCards: ([CardRecord.ID]) -> Void
@@ -85,7 +85,7 @@ private struct VisionSearchContentView: View {
 
 #if os(iOS)
 private struct PhoneSearchContentView: View {
-    @ObservedObject var gridZoom: GridZoomController
+    var gridZoom: GridZoomController
     var onSelect: (CardRecord) -> Void
     var onCreateListForCard: (CardRecord) -> Void
     var onCreateListForCards: ([CardRecord.ID]) -> Void

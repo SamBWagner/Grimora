@@ -3,8 +3,8 @@ import GrimoraCore
 import SwiftUI
 
 struct MacSearchContentView: View {
-    @ObservedObject var gridZoom: GridZoomController
-    @ObservedObject var searchFocus: GrimoraSearchFocusController
+    var gridZoom: GridZoomController
+    var searchFocus: GrimoraSearchFocusController
     @State private var isScrolledPastHeader = false
     @State private var isSearchFocused = false
     @State private var fieldFocusRequestID = 0

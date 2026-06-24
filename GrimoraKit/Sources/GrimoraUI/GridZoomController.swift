@@ -10,8 +10,9 @@ import AppKit
 import UIKit
 #endif
 
+@Observable
 @MainActor
-final class GridZoomController: ObservableObject {
+final class GridZoomController {
     static weak var activeForCommands: GridZoomController? {
         didSet {
             #if os(macOS)
@@ -30,7 +31,7 @@ final class GridZoomController: ObservableObject {
 
     private static let scaleEpsilon = 0.0001
 
-    @Published private(set) var scale: Double
+    private(set) var scale: Double
 
     init(scale: Double = GridZoomController.defaultScale) {
         self.scale = Self.clamped(scale)

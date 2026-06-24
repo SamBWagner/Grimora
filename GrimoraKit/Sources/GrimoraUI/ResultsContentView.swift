@@ -8,14 +8,14 @@ struct ResultsContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var model: GrimoraAppModel
-    @ObservedObject var gridZoom: GridZoomController
+    var gridZoom: GridZoomController
     @State private var magnificationStartScale: Double?
     @State private var showsSearchLoadingIndicator = false
     @State private var searchJumpToTopState = JumpToTopScrollState.top
     @State private var searchResultSelection = CardGridSelectionState<CardRecord.ID>()
     @State private var raisedSearchArtworkCardID: CardRecord.ID?
     @State private var landscapeSearchArtworkCardIDs: Set<CardRecord.ID> = []
-    @StateObject private var searchResultBulkSelection = SearchResultBulkSelection()
+    @State private var searchResultBulkSelection = SearchResultBulkSelection()
     var showsSearchLoadingOverlay = true
     var showsPlainTextSearchStatusOverlay = true
     var searchHeaderTopInset: CGFloat = 0
@@ -507,7 +507,7 @@ struct ResultsContentView: View {
 
 #if os(macOS)
 private struct GridZoomKeyCommandBridge: NSViewRepresentable {
-    @ObservedObject var gridZoom: GridZoomController
+    var gridZoom: GridZoomController
 
     func makeCoordinator() -> Coordinator {
         Coordinator(gridZoom: gridZoom)
@@ -591,7 +591,9 @@ private struct SearchResultSelectionResetKey: Equatable {
     var printingDisplayMode: PrintingDisplayMode
 }
 
-private final class SearchResultBulkSelection: ObservableObject {
+@Observable
+@MainActor
+private final class SearchResultBulkSelection {
     private var selectedIDs: Set<CardRecord.ID> = []
     private var selectedOrderedIDs: [CardRecord.ID] = []
     private var preparedMenuTriggerID: CardRecord.ID?

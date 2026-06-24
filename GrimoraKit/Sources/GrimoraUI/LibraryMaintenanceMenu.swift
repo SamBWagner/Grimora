@@ -1,8 +1,9 @@
 import SwiftUI
 
+@Observable
 @MainActor
-final class GrimoraLibraryMaintenanceController: ObservableObject {
-    @Published var pendingConfirmation: LibraryMaintenanceConfirmation?
+final class GrimoraLibraryMaintenanceController {
+    var pendingConfirmation: LibraryMaintenanceConfirmation?
 
     func confirm(_ action: LibraryMaintenanceConfirmation) {
         pendingConfirmation = action
@@ -64,7 +65,7 @@ struct LibraryMaintenanceMenu: View {
 
 struct LibraryMaintenanceMenuItems: View {
     @EnvironmentObject private var model: GrimoraAppModel
-    @EnvironmentObject private var maintenance: GrimoraLibraryMaintenanceController
+    @Environment(GrimoraLibraryMaintenanceController.self) private var maintenance
 
     var body: some View {
         Section("Database") {
@@ -125,7 +126,7 @@ struct LibraryMaintenanceMenuItems: View {
 
 struct LibraryMaintenanceConfirmationDialog: ViewModifier {
     @EnvironmentObject private var model: GrimoraAppModel
-    @ObservedObject var controller: GrimoraLibraryMaintenanceController
+    var controller: GrimoraLibraryMaintenanceController
 
     func body(content: Content) -> some View {
         content
@@ -180,7 +181,7 @@ extension View {
 
 public struct GrimoraLibraryCommands: Commands {
     @FocusedObject private var model: GrimoraAppModel?
-    @FocusedObject private var maintenance: GrimoraLibraryMaintenanceController?
+    @FocusedValue(\.libraryMaintenanceController) private var maintenance: GrimoraLibraryMaintenanceController?
 
     public init() {}
 

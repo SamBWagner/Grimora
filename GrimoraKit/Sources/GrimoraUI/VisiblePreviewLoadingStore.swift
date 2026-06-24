@@ -52,10 +52,11 @@ final class VisiblePreviewLoadingStore {
   }
 }
 
+@Observable
 @MainActor
-final class VisiblePreviewLoadingEntry: ObservableObject {
-  @Published fileprivate var state: VisibleImageRequestState?
-  @Published fileprivate var isCurrentWindow = false
+final class VisiblePreviewLoadingEntry {
+  fileprivate var state: VisibleImageRequestState?
+  fileprivate var isCurrentWindow = false
 
   func isLoading(for card: CardRecord) -> Bool {
     guard !card.hasExistingDisplayImage, isCurrentWindow else {
@@ -80,7 +81,7 @@ final class VisiblePreviewLoadingEntry: ObservableObject {
 }
 
 struct VisiblePreviewLoadingObserver<Content: View>: View {
-  @ObservedObject var entry: VisiblePreviewLoadingEntry
+  var entry: VisiblePreviewLoadingEntry
   var card: CardRecord
   var content: (String, Bool) -> Content
 

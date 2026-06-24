@@ -2,7 +2,7 @@ import GrimoraCore
 import SwiftUI
 
 public struct GrimoraGridZoomCommands: Commands {
-    @FocusedObject private var gridZoom: GridZoomController?
+    @FocusedValue(\.gridZoomController) private var gridZoom: GridZoomController?
 
     public init() {}
 
@@ -36,9 +36,10 @@ public struct GrimoraGridZoomCommands: Commands {
 }
 
 #if os(macOS)
+@Observable
 @MainActor
-public final class GrimoraListCommandController: ObservableObject {
-    @Published var renameRequest: CardListRecord?
+public final class GrimoraListCommandController {
+    var renameRequest: CardListRecord?
 
     public init() {}
 
@@ -69,7 +70,7 @@ public struct GrimoraSearchCommands: Commands {
 
 public struct GrimoraListCommands: Commands {
     @FocusedObject private var model: GrimoraAppModel?
-    @FocusedObject private var listCommandController: GrimoraListCommandController?
+    @FocusedValue(\.listCommandController) private var listCommandController: GrimoraListCommandController?
 
     public init() {}
 
