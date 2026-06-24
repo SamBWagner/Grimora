@@ -55,7 +55,15 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
 
   public func accountIdentifier() async throws -> String? {
     do {
-      return try await container.userRecordID().recordName
+      let recordName = try await container.userRecordID().recordName
+      // Before CloudKit finishes warming up, `userRecordID()` hands back the
+      // `__defaultOwner__` placeholder instead of the real user record name.
+      // Persisting that placeholder makes the next launch (once the real name is
+      // available) look like an account change, so treat it as "not yet known".
+      guard recordName != CKCurrentUserDefaultName else {
+        return nil
+      }
+      return recordName
     } catch let error as CKError where error.code == .notAuthenticated {
       return nil
     }
