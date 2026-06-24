@@ -12,7 +12,6 @@ extension GrimoraAppModel {
         }
 
         closeSelectedCard()
-        setSearchInputMode(.scryfall)
         setSearchDraft(query)
         await submitSearch()
     }

@@ -27,9 +27,6 @@ extension GrimoraAppModel {
     switch result {
     case .success(.results(let cards, let totalCount)):
       unsupportedSearchMessage = nil
-      if offset == 0 {
-        plainTextSearchErrorMessage = nil
-      }
       searchResultTotal = totalCount
       if let pageCacheKey {
         searchPageCache.store(CardSearchResponse.results(cards, totalCount: totalCount), for: pageCacheKey)
@@ -62,9 +59,6 @@ extension GrimoraAppModel {
         return
       }
       unsupportedSearchMessage = reason.message
-      if searchInputMode == .plainText {
-        plainTextSearchErrorMessage = reason.message
-      }
       searchVisibleImageWindowTracker.reset()
       resetSearchVisibleImageRequests()
       cards = []
@@ -159,42 +153,22 @@ extension GrimoraAppModel {
       return
     }
 
-    switch record {
-    case .scryfall(let query):
-      guard searchInputMode == .scryfall,
-        GrimoraSearchHistoryStore.normalizedQuery(submittedSearchText) == query,
-        ScryfallSyntaxValidator.validate(query).isValidScryfall
-      else {
-        return
-      }
-
-      let updatedHistory = searchHistoryStore.historyByRecording(query, in: searchHistory)
-      guard updatedHistory != searchHistory else {
-        return
-      }
-
-      searchHistory = updatedHistory
-      searchHistoryStore.save(updatedHistory)
-      scheduleSearchHistoryPreviewWarm()
-      durableCloudSyncPreferencesChanged()
-    case .plainText(let prompt):
-      guard searchInputMode == .plainText,
-        GrimoraSearchHistoryStore.normalizedQuery(submittedSearchText) == prompt,
-        generatedSearchQuery != nil
-      else {
-        return
-      }
-
-      let updatedHistory =
-        plainTextSearchHistoryStore.historyByRecording(prompt, in: plainTextSearchHistory)
-      guard updatedHistory != plainTextSearchHistory else {
-        return
-      }
-
-      plainTextSearchHistory = updatedHistory
-      plainTextSearchHistoryStore.save(updatedHistory)
-      durableCloudSyncPreferencesChanged()
+    let query = record.query
+    guard GrimoraSearchHistoryStore.normalizedQuery(submittedSearchText) == query,
+      ScryfallSyntaxValidator.validate(query).isValidScryfall
+    else {
+      return
     }
+
+    let updatedHistory = searchHistoryStore.historyByRecording(query, in: searchHistory)
+    guard updatedHistory != searchHistory else {
+      return
+    }
+
+    searchHistory = updatedHistory
+    searchHistoryStore.save(updatedHistory)
+    scheduleSearchHistoryPreviewWarm()
+    durableCloudSyncPreferencesChanged()
   }
 
   func scheduleSearchHistoryPreviewWarm() {
@@ -311,7 +285,6 @@ extension GrimoraAppModel {
   }
 
   public func drainSearchForTesting() async {
-    await plainTextSearchTask?.value
     await searchDebounceTask?.value
     await searchTask?.value
     await nextPagePrefetchTask?.value

@@ -368,59 +368,6 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Unsupported Search"].waitForExistence(timeout: 2))
     }
 
-    func testPlainTextSearchModeToggleIsHiddenForNow() throws {
-        let databaseURL = try seedDatabase(cards: [
-            CardRecord(
-                id: "dragon",
-                name: "Ruby Whelp",
-                releasedAt: "2020-01-01",
-                setCode: "abc",
-                setName: "Alpha Set",
-                setType: "expansion",
-                collectorNumber: "1",
-                collectorNumberNumber: 1,
-                rarity: "rare",
-                rarityRank: 2,
-                manaValue: 3,
-                colorSortKey: 3,
-                colors: ["R"],
-                layout: "normal",
-                typeLine: "Creature — Dragon",
-                oracleText: "Flying",
-                isRealCard: true
-            ),
-            CardRecord(
-                id: "mage",
-                name: "Azure Mage",
-                releasedAt: "2020-01-02",
-                setCode: "abc",
-                setName: "Alpha Set",
-                setType: "expansion",
-                collectorNumber: "2",
-                collectorNumberNumber: 2,
-                rarity: "uncommon",
-                rarityRank: 1,
-                manaValue: 2,
-                colorSortKey: 1,
-                colors: ["U"],
-                layout: "normal",
-                typeLine: "Creature — Human Wizard",
-                oracleText: "Draw a card.",
-                isRealCard: true
-            )
-        ])
-
-        let app = launchApp(
-            databaseURL: databaseURL,
-            plainTextSearchResponses: [
-                "red dragons under 4 mana": "t:dragon c:r mv<4"
-            ]
-        )
-        let toggle = app.buttons["plain-text-search-mode-toggle"]
-        XCTAssertFalse(toggle.waitForExistence(timeout: 1))
-        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 5))
-    }
-
     func testCreateListFromSearchResultsPromptsForNameAndSelectsList() throws {
         let databaseURL = try seedDatabase(cards: [
             CardRecord(
@@ -2333,7 +2280,6 @@ final class GrimoraMacUITests: XCTestCase {
         static let alwaysIncludedText = "Grimora.search.alwaysIncludedText"
         static let sortMode = "Grimora.defaultSearch.sortMode"
         static let sortDirection = "Grimora.defaultSearch.sortDirection"
-        static let searchInputMode = "Grimora.search.inputMode"
         static let searchHistory = "Grimora.searchHistory.queries"
         static let cloudSyncMode = "Grimora.cloudSync.mode"
         static let valueDisplayCurrency = "Grimora.value.displayCurrency"
@@ -2346,8 +2292,6 @@ final class GrimoraMacUITests: XCTestCase {
         defaultSearchSortMode: SortMode = .releaseDate,
         defaultSearchSortDirection: SearchSortDirection = .ascending,
         searchHistory: [String] = [],
-        searchInputMode: String = "scryfall",
-        plainTextSearchResponses: [String: String] = [:],
         valueDisplayCurrency: CardValueDisplayCurrency? = nil,
         usdToAUDRate: Double? = nil,
         imageDirectory: URL? = nil,
@@ -2372,8 +2316,6 @@ final class GrimoraMacUITests: XCTestCase {
             defaultSearchSortMode.rawValue,
             "-\(DefaultSearchPreferenceKeys.sortDirection)",
             defaultSearchSortDirection.rawValue,
-            "-\(DefaultSearchPreferenceKeys.searchInputMode)",
-            searchInputMode,
             "-\(DefaultSearchPreferenceKeys.cloudSyncMode)",
             "undecided"
         ]
@@ -2407,12 +2349,6 @@ final class GrimoraMacUITests: XCTestCase {
         }
         app.launchEnvironment["GRIMORA_TEST_USER_DEFAULTS_SUITE"] = userDefaultsSuite
         app.launchEnvironment["GRIMORA_TEST_SEARCH_DEBOUNCE_NANOSECONDS"] = "0"
-        if !plainTextSearchResponses.isEmpty {
-            app.launchEnvironment["GRIMORA_TEST_PLAIN_TEXT_SEARCH_RESPONSES"] =
-                plainTextSearchResponses
-                .map { "\($0.key)\t\($0.value)" }
-                .joined(separator: "\n")
-        }
         app.launchEnvironment["GRIMORA_TEST_RESET_VALUE_DEFAULTS"] = "1"
         if let usdToAUDRate {
             app.launchEnvironment["GRIMORA_TEST_USD_TO_AUD_RATE"] = "\(usdToAUDRate)"

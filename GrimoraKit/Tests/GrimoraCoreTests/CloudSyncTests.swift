@@ -833,7 +833,6 @@ final class CloudSyncTests: XCTestCase {
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
         object["displayCurrencyRawValue"] = nil
         object["searchHistory"] = nil
-        object["plainTextSearchHistory"] = nil
 
         let decoded = try CardDatabase.syncJSONValue(
             SyncSearchSettings.self,
@@ -843,21 +842,18 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(decoded.defaultSearchText, "type:artifact")
         XCTAssertEqual(decoded.displayCurrencyRawValue, "USD")
         XCTAssertEqual(decoded.searchHistory, [])
-        XCTAssertEqual(decoded.plainTextSearchHistory, [])
     }
 
     func testSearchSettingsMergePreservesHistoriesFromBothDevices() {
         let older = SyncSearchSettings(
             defaultSearchText: "type:creature",
             searchHistory: ["one", "shared"],
-            plainTextSearchHistory: ["old plain"],
             updatedAt: Date(timeIntervalSince1970: 10)
         )
         let newer = SyncSearchSettings(
             defaultSearchText: "type:artifact",
             displayCurrencyRawValue: "AUD",
             searchHistory: ["two", "shared"],
-            plainTextSearchHistory: ["new plain"],
             updatedAt: Date(timeIntervalSince1970: 20)
         )
 
@@ -866,7 +862,6 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(merged.defaultSearchText, "type:artifact")
         XCTAssertEqual(merged.displayCurrencyRawValue, "AUD")
         XCTAssertEqual(merged.searchHistory, ["two", "shared", "one"])
-        XCTAssertEqual(merged.plainTextSearchHistory, ["new plain", "old plain"])
     }
 
     func testEntityCodecCanonicalizesFavouritesAndDeletionWins() throws {

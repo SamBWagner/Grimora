@@ -22,14 +22,8 @@ struct VisibleImageRequestState: Equatable, Sendable {
 @Observable
 @MainActor
 public final class GrimoraAppModel {
-  public var searchText: String = "" {
-    didSet { handleSearchTextChange(oldValue: oldValue) }
-  }
+  public var searchText: String = ""
   public internal(set) var submittedSearchText: String = ""
-
-  public var searchInputMode: SearchInputMode = .scryfall {
-    didSet { handleSearchInputModeChange(from: oldValue) }
-  }
 
   public var sortMode: SortMode = .name {
     didSet {
@@ -85,17 +79,12 @@ public final class GrimoraAppModel {
   public internal(set) var canLoadMoreCards = false
   public internal(set) var isLoadingMoreCards = false
   public internal(set) var isSearchingCards = false
-  public internal(set) var isTranslatingSearch = false
   public internal(set) var isCreatingListFromSearch = false
   public internal(set) var libraryState: LibraryReadinessState = .missing
   public internal(set) var defaultSearchConfiguration =
     GrimoraDefaultSearchConfiguration()
   public internal(set) var searchHistory: [String] = []
-  public internal(set) var plainTextSearchHistory: [String] = []
   public internal(set) var hiddenSearchTerms: [SearchRefinement] = []
-  public internal(set) var generatedSearchQuery: String?
-  public internal(set) var plainTextSearchStatusMessage: String?
-  public internal(set) var plainTextSearchErrorMessage: String?
   public internal(set) var cardLists: [CardListRecord] = []
   public internal(set) var cardListOverviewItems: [CardListOverviewItem] = []
   public internal(set) var sidebarSelection: GrimoraSidebarSelection = .search
@@ -186,14 +175,12 @@ public final class GrimoraAppModel {
       && unsupportedSearchMessage == nil
       && searchResultTotal > 0
       && !isSearchingCards
-      && !isTranslatingSearch
       && !isLoadingMoreCards
       && !isCreatingListFromSearch
-      && !hasPendingPlainTextPrompt
   }
 
   public var canClearSearch: Bool {
-    !searchText.isEmpty || !submittedSearchText.isEmpty || generatedSearchQuery != nil
+    !searchText.isEmpty || !submittedSearchText.isEmpty
   }
 
   public var hasUnsubmittedSearchText: Bool {
@@ -202,23 +189,7 @@ public final class GrimoraAppModel {
   }
 
   public var visibleSearchHistory: [String] {
-    searchInputMode == .plainText ? plainTextSearchHistory : searchHistory
-  }
-
-  public var plainTextSearchAvailability: PlainTextSearchTranspilerAvailability {
-    plainTextSearchTranspiler.availability
-  }
-
-  public var isPlainTextSearchAvailable: Bool {
-    plainTextSearchAvailability.isAvailable
-  }
-
-  public var plainTextSearchUnavailableMessage: String? {
-    plainTextSearchAvailability.message
-  }
-
-  public var isPlainTextSearchModeActive: Bool {
-    searchInputMode == .plainText
+    searchHistory
   }
 
   public var hasLocalCardData: Bool {
@@ -235,14 +206,12 @@ public final class GrimoraAppModel {
   let imageCache: CardImageCache
   let imageStore: ImageStore
   let archidektDeckClient: ArchidektDeckClient
-  let plainTextSearchTranspiler: any PlainTextSearchTranspiling
   let imageDownloadCoordinator: CardImageDownloadCoordinator
   let previewImageWarmer: PreviewImageWarmer
   let temporaryDirectory: URL
   let valueHistoryBackgroundDirectory: URL
   let autoUpdateChecksEnabled: Bool
   let searchHistoryStore: GrimoraSearchHistoryStore
-  let plainTextSearchHistoryStore: GrimoraSearchHistoryStore
   let hiddenSearchTermsStore: HiddenSearchTermsStore
   let imageDownloadConfiguration: GrimoraImageDownloadConfiguration
   let searchPerformance: GrimoraSearchPerformanceConfiguration
@@ -255,7 +224,6 @@ public final class GrimoraAppModel {
   var cloudSyncSearchSettingsUpdatedAt: Date
   var searchTask: Task<Void, Never>?
   var searchDebounceTask: Task<Void, Never>?
-  var plainTextSearchTask: Task<Void, Never>?
   var nextPagePrefetchTask: Task<Void, Never>?
   var searchHistoryRecordTask: Task<Void, Never>?
   var cloudSyncTask: Task<Void, Never>?
@@ -270,7 +238,6 @@ public final class GrimoraAppModel {
   var searchGeneration: UInt64 = 0
   var currentSearchCacheKey: SearchResultCacheKey?
   var isUpdatingCurrentSort = false
-  var isUpdatingSearchInputMode = false
   var isUpdatingSelectedCardSource = false
   var isApplyingCloudSyncState = false
   var searchResultCache: SearchResultCache
@@ -293,7 +260,6 @@ public final class GrimoraAppModel {
     environment: GrimoraEnvironment,
     initialDefaultSearchConfiguration: GrimoraDefaultSearchConfiguration =
       GrimoraDefaultSearchConfiguration(),
-    initialSearchInputMode: SearchInputMode = GrimoraSearchPreferences.defaultSearchInputMode,
     initialCloudSyncMode: GrimoraCloudSyncMode = .undecided,
     cloudSyncDeviceID: String? = nil,
     cloudSyncDeviceName: String = "Grimora Device",
@@ -305,7 +271,6 @@ public final class GrimoraAppModel {
     self.imageCache = environment.imageCache
     self.imageStore = environment.imageStore
     self.archidektDeckClient = environment.archidektDeckClient
-    self.plainTextSearchTranspiler = environment.plainTextSearchTranspiler
     self.imageDownloadCoordinator = CardImageDownloadCoordinator(
       imageCache: environment.imageCache,
       visibleLimit: environment.imageDownloadConfiguration.visibleConcurrency,
@@ -322,7 +287,6 @@ public final class GrimoraAppModel {
     self.valueHistoryBackgroundDirectory = environment.valueHistoryBackgroundDirectory
     self.autoUpdateChecksEnabled = environment.autoUpdateChecksEnabled
     self.searchHistoryStore = environment.searchHistoryStore
-    self.plainTextSearchHistoryStore = environment.plainTextSearchHistoryStore
     self.hiddenSearchTermsStore = environment.hiddenSearchTermsStore
     self.imageDownloadConfiguration = environment.imageDownloadConfiguration
     self.searchPerformance = environment.searchPerformanceConfiguration
@@ -357,15 +321,7 @@ public final class GrimoraAppModel {
       sortDirection = normalizedDefaultSearchConfiguration.sortDirection
     }
 
-    if initialSearchInputMode == .plainText, plainTextSearchTranspiler.availability.isAvailable {
-      searchInputMode = .plainText
-    } else if initialSearchInputMode == .plainText {
-      plainTextSearchErrorMessage =
-        plainTextSearchTranspiler.availability.message ?? "Plain-text search is unavailable."
-    }
-
     searchHistory = environment.searchHistoryStore.load()
-    plainTextSearchHistory = environment.plainTextSearchHistoryStore.load()
     hiddenSearchTerms = environment.hiddenSearchTermsStore.load()
     reloadCardLists()
     reloadCloudSyncRecoverySnapshots()
@@ -411,9 +367,6 @@ public final class GrimoraAppModel {
   public static func configuredForCurrentPreferences(
     environment: GrimoraEnvironment
   ) -> GrimoraAppModel {
-    let storedInputMode = GrimoraSearchPreferences.searchInputMode()
-    let inputMode =
-      GrimoraSearchPreferences.isPlainTextSearchInterfaceEnabled ? storedInputMode : .scryfall
     let preferredCloudSyncMode = GrimoraCloudSyncPreferences.resolvedMode()
     #if DEBUG
       let usesConflictFixture =
@@ -426,7 +379,6 @@ public final class GrimoraAppModel {
     let model = GrimoraAppModel(
       environment: environment,
       initialDefaultSearchConfiguration: GrimoraSearchPreferences.configuration(),
-      initialSearchInputMode: inputMode,
       initialCloudSyncMode: usesConflictFixture
         ? .disabled
         : preferredCloudSyncMode,

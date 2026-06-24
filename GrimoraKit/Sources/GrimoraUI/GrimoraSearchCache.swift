@@ -200,19 +200,12 @@ enum SearchListCreationResult: Sendable {
   case failure
 }
 
-enum PlainTextSearchSubmissionResult: Sendable {
-  case success(PlainTextSearchTranspilation)
-  case unsupported(SearchQueryUnsupportedReason)
-  case failure(String)
-}
-
 enum SearchHistoryRecord: Sendable {
   case scryfall(String)
-  case plainText(String)
 
   var query: String {
     switch self {
-    case .scryfall(let query), .plainText(let query):
+    case .scryfall(let query):
       query
     }
   }

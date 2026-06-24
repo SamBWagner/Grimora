@@ -78,7 +78,7 @@ struct MacSearchFloatingHeader: View {
     }
 
     private var searchIsBusy: Bool {
-        model.isSearchingCards || model.isTranslatingSearch
+        model.isSearchingCards
     }
 
     private func searchArea(isExpanded: Bool) -> some View {
@@ -213,7 +213,7 @@ struct MacSearchFloatingHeader: View {
     }
 
     private var searchLoadingAccessibilityLabel: String {
-        model.isTranslatingSearch ? "Translating search" : "Searching cards"
+        "Searching cards"
     }
 
     private var refinementRow: some View {
@@ -336,11 +336,7 @@ struct MacSearchFloatingHeader: View {
     }
 
     private var searchPlaceholder: String {
-        if GrimoraSearchPreferences.isPlainTextSearchInterfaceEnabled,
-           model.searchInputMode == .plainText {
-            return "Ask for cards"
-        }
-        return "Search cards"
+        "Search cards"
     }
 
     private var orderTitle: String {

@@ -11,14 +11,12 @@ public struct GrimoraEnvironment: Sendable {
   public var imageCache: CardImageCache
   public var imageStore: ImageStore
   public var archidektDeckClient: ArchidektDeckClient
-  public var plainTextSearchTranspiler: any PlainTextSearchTranspiling
   public var imageDownloadConfiguration: GrimoraImageDownloadConfiguration
   public var searchPerformanceConfiguration: GrimoraSearchPerformanceConfiguration
   public var temporaryDirectory: URL
   public var valueHistoryBackgroundDirectory: URL
   public var autoUpdateChecksEnabled: Bool
   public var searchHistoryStore: GrimoraSearchHistoryStore
-  public var plainTextSearchHistoryStore: GrimoraSearchHistoryStore
   public var hiddenSearchTermsStore: HiddenSearchTermsStore
   public var cloudSyncCoordinator: CloudSyncCoordinator
   public var canOfferInitialCloudSync: Bool
@@ -33,8 +31,6 @@ public struct GrimoraEnvironment: Sendable {
     imageCache: CardImageCache,
     imageStore: ImageStore,
     archidektDeckClient: ArchidektDeckClient = ArchidektDeckClient(network: BlockingNetworkClient()),
-    plainTextSearchTranspiler: any PlainTextSearchTranspiling =
-      UnavailablePlainTextSearchTranspiler(message: "Plain-text search is unavailable."),
     imageDownloadConfiguration: GrimoraImageDownloadConfiguration =
       GrimoraImageDownloadConfiguration(),
     searchPerformanceConfiguration: GrimoraSearchPerformanceConfiguration =
@@ -43,8 +39,6 @@ public struct GrimoraEnvironment: Sendable {
     valueHistoryBackgroundDirectory: URL? = nil,
     autoUpdateChecksEnabled: Bool,
     searchHistoryStore: GrimoraSearchHistoryStore = GrimoraSearchHistoryStore(),
-    plainTextSearchHistoryStore: GrimoraSearchHistoryStore =
-      GrimoraSearchHistoryStore(key: GrimoraSearchPreferences.plainTextSearchHistoryKey),
     hiddenSearchTermsStore: HiddenSearchTermsStore = HiddenSearchTermsStore(),
     cloudSyncCoordinator: CloudSyncCoordinator? = nil,
     canOfferInitialCloudSync: Bool = true,
@@ -58,7 +52,6 @@ public struct GrimoraEnvironment: Sendable {
     self.imageCache = imageCache
     self.imageStore = imageStore
     self.archidektDeckClient = archidektDeckClient
-    self.plainTextSearchTranspiler = plainTextSearchTranspiler
     self.imageDownloadConfiguration = imageDownloadConfiguration
     self.searchPerformanceConfiguration = searchPerformanceConfiguration
     self.temporaryDirectory = temporaryDirectory
@@ -66,7 +59,6 @@ public struct GrimoraEnvironment: Sendable {
       ?? temporaryDirectory.appendingPathComponent("ValueHistory", isDirectory: true)
     self.autoUpdateChecksEnabled = autoUpdateChecksEnabled
     self.searchHistoryStore = searchHistoryStore
-    self.plainTextSearchHistoryStore = plainTextSearchHistoryStore
     self.hiddenSearchTermsStore = hiddenSearchTermsStore
     self.cloudSyncCoordinator = cloudSyncCoordinator ?? .disabled(database: database)
     self.canOfferInitialCloudSync = canOfferInitialCloudSync
@@ -156,16 +148,9 @@ public struct GrimoraEnvironment: Sendable {
       ?? .standard
     seedTestValuePreferencesIfNeeded(processInfo: processInfo, userDefaults: .standard)
     let searchHistoryStore = GrimoraSearchHistoryStore(userDefaults: searchHistoryUserDefaults)
-    let plainTextSearchHistoryStore = GrimoraSearchHistoryStore(
-      userDefaults: searchHistoryUserDefaults,
-      key: GrimoraSearchPreferences.plainTextSearchHistoryKey
-    )
     let hiddenSearchTermsStore = HiddenSearchTermsStore(userDefaults: searchHistoryUserDefaults)
     if let testSearchHistory = processInfo.environment["GRIMORA_TEST_SEARCH_HISTORY"] {
       searchHistoryStore.save(testSearchHistory.components(separatedBy: "\n"))
-    }
-    if let testPlainTextSearchHistory = processInfo.environment["GRIMORA_TEST_PLAIN_TEXT_SEARCH_HISTORY"] {
-      plainTextSearchHistoryStore.save(testPlainTextSearchHistory.components(separatedBy: "\n"))
     }
     let importer = LibraryImporter(database: database, imageResolver: imageResolver)
     let imageCache = CardImageCache(database: database, imageResolver: imageResolver)
@@ -196,7 +181,6 @@ public struct GrimoraEnvironment: Sendable {
       imageCache: imageCache,
       imageStore: imageStore,
       archidektDeckClient: ArchidektDeckClient(network: network),
-      plainTextSearchTranspiler: PlainTextSearchTranspilerFactory.live(processInfo: processInfo),
       imageDownloadConfiguration: .liveDefault,
       searchPerformanceConfiguration: .liveDefault(
         textDebounceNanoseconds: processInfo.environment["GRIMORA_TEST_SEARCH_DEBOUNCE_NANOSECONDS"]
@@ -206,7 +190,6 @@ public struct GrimoraEnvironment: Sendable {
       valueHistoryBackgroundDirectory: valueHistoryBackgroundDirectory,
       autoUpdateChecksEnabled: processInfo.environment["GRIMORA_DISABLE_AUTO_UPDATE"] != "1",
       searchHistoryStore: searchHistoryStore,
-      plainTextSearchHistoryStore: plainTextSearchHistoryStore,
       hiddenSearchTermsStore: hiddenSearchTermsStore,
       cloudSyncCoordinator: cloudSyncCoordinator,
       canOfferInitialCloudSync: !databaseAlreadyExists,

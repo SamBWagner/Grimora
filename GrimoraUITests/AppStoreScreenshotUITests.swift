@@ -83,8 +83,6 @@ final class AppStoreScreenshotUITests: XCTestCase {
             SortMode.name.rawValue,
             "-\(MacScreenshotPreferenceKeys.sortDirection)",
             SearchSortDirection.ascending.rawValue,
-            "-\(MacScreenshotPreferenceKeys.searchInputMode)",
-            "scryfall",
             "-\(MacScreenshotPreferenceKeys.cloudSyncMode)",
             "disabled"
         ]
@@ -408,6 +406,5 @@ private enum MacScreenshotPreferenceKeys {
     static let alwaysIncludedText = "Grimora.search.alwaysIncludedText"
     static let sortMode = "Grimora.defaultSearch.sortMode"
     static let sortDirection = "Grimora.defaultSearch.sortDirection"
-    static let searchInputMode = "Grimora.search.inputMode"
     static let cloudSyncMode = "Grimora.cloudSync.mode"
 }

@@ -222,12 +222,10 @@ extension GrimoraAppModel {
       alwaysIncludedSearchText: defaultSearchConfiguration.alwaysIncludedText,
       defaultSortModeRawValue: defaultSearchConfiguration.sortMode.rawValue,
       defaultSortDirectionRawValue: defaultSearchConfiguration.sortDirection.rawValue,
-      searchInputModeRawValue: searchInputMode.rawValue,
       displayCurrencyRawValue: UserDefaults.standard.string(
         forKey: GrimoraValuePreferences.displayCurrencyKey
       ) ?? CardValueDisplayCurrency.usd.rawValue,
       searchHistory: searchHistory,
-      plainTextSearchHistory: plainTextSearchHistory,
       hiddenSearchTerms: hiddenSearchTerms,
       updatedAt: cloudSyncSearchSettingsUpdatedAt
     )
@@ -354,15 +352,12 @@ extension GrimoraAppModel {
       settings.defaultSortDirectionRawValue,
       forKey: GrimoraSearchPreferences.defaultSearchSortDirectionKey
     )
-    UserDefaults.standard.set(settings.searchInputModeRawValue, forKey: GrimoraSearchPreferences.searchInputModeKey)
     UserDefaults.standard.set(
       settings.displayCurrencyRawValue,
       forKey: GrimoraValuePreferences.displayCurrencyKey
     )
     searchHistoryStore.save(settings.searchHistory)
-    plainTextSearchHistoryStore.save(settings.plainTextSearchHistory)
     searchHistory = settings.searchHistory
-    plainTextSearchHistory = settings.plainTextSearchHistory
     applySyncedHiddenSearchTerms(settings.hiddenSearchTerms)
 
     applySearchPreferences(
@@ -372,9 +367,6 @@ extension GrimoraAppModel {
         sortModeRawValue: settings.defaultSortModeRawValue,
         sortDirectionRawValue: settings.defaultSortDirectionRawValue
       )
-    )
-    applySearchInputModePreference(
-      GrimoraSearchPreferences.searchInputMode(from: settings.searchInputModeRawValue)
     )
   }
 

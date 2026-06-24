@@ -49,9 +49,7 @@ public enum GrimoraSearchPreferences {
   public static let alwaysIncludedSearchTextKey = "Grimora.search.alwaysIncludedText"
   public static let defaultSearchSortModeKey = "Grimora.defaultSearch.sortMode"
   public static let defaultSearchSortDirectionKey = "Grimora.defaultSearch.sortDirection"
-  public static let searchInputModeKey = "Grimora.search.inputMode"
   public static let searchHistoryKey = "Grimora.searchHistory.queries"
-  public static let plainTextSearchHistoryKey = "Grimora.plainTextSearchHistory.queries"
   public static let hiddenSearchTermsKey = "Grimora.search.hiddenTerms"
   public static let advancedSearchEnabledKey = "Grimora.search.advancedFormEnabled"
 
@@ -59,8 +57,6 @@ public enum GrimoraSearchPreferences {
   public static let defaultAlwaysIncludedSearchText = ""
   public static let defaultSortMode = SortMode.releaseDate
   public static let defaultSortDirection = SearchSortDirection.ascending
-  public static let defaultSearchInputMode = SearchInputMode.scryfall
-  public static let isPlainTextSearchInterfaceEnabled = false
   /// Whether the on-screen advanced-search builder affordance is offered. On by
   /// default; users who only use raw Scryfall syntax can hide it in Settings.
   public static let defaultAdvancedSearchEnabled = true
@@ -99,16 +95,6 @@ public enum GrimoraSearchPreferences {
 
   public static func sortDirection(from rawValue: String) -> SearchSortDirection {
     SearchSortDirection(rawValue: rawValue) ?? defaultSortDirection
-  }
-
-  public static func searchInputMode(from rawValue: String) -> SearchInputMode {
-    SearchInputMode(rawValue: rawValue) ?? defaultSearchInputMode
-  }
-
-  public static func searchInputMode(userDefaults: UserDefaults = .standard) -> SearchInputMode {
-    searchInputMode(
-      from: userDefaults.string(forKey: searchInputModeKey) ?? defaultSearchInputMode.rawValue
-    )
   }
 
   public static func directionTitle(

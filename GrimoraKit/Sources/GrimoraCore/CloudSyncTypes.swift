@@ -109,10 +109,8 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
   public var alwaysIncludedSearchText: String
   public var defaultSortModeRawValue: String
   public var defaultSortDirectionRawValue: String
-  public var searchInputModeRawValue: String
   public var displayCurrencyRawValue: String
   public var searchHistory: [String]
-  public var plainTextSearchHistory: [String]
   public var hiddenSearchTerms: [SearchRefinement]
   public var updatedAt: Date
 
@@ -121,10 +119,8 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
     alwaysIncludedSearchText: String = "",
     defaultSortModeRawValue: String = SortMode.releaseDate.rawValue,
     defaultSortDirectionRawValue: String = "ascending",
-    searchInputModeRawValue: String = "scryfall",
     displayCurrencyRawValue: String = "USD",
     searchHistory: [String] = [],
-    plainTextSearchHistory: [String] = [],
     hiddenSearchTerms: [SearchRefinement] = [],
     updatedAt: Date = Date()
   ) {
@@ -132,10 +128,8 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
     self.alwaysIncludedSearchText = alwaysIncludedSearchText
     self.defaultSortModeRawValue = defaultSortModeRawValue
     self.defaultSortDirectionRawValue = defaultSortDirectionRawValue
-    self.searchInputModeRawValue = searchInputModeRawValue
     self.displayCurrencyRawValue = displayCurrencyRawValue
     self.searchHistory = Self.normalizedHistory(searchHistory)
-    self.plainTextSearchHistory = Self.normalizedHistory(plainTextSearchHistory)
     self.hiddenSearchTerms = SearchRefinement.normalizedHiddenTerms(hiddenSearchTerms)
     self.updatedAt = updatedAt
   }
@@ -145,10 +139,8 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
     case alwaysIncludedSearchText
     case defaultSortModeRawValue
     case defaultSortDirectionRawValue
-    case searchInputModeRawValue
     case displayCurrencyRawValue
     case searchHistory
-    case plainTextSearchHistory
     case hiddenSearchTerms
     case updatedAt
   }
@@ -164,17 +156,11 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
     defaultSortDirectionRawValue =
       try container.decodeIfPresent(String.self, forKey: .defaultSortDirectionRawValue)
       ?? "ascending"
-    searchInputModeRawValue =
-      try container.decodeIfPresent(String.self, forKey: .searchInputModeRawValue)
-      ?? "scryfall"
     displayCurrencyRawValue =
       try container.decodeIfPresent(String.self, forKey: .displayCurrencyRawValue)
       ?? "USD"
     searchHistory = Self.normalizedHistory(
       try container.decodeIfPresent([String].self, forKey: .searchHistory) ?? []
-    )
-    plainTextSearchHistory = Self.normalizedHistory(
-      try container.decodeIfPresent([String].self, forKey: .plainTextSearchHistory) ?? []
     )
     hiddenSearchTerms = SearchRefinement.normalizedHiddenTerms(
       try container.decodeIfPresent([SearchRefinement].self, forKey: .hiddenSearchTerms) ?? []
@@ -189,9 +175,6 @@ public struct SyncSearchSettings: Codable, Equatable, Sendable {
 
     var result = newest
     result.searchHistory = mergedHistory(settings.map { ($0.searchHistory, $0.updatedAt) })
-    result.plainTextSearchHistory = mergedHistory(
-      settings.map { ($0.plainTextSearchHistory, $0.updatedAt) }
-    )
     return result
   }
 
@@ -284,7 +267,6 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
       && searchSettings.defaultSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && searchSettings.alwaysIncludedSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       && searchSettings.searchHistory.isEmpty
-      && searchSettings.plainTextSearchHistory.isEmpty
       && searchSettings.hiddenSearchTerms.isEmpty
   }
 

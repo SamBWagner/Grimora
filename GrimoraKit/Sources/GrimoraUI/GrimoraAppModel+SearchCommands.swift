@@ -2,14 +2,6 @@ import Foundation
 import GrimoraCore
 
 extension GrimoraAppModel {
-  public func setSearchInputMode(_ mode: SearchInputMode) {
-    searchInputMode = mode
-  }
-
-  public func togglePlainTextSearchMode() {
-    setSearchInputMode(searchInputMode == .plainText ? .scryfall : .plainText)
-  }
-
   public func setSearchDraft(_ text: String) {
     searchText = text
   }
@@ -19,11 +11,6 @@ extension GrimoraAppModel {
       return
     }
 
-    plainTextSearchTask?.cancel()
-    isTranslatingSearch = false
-    generatedSearchQuery = nil
-    plainTextSearchStatusMessage = nil
-    plainTextSearchErrorMessage = nil
     submittedSearchText = ""
     searchText = ""
     reloadSearch()
@@ -35,37 +22,15 @@ extension GrimoraAppModel {
       return
     }
     searchText = submitted
-    if searchInputMode == .plainText, submitted.isEmpty {
-      generatedSearchQuery = nil
-      plainTextSearchStatusMessage = nil
-      plainTextSearchErrorMessage = nil
-    }
   }
 
   public func clearSearchHistory() {
     searchHistoryRecordTask?.cancel()
     searchHistoryImageWarmTask?.cancel()
-    if searchInputMode == .plainText {
-      plainTextSearchHistory = []
-      plainTextSearchHistoryStore.clear()
-    } else {
-      searchHistory = []
-      searchHistoryStore.clear()
-      Task { await previewImageWarmer.cancelHistory() }
-    }
+    searchHistory = []
+    searchHistoryStore.clear()
+    Task { await previewImageWarmer.cancelHistory() }
     durableCloudSyncPreferencesChanged()
-  }
-
-  public func applySearchInputModePreference(_ mode: SearchInputMode) {
-    let changed = mode != searchInputMode
-    setSearchInputMode(mode)
-    if changed, !isApplyingCloudSyncState {
-      markCloudSyncSearchSettingsChanged()
-      if cloudSyncMode == .enabled {
-        try? database.recordLocalSyncSnapshotChange(reason: "search-input-mode")
-        pushCloudSyncChangesIfNeeded()
-      }
-    }
   }
 
   public func applySearchPreferences(_ configuration: GrimoraDefaultSearchConfiguration) {
@@ -95,71 +60,12 @@ extension GrimoraAppModel {
   }
 
   public func submitSearch() async {
-    guard searchInputMode == .plainText else {
-      let query = GrimoraSearchHistoryStore.normalizedQuery(searchText)
-      submittedSearchText = query
-      if searchText != query {
-        searchText = query
-      }
-      generatedSearchQuery = nil
-      plainTextSearchStatusMessage = nil
-      plainTextSearchErrorMessage = nil
-      reloadSearch()
-      return
+    let query = GrimoraSearchHistoryStore.normalizedQuery(searchText)
+    submittedSearchText = query
+    if searchText != query {
+      searchText = query
     }
-
-    let prompt = GrimoraSearchHistoryStore.normalizedQuery(searchText)
-    guard !prompt.isEmpty else {
-      submittedSearchText = ""
-      generatedSearchQuery = nil
-      plainTextSearchStatusMessage = nil
-      plainTextSearchErrorMessage = nil
-      reloadSearch()
-      return
-    }
-
-    guard plainTextSearchTranspiler.availability.isAvailable else {
-      plainTextSearchErrorMessage =
-        plainTextSearchTranspiler.availability.message ?? "Plain-text search is unavailable."
-      return
-    }
-
-    submittedSearchText = prompt
-    if searchText != prompt {
-      searchText = prompt
-    }
-    searchGeneration += 1
-    let generation = searchGeneration
-    searchDebounceTask?.cancel()
-    searchTask?.cancel()
-    plainTextSearchTask?.cancel()
-    nextPagePrefetchTask?.cancel()
-    searchHistoryRecordTask?.cancel()
-    currentSearchCacheKey = nil
-    searchVisibleImageWindowTracker.reset()
-    resetSearchVisibleImageRequests()
-    canLoadMoreCards = false
-    isLoadingMoreCards = false
-    isSearchingCards = false
-    isTranslatingSearch = true
-    unsupportedSearchMessage = nil
-    plainTextSearchStatusMessage = "Translating search"
-    plainTextSearchErrorMessage = nil
-
-    let transpiler = plainTextSearchTranspiler
-    let task = Task { [weak self, prompt, generation, transpiler] in
-      let result = await Task.detached(priority: .userInitiated) {
-        await Self.validatedPlainTextSearch(prompt: prompt, transpiler: transpiler)
-      }.value
-
-      guard !Task.isCancelled else {
-        return
-      }
-
-      self?.publishPlainTextSearchTranslation(result, prompt: prompt, generation: generation)
-    }
-    plainTextSearchTask = task
-    await task.value
+    reloadSearch()
   }
 
   public func startInitialSetup() async {
@@ -173,15 +79,9 @@ extension GrimoraAppModel {
     cards = []
     searchResultTotal = 0
     unsupportedSearchMessage = nil
-    isTranslatingSearch = false
-    generatedSearchQuery = nil
-    plainTextSearchStatusMessage = nil
-    plainTextSearchErrorMessage = nil
     searchDebounceTask?.cancel()
-    plainTextSearchTask?.cancel()
     nextPagePrefetchTask?.cancel()
     searchHistoryRecordTask?.cancel()
-    isTranslatingSearch = false
     searchResultCache.removeAll()
     searchPageCache.removeAll()
     currentSearchCacheKey = nil
@@ -282,12 +182,8 @@ extension GrimoraAppModel {
 
     isWorking = true
     searchDebounceTask?.cancel()
-    plainTextSearchTask?.cancel()
     nextPagePrefetchTask?.cancel()
     searchHistoryRecordTask?.cancel()
-    generatedSearchQuery = nil
-    plainTextSearchStatusMessage = nil
-    plainTextSearchErrorMessage = nil
     searchResultCache.removeAll()
     searchPageCache.removeAll()
     currentSearchCacheKey = nil
@@ -546,16 +442,11 @@ extension GrimoraAppModel {
     valueHistoryRefreshTask = nil
     searchDebounceTask?.cancel()
     searchTask?.cancel()
-    plainTextSearchTask?.cancel()
     nextPagePrefetchTask?.cancel()
     searchHistoryRecordTask?.cancel()
-    generatedSearchQuery = nil
-    plainTextSearchStatusMessage = nil
-    plainTextSearchErrorMessage = nil
     unsupportedSearchMessage = nil
     isSearchingCards = false
     isLoadingMoreCards = false
-    isTranslatingSearch = false
     isCreatingListFromSearch = false
     canLoadMoreCards = false
     currentSearchCacheKey = nil
@@ -882,18 +773,11 @@ extension GrimoraAppModel {
   }
 
   public func reloadSearch() {
-    guard !hasPendingPlainTextPrompt else {
-      cancelSearchWorkForPendingPlainTextPrompt()
-      return
-    }
-
     searchGeneration += 1
     let generation = searchGeneration
     searchDebounceTask?.cancel()
     nextPagePrefetchTask?.cancel()
     searchTask?.cancel()
-    plainTextSearchTask?.cancel()
-    isTranslatingSearch = false
     currentSearchCacheKey = nil
     searchVisibleImageWindowTracker.reset()
     resetSearchVisibleImageRequests()

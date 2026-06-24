@@ -312,10 +312,8 @@ extension GrimoraAppModel {
       unsupportedSearchMessage == nil,
       searchResultTotal > 0,
       !isSearchingCards,
-      !isTranslatingSearch,
       !isLoadingMoreCards,
-      !isCreatingListFromSearch,
-      !hasPendingPlainTextPrompt
+      !isCreatingListFromSearch
     else {
       statusMessage = "No search results to add."
       return nil

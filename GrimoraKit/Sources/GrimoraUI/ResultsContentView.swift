@@ -17,7 +17,6 @@ struct ResultsContentView: View {
     @State private var landscapeSearchArtworkCardIDs: Set<CardRecord.ID> = []
     @State private var searchResultBulkSelection = SearchResultBulkSelection()
     var showsSearchLoadingOverlay = true
-    var showsPlainTextSearchStatusOverlay = true
     var searchHeaderTopInset: CGFloat = 0
     var searchSelectionClearRequestID = 0
     var onSearchScrollTriggerChange: (MacSearchHeaderScrollTrigger) -> Void = { _ in }
@@ -32,13 +31,6 @@ struct ResultsContentView: View {
     var body: some View {
         ZStack(alignment: .top) {
             content
-
-            if showsPlainTextSearchStatusOverlay && !model.isTranslatingSearch {
-                PlainTextSearchStatusView()
-                    .padding(.top, 18)
-                    .padding(.horizontal, 18)
-                    .frame(maxWidth: .infinity, alignment: .top)
-            }
 
             if showsSearchLoadingOverlay && showsSearchLoadingIndicator {
                 searchLoadingIndicator
@@ -145,7 +137,7 @@ struct ResultsContentView: View {
             ProgressView()
                 .controlSize(.small)
 
-            Text(model.isTranslatingSearch ? "Translating..." : "Searching...")
+            Text("Searching...")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(palette.secondaryText.color)
         }
@@ -159,7 +151,7 @@ struct ResultsContentView: View {
         .shadow(color: palette.shadow.color, radius: 10, x: 0, y: 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Search")
-        .accessibilityValue(model.isTranslatingSearch ? "Translating search" : "Searching cards")
+        .accessibilityValue("Searching cards")
         .accessibilityIdentifier("search-loading-indicator")
     }
 
@@ -168,7 +160,7 @@ struct ResultsContentView: View {
     }
 
     private var searchIsBusy: Bool {
-        model.isSearchingCards || model.isTranslatingSearch
+        model.isSearchingCards
     }
 
     private var searchSelectionResetKey: SearchResultSelectionResetKey {

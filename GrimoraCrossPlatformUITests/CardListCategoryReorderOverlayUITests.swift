@@ -137,8 +137,6 @@ final class CardListCategoryReorderOverlayUITests: XCTestCase {
             "",
             "-\(DefaultSearchPreferenceKeys.alwaysIncludedText)",
             "",
-            "-\(DefaultSearchPreferenceKeys.searchInputMode)",
-            "scryfall",
             "-\(DefaultSearchPreferenceKeys.cloudSyncMode)",
             "disabled"
         ]
@@ -209,7 +207,6 @@ final class CardListCategoryReorderOverlayUITests: XCTestCase {
 private enum DefaultSearchPreferenceKeys {
     static let text = "Grimora.defaultSearch.text"
     static let alwaysIncludedText = "Grimora.search.alwaysIncludedText"
-    static let searchInputMode = "Grimora.search.inputMode"
     static let cloudSyncMode = "Grimora.cloudSync.mode"
 }
 #endif

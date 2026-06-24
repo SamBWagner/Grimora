@@ -89,8 +89,6 @@ final class CardListDetailToolbarUITests: XCTestCase {
             SortMode.releaseDate.rawValue,
             "-\(DefaultSearchPreferenceKeys.sortDirection)",
             SearchSortDirection.ascending.rawValue,
-            "-\(DefaultSearchPreferenceKeys.searchInputMode)",
-            "scryfall",
             "-\(DefaultSearchPreferenceKeys.cloudSyncMode)",
             "disabled"
         ]
@@ -168,7 +166,6 @@ private enum DefaultSearchPreferenceKeys {
     static let alwaysIncludedText = "Grimora.search.alwaysIncludedText"
     static let sortMode = "Grimora.defaultSearch.sortMode"
     static let sortDirection = "Grimora.defaultSearch.sortDirection"
-    static let searchInputMode = "Grimora.search.inputMode"
     static let cloudSyncMode = "Grimora.cloudSync.mode"
 }
 #endif

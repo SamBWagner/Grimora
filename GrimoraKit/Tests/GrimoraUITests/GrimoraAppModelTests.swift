@@ -593,79 +593,6 @@ private actor DelayedModelImageResolver: ImageResolving {
   }
 }
 
-private final class TestPlainTextSearchTranspiler: PlainTextSearchTranspiling, @unchecked Sendable {
-  enum Response: Sendable {
-    case success(query: String, note: String? = nil)
-    case failure(String)
-    case unavailable(String)
-  }
-
-  private let response: Response
-  private let repairResponse: Response?
-  private let delayNanoseconds: UInt64
-  private let lock = NSLock()
-  private var transpileCallCount = 0
-  private var repairCallCount = 0
-
-  var availability: PlainTextSearchTranspilerAvailability {
-    switch response {
-    case .unavailable(let message):
-      .unavailable(message)
-    case .success, .failure:
-      .available
-    }
-  }
-
-  init(
-    response: Response,
-    repairResponse: Response? = nil,
-    delayNanoseconds: UInt64 = 0
-  ) {
-    self.response = response
-    self.repairResponse = repairResponse
-    self.delayNanoseconds = delayNanoseconds
-  }
-
-  func transpile(_ prompt: String) async throws -> PlainTextSearchTranspilation {
-    lock.withLock {
-      transpileCallCount += 1
-    }
-    return try await result(for: response)
-  }
-
-  func repair(
-    prompt: String,
-    rejectedQuery: String,
-    reason: SearchQueryUnsupportedReason
-  ) async throws -> PlainTextSearchTranspilation {
-    lock.withLock {
-      repairCallCount += 1
-    }
-    return try await result(for: repairResponse ?? response)
-  }
-
-  func counts() -> (transpile: Int, repair: Int) {
-    lock.withLock {
-      (transpileCallCount, repairCallCount)
-    }
-  }
-
-  private func result(for response: Response) async throws -> PlainTextSearchTranspilation {
-    if delayNanoseconds > 0 {
-      try await Task.sleep(nanoseconds: delayNanoseconds)
-    }
-
-    switch response {
-    case .success(let query, let note):
-      return PlainTextSearchTranspilation(query: query, note: note)
-    case .failure(let message):
-      throw PlainTextSearchTranspilerError.failed(message)
-    case .unavailable(let message):
-      throw PlainTextSearchTranspilerError.unavailable(message)
-    }
-  }
-}
-
 @MainActor
 final class GrimoraAppModelTests: XCTestCase {
   func testModelLoadsAllCardClassesSearchesAndSorts() async throws {
@@ -747,7 +674,6 @@ final class GrimoraAppModelTests: XCTestCase {
     await model.applyAdvancedSearch(builder)
     await model.drainSearchForTesting()
 
-    XCTAssertEqual(model.searchInputMode, .scryfall)
     XCTAssertEqual(model.submittedSearchText, "name:forest")
     XCTAssertEqual(model.cards.map(\.id), ["forest"])
   }
@@ -1322,257 +1248,6 @@ final class GrimoraAppModelTests: XCTestCase {
     try await Task.sleep(nanoseconds: 50_000_000)
 
     XCTAssertEqual(model.cards.map(\.name), ["Beta Mage"])
-  }
-
-  func testPlainTextSearchWaitsForSubmitAndRunsGeneratedQuery() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards(uiRecords())
-    try markLibraryReady(database)
-    let transpiler = TestPlainTextSearchTranspiler(
-      response: .success(query: "name:forest", note: "Looking for Forest.")
-    )
-    let model = GrimoraAppModel(
-      environment: environment(database: database, plainTextSearchTranspiler: transpiler))
-    await model.drainSearchForTesting()
-    let initialResultIDs = model.cards.map(\.id)
-
-    model.setSearchInputMode(.plainText)
-    model.searchText = "show me forests"
-    await model.drainSearchForTesting()
-
-    XCTAssertEqual(transpiler.counts().transpile, 0)
-    XCTAssertEqual(model.cards.map(\.id), initialResultIDs)
-    XCTAssertNil(model.generatedSearchQuery)
-
-    await model.submitSearch()
-    await model.drainSearchForTesting()
-
-    XCTAssertEqual(transpiler.counts().transpile, 1)
-    XCTAssertEqual(model.searchText, "show me forests")
-    XCTAssertEqual(model.generatedSearchQuery, "name:forest")
-    XCTAssertEqual(model.cards.map(\.id), ["forest"])
-  }
-
-  func testPlainTextSearchUnavailableDoesNotEnterMode() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards(uiRecords())
-    try markLibraryReady(database)
-    let model = GrimoraAppModel(
-      environment: environment(
-        database: database,
-        plainTextSearchTranspiler: TestPlainTextSearchTranspiler(
-          response: .unavailable("Apple Intelligence is off.")
-        )
-      ))
-    await model.drainSearchForTesting()
-
-    model.setSearchInputMode(.plainText)
-
-    XCTAssertEqual(model.searchInputMode, .scryfall)
-    XCTAssertEqual(model.plainTextSearchErrorMessage, "Apple Intelligence is off.")
-  }
-
-  func testPlainTextSearchRepairsUnsupportedGeneratedQuery() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards(uiRecords())
-    try markLibraryReady(database)
-    let transpiler = TestPlainTextSearchTranspiler(
-      response: .success(query: "cube:vintage"),
-      repairResponse: .success(query: "name:forest")
-    )
-    let model = GrimoraAppModel(
-      environment: environment(database: database, plainTextSearchTranspiler: transpiler))
-    await model.drainSearchForTesting()
-
-    model.setSearchInputMode(.plainText)
-    model.searchText = "cards for vintage cube forests"
-    await model.submitSearch()
-    await model.drainSearchForTesting()
-
-    XCTAssertEqual(transpiler.counts().repair, 1)
-    XCTAssertEqual(model.generatedSearchQuery, "name:forest")
-    XCTAssertNil(model.unsupportedSearchMessage)
-    XCTAssertEqual(model.cards.map(\.id), ["forest"])
-  }
-
-  func testPlainTextSearchAcceptsBareGeneratedScryfallNameTerms() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards(uiRecords())
-    try markLibraryReady(database)
-    let transpiler = TestPlainTextSearchTranspiler(
-      response: .success(query: "red goblin blue draw"),
-      repairResponse: .failure("Bare Scryfall name searches should not require repair.")
-    )
-    let model = GrimoraAppModel(
-      environment: environment(database: database, plainTextSearchTranspiler: transpiler))
-    await model.drainSearchForTesting()
-
-    model.setSearchInputMode(.plainText)
-    model.searchText = "goblins, red, also blue, maybe ones that have something that draws?"
-    await model.submitSearch()
-    await model.drainSearchForTesting()
-
-    XCTAssertEqual(transpiler.counts().repair, 0)
-    XCTAssertEqual(model.generatedSearchQuery, "red goblin blue draw")
-    XCTAssertNil(model.unsupportedSearchMessage)
-  }
-
-  func testPlainTextSearchLocallyRepairsCreatureTokenColorMistake() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards(uiRecords())
-    try markLibraryReady(database)
-    let transpiler = TestPlainTextSearchTranspiler(
-      response: .success(query: "c:token"),
-      repairResponse: .failure("The model repair should not be needed.")
-    )
-    let model = GrimoraAppModel(
-      environment: environment(database: database, plainTextSearchTranspiler: transpiler))
-    await model.drainSearchForTesting()
-
-    model.setSearchInputMode(.plainText)
-    model.searchText = "creates tokens that are creatures"
-    await model.submitSearch()
-    await model.drainSearchForTesting()
-
-    XCTAssertEqual(transpiler.counts().transpile, 1)
-    XCTAssertEqual(transpiler.counts().repair, 0)
-    XCTAssertEqual(model.generatedSearchQuery, "o:\"creature token\"")
-    XCTAssertNil(model.unsupportedSearchMessage)
-    XCTAssertNil(model.plainTextSearchErrorMessage)
-  }
-
-  func testPlainTextSearchCanonicalizesUnquotedCreatureTokenOraclePhrase() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards(uiRecords())
-    try markLibraryReady(database)
-    let transpiler = TestPlainTextSearchTranspiler(
-      response: .success(query: "o:creature token"),
-      repairResponse: .failure("The model repair should not be needed.")
-    )
-    let model = GrimoraAppModel(
-      environment: environment(database: database, plainTextSearchTranspiler: transpiler))
-    await model.drainSearchForTesting()
-
-    model.setSearchInputMode(.plainText)
-    model.searchText = "creates tokens that are creatures"
-    await model.submitSearch()
-    await model.drainSearchForTesting()
-
-    XCTAssertEqual(transpiler.counts().transpile, 1)
-    XCTAssertEqual(transpiler.counts().repair, 0)
-    XCTAssertEqual(model.generatedSearchQuery, "o:\"creature token\"")
-    XCTAssertNil(model.unsupportedSearchMessage)
-    XCTAssertNil(model.plainTextSearchErrorMessage)
-  }
-
-  func testPlainTextSearchShowsUnsupportedWhenRepairStillFails() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards(uiRecords())
-    try markLibraryReady(database)
-    let model = GrimoraAppModel(
-      environment: environment(
-        database: database,
-        plainTextSearchTranspiler: TestPlainTextSearchTranspiler(
-          response: .success(query: "cube:vintage"),
-          repairResponse: .success(query: "atag:dragon")
-        )
-      ))
-    await model.drainSearchForTesting()
-
-    model.setSearchInputMode(.plainText)
-    model.searchText = "cards tagged as dragons"
-    await model.submitSearch()
-    await model.drainSearchForTesting()
-
-    XCTAssertNil(model.generatedSearchQuery)
-    XCTAssertEqual(
-      model.unsupportedSearchMessage,
-      "“atag:dragon” is Scryfall syntax that Grimora does not support offline yet.")
-    XCTAssertEqual(model.plainTextSearchErrorMessage, model.unsupportedSearchMessage)
-  }
-
-  func testPlainTextSearchRecordsSeparateHistoryAfterSuccessfulSearch() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards(uiRecords())
-    try markLibraryReady(database)
-    let scryfallHistoryStore = isolatedSearchHistoryStore()
-    let plainTextHistoryStore = GrimoraSearchHistoryStore(
-      userDefaults: isolatedUserDefaults(),
-      key: GrimoraSearchPreferences.plainTextSearchHistoryKey
-    )
-    let model = GrimoraAppModel(
-      environment: environment(
-        database: database,
-        searchHistoryStore: scryfallHistoryStore,
-        plainTextSearchHistoryStore: plainTextHistoryStore,
-        plainTextSearchTranspiler: TestPlainTextSearchTranspiler(response: .success(query: "name:forest"))
-      ))
-    await model.drainSearchForTesting()
-
-    model.setSearchInputMode(.plainText)
-    model.searchText = "show me forests"
-    await model.submitSearch()
-    await model.drainSearchForTesting()
-    await model.drainSearchHistoryForTesting()
-
-    XCTAssertEqual(model.searchHistory, [])
-    XCTAssertEqual(scryfallHistoryStore.load(), [])
-    XCTAssertEqual(model.plainTextSearchHistory, ["show me forests"])
-    XCTAssertEqual(plainTextHistoryStore.load(), ["show me forests"])
-  }
-
-  func testPlainTextSearchClearRemovesPromptAndGeneratedQuery() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards(uiRecords())
-    try markLibraryReady(database)
-    let model = GrimoraAppModel(
-      environment: environment(
-        database: database,
-        plainTextSearchTranspiler: TestPlainTextSearchTranspiler(response: .success(query: "name:forest"))
-      ))
-    await model.drainSearchForTesting()
-
-    model.setSearchInputMode(.plainText)
-    model.searchText = "show me forests"
-    await model.submitSearch()
-    await model.drainSearchForTesting()
-
-    XCTAssertEqual(model.generatedSearchQuery, "name:forest")
-
-    model.clearSearch()
-    await model.drainSearchForTesting()
-
-    XCTAssertEqual(model.searchText, "")
-    XCTAssertNil(model.generatedSearchQuery)
-    XCTAssertNil(model.plainTextSearchErrorMessage)
-  }
-
-  func testPlainTextSearchIgnoresStaleTranslationAfterPromptChanges() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards(uiRecords())
-    try markLibraryReady(database)
-    let transpiler = TestPlainTextSearchTranspiler(
-      response: .success(query: "name:forest"),
-      delayNanoseconds: 50_000_000
-    )
-    let model = GrimoraAppModel(
-      environment: environment(database: database, plainTextSearchTranspiler: transpiler))
-    await model.drainSearchForTesting()
-    let initialResultIDs = model.cards.map(\.id)
-
-    model.setSearchInputMode(.plainText)
-    model.searchText = "show me forests"
-    let submitTask = Task {
-      await model.submitSearch()
-    }
-    try await Task.sleep(nanoseconds: 5_000_000)
-    model.searchText = "show me beta"
-    await submitTask.value
-    await model.drainSearchForTesting()
-
-    XCTAssertNil(model.generatedSearchQuery)
-    XCTAssertFalse(model.isTranslatingSearch)
-    XCTAssertEqual(model.cards.map(\.id), initialResultIDs)
   }
 
   func testSearchHistoryStorePersistsTrimsDedupesAndCapsRecentQueries() {
@@ -2806,64 +2481,6 @@ final class GrimoraAppModelTests: XCTestCase {
 
     model.searchText = "t:creature"
     await model.drainSearchForTesting()
-    XCTAssertEqual(model.cards.map(\.id), ["commander-creature"])
-  }
-
-  func testAlwaysIncludedSearchTextIsPrependedToPlainTextGeneratedQueries() async throws {
-    let database = try CardDatabase(storage: .inMemory)
-    try database.replaceAllCards([
-      CardRecord(
-        id: "commander-creature",
-        name: "Commander Creature",
-        releasedAt: "2020-01-01",
-        setCode: "abc",
-        setName: "Alpha Set",
-        setType: "expansion",
-        collectorNumber: "1",
-        rarity: "rare",
-        colorSortKey: 0,
-        layout: "normal",
-        typeLine: "Creature",
-        oracleText: "",
-        legalities: ["commander": "legal"],
-        isRealCard: true
-      ),
-      CardRecord(
-        id: "commander-artifact",
-        name: "Commander Artifact",
-        releasedAt: "2020-01-02",
-        setCode: "abc",
-        setName: "Alpha Set",
-        setType: "expansion",
-        collectorNumber: "2",
-        rarity: "rare",
-        colorSortKey: 6,
-        layout: "normal",
-        typeLine: "Artifact",
-        oracleText: "",
-        legalities: ["commander": "legal"],
-        isRealCard: true
-      )
-    ])
-    try markLibraryReady(database)
-
-    let model = GrimoraAppModel(
-      environment: environment(
-        database: database,
-        plainTextSearchTranspiler: TestPlainTextSearchTranspiler(response: .success(query: "t:creature"))
-      ),
-      initialDefaultSearchConfiguration: GrimoraDefaultSearchConfiguration(
-        alwaysIncludedText: "legal:commander"
-      ),
-      initialSearchInputMode: .plainText
-    )
-    await model.drainSearchForTesting()
-
-    model.searchText = "commander creatures"
-    await model.submitSearch()
-    await model.drainSearchForTesting()
-
-    XCTAssertEqual(model.generatedSearchQuery, "t:creature")
     XCTAssertEqual(model.cards.map(\.id), ["commander-creature"])
   }
 
@@ -6093,8 +5710,6 @@ final class GrimoraAppModelTests: XCTestCase {
     searchPerformanceConfiguration: GrimoraSearchPerformanceConfiguration =
       GrimoraSearchPerformanceConfiguration(textDebounceNanoseconds: 0, prefetchesNextPage: false),
     searchHistoryStore: GrimoraSearchHistoryStore? = nil,
-    plainTextSearchHistoryStore: GrimoraSearchHistoryStore? = nil,
-    plainTextSearchTranspiler: (any PlainTextSearchTranspiling)? = nil,
     priceHistoryEnabled: Bool = false,
     cloudSyncCoordinator: CloudSyncCoordinator? = nil,
     autoUpdateChecksEnabled: Bool = false
@@ -6123,8 +5738,6 @@ final class GrimoraAppModelTests: XCTestCase {
         ?? CardImageCache(database: database, imageResolver: NoImageResolver()),
       imageStore: imageStore,
       archidektDeckClient: ArchidektDeckClient(network: network),
-      plainTextSearchTranspiler: plainTextSearchTranspiler
-        ?? TestPlainTextSearchTranspiler(response: .failure("No test plain-text search response.")),
       imageDownloadConfiguration: imageDownloadConfiguration,
       searchPerformanceConfiguration: searchPerformanceConfiguration,
       temporaryDirectory: FileManager.default.temporaryDirectory,
@@ -6132,11 +5745,6 @@ final class GrimoraAppModelTests: XCTestCase {
         .appendingPathComponent("ValueHistory-\(UUID().uuidString)", isDirectory: true),
       autoUpdateChecksEnabled: autoUpdateChecksEnabled,
       searchHistoryStore: searchHistoryStore ?? isolatedSearchHistoryStore(),
-      plainTextSearchHistoryStore: plainTextSearchHistoryStore
-        ?? GrimoraSearchHistoryStore(
-          userDefaults: isolatedUserDefaults(),
-          key: GrimoraSearchPreferences.plainTextSearchHistoryKey
-        ),
       hiddenSearchTermsStore: HiddenSearchTermsStore(userDefaults: isolatedUserDefaults()),
       cloudSyncCoordinator: cloudSyncCoordinator
     )
@@ -6459,7 +6067,6 @@ extension GrimoraAppModelTests {
     await model.searchArtworks(byArtist: "Amy Artist")
     await model.drainSearchForTesting()
 
-    XCTAssertEqual(model.searchInputMode, .scryfall)
     XCTAssertEqual(model.submittedSearchText, #"artist:"Amy Artist" unique:art"#)
     XCTAssertNil(model.selectedCard, "Tapping the artist should dismiss the open card.")
 

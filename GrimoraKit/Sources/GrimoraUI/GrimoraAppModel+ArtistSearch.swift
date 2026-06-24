@@ -12,7 +12,6 @@ extension GrimoraAppModel {
         }
 
         closeSelectedCard()
-        setSearchInputMode(.scryfall)
         setSearchDraft(Self.artistArtworksQuery(forArtist: trimmed))
         await submitSearch()
     }

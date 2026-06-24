@@ -439,7 +439,6 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
       importer: LibraryImporter(database: database, imageResolver: NoImageResolver()),
       imageCache: CardImageCache(database: database, imageResolver: NoImageResolver()),
       imageStore: imageStore,
-      plainTextSearchTranspiler: UnavailablePlainTextSearchTranspiler(message: "Unavailable in tests."),
       searchPerformanceConfiguration: GrimoraSearchPerformanceConfiguration(
         textDebounceNanoseconds: 0,
         prefetchesNextPage: false
@@ -447,10 +446,6 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
       temporaryDirectory: FileManager.default.temporaryDirectory,
       autoUpdateChecksEnabled: false,
       searchHistoryStore: isolatedSearchHistoryStore(),
-      plainTextSearchHistoryStore: GrimoraSearchHistoryStore(
-        userDefaults: isolatedUserDefaults(),
-        key: GrimoraSearchPreferences.plainTextSearchHistoryKey
-      ),
       hiddenSearchTermsStore: HiddenSearchTermsStore(userDefaults: isolatedUserDefaults()),
       cloudSyncCoordinator: cloudSyncCoordinator
     )

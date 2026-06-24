@@ -115,9 +115,7 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
     }
 
     private var currentQuery: String {
-        model.searchInputMode == .scryfall
-            ? model.submittedSearchText
-            : (model.generatedSearchQuery ?? "")
+        model.submittedSearchText
     }
 
     private var alwaysHideConfirmationPresented: Binding<Bool> {

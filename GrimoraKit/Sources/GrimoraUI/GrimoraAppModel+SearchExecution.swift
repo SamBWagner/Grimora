@@ -128,7 +128,6 @@ extension GrimoraAppModel {
   func resetSearchStateForMissingLibrary() {
     searchTask?.cancel()
     searchDebounceTask?.cancel()
-    plainTextSearchTask?.cancel()
     nextPagePrefetchTask?.cancel()
     searchHistoryRecordTask?.cancel()
     searchResultCache.removeAll()
@@ -143,7 +142,6 @@ extension GrimoraAppModel {
     canLoadMoreCards = false
     isLoadingMoreCards = false
     isSearchingCards = false
-    isTranslatingSearch = false
   }
 
   func shouldCacheFirstSearchPage(for request: CardSearchRequest) -> Bool {
@@ -159,14 +157,6 @@ extension GrimoraAppModel {
       return nil
     }
 
-    if searchInputMode == .plainText {
-      let prompt = GrimoraSearchHistoryStore.normalizedQuery(submittedSearchText)
-      guard !prompt.isEmpty, generatedSearchQuery != nil else {
-        return nil
-      }
-      return .plainText(prompt)
-    }
-
     let query = GrimoraSearchHistoryStore.normalizedQuery(submittedSearchText)
     guard !query.isEmpty else {
       return nil
@@ -178,14 +168,6 @@ extension GrimoraAppModel {
     if isDefaultSearchActive {
       return GrimoraResolvedSearchConfiguration(
         text: effectiveSearchText(defaultSearchConfiguration.normalizedText),
-        sortMode: sortMode,
-        sortDirection: sortDirection
-      )
-    }
-
-    if searchInputMode == .plainText {
-      return GrimoraResolvedSearchConfiguration(
-        text: effectiveSearchText(generatedSearchQuery ?? ""),
         sortMode: sortMode,
         sortDirection: sortDirection
       )
@@ -212,226 +194,4 @@ extension GrimoraAppModel {
     isUpdatingCurrentSort = false
   }
 
-  func handleSearchTextChange(oldValue: String) {
-    guard searchText != oldValue else {
-      return
-    }
-
-    if searchInputMode == .plainText {
-      plainTextSearchTask?.cancel()
-      isTranslatingSearch = false
-      plainTextSearchStatusMessage = nil
-      plainTextSearchErrorMessage = nil
-      return
-    }
-
-    generatedSearchQuery = nil
-    plainTextSearchStatusMessage = nil
-    plainTextSearchErrorMessage = nil
-  }
-
-  func handleSearchInputModeChange(from oldValue: SearchInputMode) {
-    guard !isUpdatingSearchInputMode, searchInputMode != oldValue else {
-      return
-    }
-
-    plainTextSearchTask?.cancel()
-    isTranslatingSearch = false
-    generatedSearchQuery = nil
-    plainTextSearchStatusMessage = nil
-    plainTextSearchErrorMessage = nil
-
-    if searchInputMode == .plainText, !plainTextSearchTranspiler.availability.isAvailable {
-      let unavailableMessage =
-        plainTextSearchTranspiler.availability.message ?? "Plain-text search is unavailable."
-      isUpdatingSearchInputMode = true
-      searchInputMode = oldValue
-      isUpdatingSearchInputMode = false
-      plainTextSearchErrorMessage = unavailableMessage
-      return
-    }
-
-    if searchInputMode == .scryfall
-      || GrimoraSearchHistoryStore.normalizedQuery(searchText).isEmpty
-    {
-      reloadSearch()
-    } else {
-      cancelSearchWorkForPendingPlainTextPrompt()
-    }
-  }
-
-  var hasPendingPlainTextPrompt: Bool {
-    searchInputMode == .plainText
-      && hasUnsubmittedSearchText
-  }
-
-  func cancelSearchWorkForPendingPlainTextPrompt() {
-    searchGeneration += 1
-    searchDebounceTask?.cancel()
-    searchTask?.cancel()
-    nextPagePrefetchTask?.cancel()
-    searchHistoryRecordTask?.cancel()
-    currentSearchCacheKey = nil
-    canLoadMoreCards = false
-    isLoadingMoreCards = false
-    isSearchingCards = false
-  }
-
-  func publishPlainTextSearchTranslation(
-    _ result: PlainTextSearchSubmissionResult,
-    prompt: String,
-    generation: UInt64
-  ) {
-    guard generation == searchGeneration,
-      searchInputMode == .plainText,
-      GrimoraSearchHistoryStore.normalizedQuery(searchText) == prompt,
-      GrimoraSearchHistoryStore.normalizedQuery(submittedSearchText) == prompt
-    else {
-      return
-    }
-
-    isTranslatingSearch = false
-    switch result {
-    case .success(let transpilation):
-      let query = GrimoraSearchHistoryStore.normalizedQuery(transpilation.query)
-      generatedSearchQuery = query
-      plainTextSearchStatusMessage = transpilation.note
-      plainTextSearchErrorMessage = nil
-      runFirstSearchPage(generation: generation)
-    case .unsupported(let reason):
-      generatedSearchQuery = nil
-      plainTextSearchStatusMessage = nil
-      plainTextSearchErrorMessage = reason.message
-      unsupportedSearchMessage = reason.message
-      canLoadMoreCards = false
-    case .failure(let message):
-      generatedSearchQuery = nil
-      plainTextSearchStatusMessage = nil
-      plainTextSearchErrorMessage = message
-    }
-  }
-
-  static func validatedPlainTextSearch(
-    prompt: String,
-    transpiler: any PlainTextSearchTranspiling
-  ) async -> PlainTextSearchSubmissionResult {
-    do {
-      let first = try await transpiler.transpile(prompt)
-      switch validatedTranspilation(first, prompt: prompt) {
-      case .success(let transpilation):
-        return .success(transpilation)
-      case .failure(let reason):
-        if let repaired = locallyRepairedTranspilation(first, prompt: prompt, reason: reason) {
-          switch validatedTranspilation(repaired, prompt: prompt) {
-          case .success(let transpilation):
-            return .success(transpilation)
-          case .failure:
-            break
-          }
-        }
-
-        do {
-          let repaired = try await transpiler.repair(
-            prompt: prompt,
-            rejectedQuery: first.query,
-            reason: reason
-          )
-          switch validatedTranspilation(repaired, prompt: prompt) {
-          case .success(let transpilation):
-            return .success(transpilation)
-          case .failure(let repairedReason):
-            return .unsupported(repairedReason)
-          }
-        } catch {
-          return .unsupported(reason)
-        }
-      }
-    } catch let error as PlainTextSearchTranspilerError {
-      return .failure(error.message)
-    } catch {
-      return .failure("Plain-text search failed.")
-    }
-  }
-
-  static func validatedTranspilation(
-    _ transpilation: PlainTextSearchTranspilation,
-    prompt: String
-  ) -> Result<PlainTextSearchTranspilation, SearchQueryUnsupportedReason> {
-    let query = canonicalizedPlainTextSearchQuery(
-      GrimoraSearchHistoryStore.normalizedQuery(transpilation.query),
-      prompt: prompt
-    )
-    guard !query.isEmpty else {
-      return .failure(
-        SearchQueryUnsupportedReason(
-          query: "",
-          token: prompt,
-          detail: "Plain-text search could not produce a Scryfall query."
-        )
-      )
-    }
-
-    if let reason = SearchQuery.explicitSyntaxUnsupportedReason(for: query) {
-      return .failure(reason)
-    }
-    return .success(PlainTextSearchTranspilation(query: query, note: transpilation.note))
-  }
-
-  static func canonicalizedPlainTextSearchQuery(_ query: String, prompt: String) -> String {
-    guard promptDescribesCreatureTokenCreation(prompt) else {
-      return query
-    }
-
-    let normalizedQuery = normalizedPlainTextRepairText(query)
-      .split(whereSeparator: \.isWhitespace)
-      .joined(separator: " ")
-    if ["o:creature token", "oracle:creature token"].contains(normalizedQuery) {
-      return "o:\"creature token\""
-    }
-
-    return query
-  }
-
-  static func locallyRepairedTranspilation(
-    _ transpilation: PlainTextSearchTranspilation,
-    prompt: String,
-    reason: SearchQueryUnsupportedReason
-  ) -> PlainTextSearchTranspilation? {
-    let token = normalizedPlainTextRepairText(reason.token)
-    guard ["c:token", "color:token"].contains(token),
-      promptDescribesCreatureTokenCreation(prompt)
-    else {
-      return nil
-    }
-
-    return PlainTextSearchTranspilation(query: "o:\"creature token\"", note: transpilation.note)
-  }
-
-  static func promptDescribesCreatureTokenCreation(_ prompt: String) -> Bool {
-    let normalizedPrompt = normalizedPlainTextRepairText(prompt)
-    guard normalizedPrompt.contains("token"),
-      normalizedPrompt.contains("creature")
-    else {
-      return false
-    }
-
-    return [
-      "create",
-      "creates",
-      "creating",
-      "make",
-      "makes",
-      "making",
-      "produce",
-      "produces",
-      "generates",
-      "generate",
-    ].contains { normalizedPrompt.contains($0) }
-  }
-
-  static func normalizedPlainTextRepairText(_ text: String) -> String {
-    text
-      .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-      .lowercased()
-  }
 }

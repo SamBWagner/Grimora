@@ -4,7 +4,6 @@ import GrimoraCore
 extension GrimoraAppModel {
     public func refineCurrentSearch(with refinement: SearchRefinement) {
         let currentQuery = currentRefinementQuery
-        setSearchInputMode(.scryfall)
         setSearchDraft(SearchQuery.appending(refinement, to: currentQuery))
     }
 
@@ -14,7 +13,6 @@ extension GrimoraAppModel {
 
     public func applySearchRefinements(_ updates: [SearchRefinementUpdate]) {
         let updatedQuery = SearchQuery.applying(updates, to: currentRefinementQuery)
-        setSearchInputMode(.scryfall)
         setSearchDraft(updatedQuery)
     }
 
@@ -129,9 +127,7 @@ extension GrimoraAppModel {
     }
 
     private var currentRefinementQuery: String {
-        searchInputMode == .scryfall
-            ? submittedSearchText
-            : (generatedSearchQuery ?? "")
+        submittedSearchText
     }
 }
 

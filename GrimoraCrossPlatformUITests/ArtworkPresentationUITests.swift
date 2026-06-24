@@ -447,8 +447,6 @@ final class ArtworkPresentationUITests: XCTestCase {
             SortMode.releaseDate.rawValue,
             "-\(DefaultSearchPreferenceKeys.sortDirection)",
             SearchSortDirection.ascending.rawValue,
-            "-\(DefaultSearchPreferenceKeys.searchInputMode)",
-            "scryfall"
         ]
         let fixtureData = try JSONEncoder().encode(Self.fixtureCards)
         app.launchEnvironment["GRIMORA_TEST_DATABASE_PATH"] =
@@ -479,8 +477,6 @@ final class ArtworkPresentationUITests: XCTestCase {
             SortMode.releaseDate.rawValue,
             "-\(DefaultSearchPreferenceKeys.sortDirection)",
             SearchSortDirection.ascending.rawValue,
-            "-\(DefaultSearchPreferenceKeys.searchInputMode)",
-            "scryfall",
             "-\(DefaultSearchPreferenceKeys.cloudSyncMode)",
             "disabled"
         ]
@@ -520,8 +516,6 @@ final class ArtworkPresentationUITests: XCTestCase {
             SortMode.releaseDate.rawValue,
             "-\(DefaultSearchPreferenceKeys.sortDirection)",
             SearchSortDirection.ascending.rawValue,
-            "-\(DefaultSearchPreferenceKeys.searchInputMode)",
-            "scryfall"
         ]
         let fixtureData = try JSONEncoder().encode(Self.phoneSearchFixtureCards)
         app.launchEnvironment["GRIMORA_TEST_DATABASE_PATH"] =
@@ -858,7 +852,6 @@ private enum DefaultSearchPreferenceKeys {
     static let alwaysIncludedText = "Grimora.search.alwaysIncludedText"
     static let sortMode = "Grimora.defaultSearch.sortMode"
     static let sortDirection = "Grimora.defaultSearch.sortDirection"
-    static let searchInputMode = "Grimora.search.inputMode"
     static let cloudSyncMode = "Grimora.cloudSync.mode"
 }
 

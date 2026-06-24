@@ -58,8 +58,7 @@ struct SearchHistorySuggestions: View {
 /// native recents menu macOS gets from `NSSearchField`. The `.searchSuggestions`
 /// dropdown only appears while the field is focused and offers no way to clear
 /// history, so this surfaces the same list (plus a clear action) from a toolbar
-/// button. History selection and clearing follow the active search input mode
-/// via `GrimoraAppModel`.
+/// button.
 struct SearchHistoryMenu: View {
     @Environment(GrimoraAppModel.self) private var model
     @State private var feedbackTrigger = 0
@@ -124,111 +123,4 @@ struct SearchHistoryMenuContent: View {
             }
         }
     }
-}
-
-struct SearchInputModeToggle: View {
-    @Environment(GrimoraAppModel.self) private var model
-
-    var body: some View {
-        Button {
-            model.togglePlainTextSearchMode()
-        } label: {
-            Label(accessibilityLabel, systemImage: searchAISymbolName)
-                .labelStyle(.iconOnly)
-        }
-        .buttonStyle(.bordered)
-        .controlSize(.regular)
-        .accessibilityIdentifier("plain-text-search-mode-toggle")
-        .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(accessibilityValue)
-        .disabled(!model.isPlainTextSearchAvailable && !model.isPlainTextSearchModeActive)
-        .help(helpText)
-    }
-
-    private var accessibilityLabel: String {
-        model.isPlainTextSearchModeActive ? "Disable Plain Text Search" : "Enable Plain Text Search"
-    }
-
-    private var accessibilityValue: String {
-        if model.isPlainTextSearchModeActive {
-            return "On"
-        }
-        if let unavailableMessage = model.plainTextSearchUnavailableMessage {
-            return unavailableMessage
-        }
-        return "Off"
-    }
-
-    private var helpText: String {
-        if let unavailableMessage = model.plainTextSearchUnavailableMessage,
-           !model.isPlainTextSearchModeActive {
-            return unavailableMessage
-        }
-        return model.isPlainTextSearchModeActive ? "Using plain-text search" : "Use plain-text search"
-    }
-}
-
-struct PlainTextSearchStatusView: View {
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(GrimoraAppModel.self) private var model
-
-    var body: some View {
-        if model.isPlainTextSearchModeActive {
-            statusContent
-        }
-    }
-
-    @ViewBuilder
-    private var statusContent: some View {
-        if model.isTranslatingSearch {
-            statusLabel("Translating", systemImage: searchAISymbolName)
-                .accessibilityIdentifier("plain-text-search-translating")
-        } else if let message = model.plainTextSearchErrorMessage {
-            statusLabel(message, systemImage: "exclamationmark.triangle")
-                .accessibilityIdentifier("plain-text-search-error")
-        } else if let query = model.generatedSearchQuery {
-            statusLabel(query, systemImage: "curlybraces")
-                .accessibilityIdentifier("plain-text-generated-query")
-        }
-    }
-
-    private func statusLabel(_ text: String, systemImage: String) -> some View {
-        Label(text, systemImage: systemImage)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(palette.secondaryText.color)
-            .lineLimit(1)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(.regularMaterial, in: Capsule())
-            .overlay {
-                Capsule()
-                    .stroke(palette.hairline.color, lineWidth: 1)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var palette: GrimoraPalette {
-        GrimoraPalette(colorScheme: colorScheme)
-    }
-}
-
-var searchAISymbolName: String {
-    #if os(macOS)
-    if #available(macOS 26.0, *) {
-        return "apple.intelligence"
-    }
-    return "atom"
-    #elseif os(iOS)
-    if #available(iOS 26.0, *) {
-        return "apple.intelligence"
-    }
-    return "sparkles"
-    #elseif os(visionOS)
-    if #available(visionOS 26.0, *) {
-        return "apple.intelligence"
-    }
-    return "sparkles"
-    #else
-    return "sparkles"
-    #endif
 }

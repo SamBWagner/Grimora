@@ -27,7 +27,6 @@ struct MacSearchContentView: View {
             ResultsContentView(
                 gridZoom: gridZoom,
                 showsSearchLoadingOverlay: false,
-                showsPlainTextSearchStatusOverlay: false,
                 searchHeaderTopInset: MacSearchFloatingHeader.expandedContentInset - Self.hiddenToolbarOverlap,
                 searchSelectionClearRequestID: searchSelectionClearRequestID,
                 onSearchScrollTriggerChange: updateSearchHeaderScrollState,

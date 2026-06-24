@@ -16,8 +16,6 @@ public struct GrimoraRootView: View {
     @AppStorage(GrimoraSearchPreferences.defaultSearchSortDirectionKey)
     private var defaultSearchSortDirectionRawValue =
         GrimoraSearchPreferences.defaultSortDirection.rawValue
-    @AppStorage(GrimoraSearchPreferences.searchInputModeKey)
-    private var searchInputModeRawValue = GrimoraSearchPreferences.defaultSearchInputMode.rawValue
     @AppStorage(GrimoraCloudSyncPreferences.modeKey)
     private var cloudSyncModeRawValue = GrimoraCloudSyncMode.undecided.rawValue
     @AppStorage(GrimoraValuePreferences.displayCurrencyKey)
@@ -71,23 +69,10 @@ public struct GrimoraRootView: View {
                 cloudSyncModeRawValue = GrimoraCloudSyncMode.enabled.rawValue
             }
             model.applySearchPreferences(searchPreferenceConfiguration)
-            applySearchInputModePreference(searchInputModePreference)
             model.applyCloudSyncModePreference(cloudSyncModePreference)
         }
         .onChange(of: searchPreferenceConfiguration) { _, newValue in
             model.applySearchPreferences(newValue)
-        }
-        .onChange(of: searchInputModePreference) { _, newValue in
-            applySearchInputModePreference(newValue)
-        }
-        .onChange(of: model.searchInputMode) { _, newValue in
-            let effectiveMode = Self.effectiveSearchInputMode(newValue)
-            if effectiveMode != newValue {
-                model.setSearchInputMode(effectiveMode)
-            }
-            if searchInputModeRawValue != effectiveMode.rawValue {
-                searchInputModeRawValue = effectiveMode.rawValue
-            }
         }
         .onChange(of: cloudSyncModePreference) { _, newValue in
             model.applyCloudSyncModePreference(newValue)
@@ -130,24 +115,8 @@ public struct GrimoraRootView: View {
         )
     }
 
-    private var searchInputModePreference: SearchInputMode {
-        GrimoraSearchPreferences.searchInputMode(from: searchInputModeRawValue)
-    }
-
     private var cloudSyncModePreference: GrimoraCloudSyncMode {
         GrimoraCloudSyncMode(rawValue: cloudSyncModeRawValue) ?? .undecided
-    }
-
-    private func applySearchInputModePreference(_ mode: SearchInputMode) {
-        let effectiveMode = Self.effectiveSearchInputMode(mode)
-        if searchInputModeRawValue != effectiveMode.rawValue {
-            searchInputModeRawValue = effectiveMode.rawValue
-        }
-        model.applySearchInputModePreference(effectiveMode)
-    }
-
-    private static func effectiveSearchInputMode(_ mode: SearchInputMode) -> SearchInputMode {
-        GrimoraSearchPreferences.isPlainTextSearchInterfaceEnabled ? mode : .scryfall
     }
 
     @ViewBuilder
