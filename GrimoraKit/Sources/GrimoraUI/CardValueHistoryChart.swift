@@ -14,7 +14,6 @@ struct CardValueHistoryChart: View {
     var compactPriceText: (Double) -> String
     var dateText: (Date) -> String
     var snapshotText: (CardValueChartPoint) -> String
-    var accessibilitySummary: String
 
     @State private var scrubbedValuePoint: CardValueChartPoint?
     @State private var valueHistoryShareItem: PriceHistoryShareItem?
@@ -105,6 +104,15 @@ struct CardValueHistoryChart: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("card-value-chart-unavailable")
         }
+    }
+
+    // Computed only when read (inside the chart-present branch), from this
+    // view's own points — no work on the no-data path.
+    private var accessibilitySummary: String {
+        guard let first = points.first, let last = points.last else {
+            return "No chart data"
+        }
+        return "From \(dateText(first.date)) at \(priceText(first.price)) to \(dateText(last.date)) at \(priceText(last.price))"
     }
 
     // Drag anywhere over the plot to read the value on that day; release snaps

@@ -1310,8 +1310,7 @@ public struct CardDetailView: View {
                         priceText: formattedPrice,
                         compactPriceText: compactFormattedPrice,
                         dateText: { Self.chartDateAccessibilityFormatter.string(from: $0) },
-                        snapshotText: priceHistorySnapshotText,
-                        accessibilitySummary: chartAccessibilitySummary(points: chartPoints(for: entry))
+                        snapshotText: priceHistorySnapshotText
                     )
                     valueMovementSummary(for: entry)
                     Text(valueSourceText(for: entry, sourceName: sourceName))
@@ -1954,13 +1953,6 @@ public struct CardDetailView: View {
             "\(entry.finish.title) finish",
             valueSourceText(for: entry, sourceName: sourceName),
         ].joined(separator: ", ")
-    }
-
-    private func chartAccessibilitySummary(points: [CardValueChartPoint]) -> String {
-        guard let first = points.first, let last = points.last else {
-            return "No chart data"
-        }
-        return "From \(Self.chartDateAccessibilityFormatter.string(from: first.date)) at \(formattedPrice(first.price)) to \(Self.chartDateAccessibilityFormatter.string(from: last.date)) at \(formattedPrice(last.price))"
     }
 
     private func price(_ value: Double?) -> String {
