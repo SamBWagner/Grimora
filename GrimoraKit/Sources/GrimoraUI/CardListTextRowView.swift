@@ -3,7 +3,7 @@ import GrimoraCore
 import SwiftUI
 
 struct CardListTextRowView: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @State private var selectionFeedbackTrigger = 0
     @State private var isNamingNewCategory = false
 

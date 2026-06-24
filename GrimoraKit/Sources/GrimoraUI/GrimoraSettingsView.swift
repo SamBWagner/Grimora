@@ -2,7 +2,7 @@ import GrimoraCore
 import SwiftUI
 
 public struct GrimoraSettingsView: View {
-  @EnvironmentObject private var model: GrimoraAppModel
+  @Environment(GrimoraAppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
 
   @AppStorage(GrimoraSearchPreferences.defaultSearchTextKey)

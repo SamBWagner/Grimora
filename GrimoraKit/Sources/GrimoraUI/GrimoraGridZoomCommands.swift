@@ -69,7 +69,7 @@ public struct GrimoraSearchCommands: Commands {
 }
 
 public struct GrimoraListCommands: Commands {
-    @FocusedObject private var model: GrimoraAppModel?
+    @FocusedValue(\.appModel) private var model: GrimoraAppModel?
     @FocusedValue(\.listCommandController) private var listCommandController: GrimoraListCommandController?
 
     public init() {}

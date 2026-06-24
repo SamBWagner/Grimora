@@ -3,12 +3,12 @@ import SwiftUI
 
 @main
 struct GrimoraApp: App {
-    @StateObject private var model: GrimoraAppModel
+    @State private var model: GrimoraAppModel
 
     init() {
         do {
             let environment = try GrimoraEnvironment.live()
-            _model = StateObject(
+            _model = State(
                 wrappedValue: GrimoraAppModel.configuredForCurrentPreferences(
                     environment: environment
                 )
@@ -41,7 +41,7 @@ struct GrimoraApp: App {
         #if os(macOS)
         Settings {
             GrimoraSettingsView()
-                .environmentObject(model)
+                .environment(model)
         }
         #endif
     }

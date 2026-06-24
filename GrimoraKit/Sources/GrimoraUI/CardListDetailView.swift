@@ -9,7 +9,7 @@ import AppKit
 struct CardListDetailView: View {
     @Environment(\.accessibilityReduceMotion) var reduceMotion
     @Environment(\.colorScheme) var colorScheme
-    @EnvironmentObject var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) var model
     var gridZoom: GridZoomController
     @State var isShowingExportSheet = false
     @State var importMode: CardListImportMode?

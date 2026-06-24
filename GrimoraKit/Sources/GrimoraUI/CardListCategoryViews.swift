@@ -130,7 +130,7 @@ struct CardListCategorySectionView: View {
 }
 
 struct CardListCategoryReorderView: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @State private var draggedCategoryID: CardListCategoryRecord.ID?
     #if os(iOS) || os(visionOS)
     @State private var isPresentingReorderOverlay = false
@@ -338,7 +338,7 @@ struct CardListCategoryDropDelegate: DropDelegate {
 /// (`CardListCategoryReorderRow` + `CardListCategoryDropDelegate`).
 struct CardListCategoryReorderSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @ObservedObject var model: GrimoraAppModel
+    var model: GrimoraAppModel
     @State private var workingCategories: [CardListCategoryRecord]
     @State private var moveFeedbackTrigger = 0
 
@@ -463,7 +463,7 @@ enum CardListCategoryReorder {
 }
 
 struct CardListCategoryMovementControls: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var category: CardListCategoryRecord
     var categoryIndex: Int

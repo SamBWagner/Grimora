@@ -11,7 +11,7 @@ public enum CardDetailPresentationStyle: Equatable {
 }
 
 public struct CardDetailView: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @Environment(\.colorScheme) private var colorScheme
     #if os(iOS) || os(visionOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass

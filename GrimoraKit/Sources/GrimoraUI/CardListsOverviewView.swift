@@ -3,7 +3,7 @@ import SwiftUI
 
 struct CardListsOverviewView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var onCreateList: () -> Void
     var onSelectList: (CardListRecord.ID) -> Void

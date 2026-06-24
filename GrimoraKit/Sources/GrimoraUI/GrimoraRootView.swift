@@ -5,7 +5,7 @@ import SwiftUI
 public struct GrimoraRootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
-    @StateObject private var model: GrimoraAppModel
+    @State private var model: GrimoraAppModel
     @State private var onboarding = GrimoraOnboardingModel()
     @AppStorage(GrimoraSearchPreferences.defaultSearchTextKey)
     private var defaultSearchText = GrimoraSearchPreferences.defaultSearchText
@@ -24,13 +24,13 @@ public struct GrimoraRootView: View {
     private var displayCurrencyRawValue = CardValueDisplayCurrency.usd.rawValue
 
     public init(environment: GrimoraEnvironment) {
-        _model = StateObject(
+        _model = State(
             wrappedValue: GrimoraAppModel.configuredForCurrentPreferences(environment: environment)
         )
     }
 
     public init(model: GrimoraAppModel) {
-        _model = StateObject(wrappedValue: model)
+        _model = State(wrappedValue: model)
     }
 
     public var body: some View {
@@ -51,7 +51,7 @@ public struct GrimoraRootView: View {
                     .zIndex(1)
             }
         }
-        .environmentObject(model)
+        .environment(model)
         .platformChromeTint(palette: palette)
         .background {
             GrimoraAppBackground(palette: palette)

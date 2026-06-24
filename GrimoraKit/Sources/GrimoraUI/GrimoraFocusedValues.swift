@@ -16,6 +16,11 @@ extension FocusedValues {
         get { self[GrimoraLibraryMaintenanceControllerFocusedValueKey.self] }
         set { self[GrimoraLibraryMaintenanceControllerFocusedValueKey.self] = newValue }
     }
+
+    var appModel: GrimoraAppModel? {
+        get { self[GrimoraAppModelFocusedValueKey.self] }
+        set { self[GrimoraAppModelFocusedValueKey.self] = newValue }
+    }
 }
 
 private struct GridZoomControllerFocusedValueKey: FocusedValueKey {
@@ -24,6 +29,10 @@ private struct GridZoomControllerFocusedValueKey: FocusedValueKey {
 
 private struct GrimoraLibraryMaintenanceControllerFocusedValueKey: FocusedValueKey {
     typealias Value = GrimoraLibraryMaintenanceController
+}
+
+private struct GrimoraAppModelFocusedValueKey: FocusedValueKey {
+    typealias Value = GrimoraAppModel
 }
 
 #if os(macOS)

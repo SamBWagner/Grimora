@@ -1,5 +1,6 @@
 import Foundation
 import GrimoraCore
+import Observation
 
 struct VisibleImageRequestKey: Hashable, Sendable {
   var cardID: CardRecord.ID
@@ -18,18 +19,19 @@ struct VisibleImageRequestState: Equatable, Sendable {
   var attempt: Int
 }
 
+@Observable
 @MainActor
-public final class GrimoraAppModel: ObservableObject {
-  @Published public var searchText: String = "" {
+public final class GrimoraAppModel {
+  public var searchText: String = "" {
     didSet { handleSearchTextChange(oldValue: oldValue) }
   }
-  @Published public internal(set) var submittedSearchText: String = ""
+  public internal(set) var submittedSearchText: String = ""
 
-  @Published public var searchInputMode: SearchInputMode = .scryfall {
+  public var searchInputMode: SearchInputMode = .scryfall {
     didSet { handleSearchInputModeChange(from: oldValue) }
   }
 
-  @Published public var sortMode: SortMode = .name {
+  public var sortMode: SortMode = .name {
     didSet {
       if !isUpdatingCurrentSort {
         reloadSearch()
@@ -37,7 +39,7 @@ public final class GrimoraAppModel: ObservableObject {
     }
   }
 
-  @Published public var sortDirection: SearchSortDirection = .ascending {
+  public var sortDirection: SearchSortDirection = .ascending {
     didSet {
       if !isUpdatingCurrentSort {
         reloadSearch()
@@ -45,17 +47,17 @@ public final class GrimoraAppModel: ObservableObject {
     }
   }
 
-  @Published public var printingDisplayMode: PrintingDisplayMode = .preferred {
+  public var printingDisplayMode: PrintingDisplayMode = .preferred {
     didSet { reloadSearch() }
   }
 
-  @Published public internal(set) var cards: [CardRecord] = []
-  @Published public internal(set) var searchResultTotal = 0
-  @Published public internal(set) var selectedCardPrintings: [CardRecord] = []
-  @Published public internal(set) var selectedCardValueGuide: CardValueGuide?
-  @Published public internal(set) var valueHistoryBackgroundActivity: ValueHistoryBackgroundActivity?
-  @Published public internal(set) var valueExchangeRate: CurrencyExchangeRate?
-  @Published public var selectedCard: CardRecord? {
+  public internal(set) var cards: [CardRecord] = []
+  public internal(set) var searchResultTotal = 0
+  public internal(set) var selectedCardPrintings: [CardRecord] = []
+  public internal(set) var selectedCardValueGuide: CardValueGuide?
+  public internal(set) var valueHistoryBackgroundActivity: ValueHistoryBackgroundActivity?
+  public internal(set) var valueExchangeRate: CurrencyExchangeRate?
+  public var selectedCard: CardRecord? {
     didSet {
       if !isUpdatingSelectedCardSource {
         selectedCardListEntryID = nil
@@ -70,53 +72,53 @@ public final class GrimoraAppModel: ObservableObject {
       selectedCardPrintings = selectedCard.map { [$0] } ?? []
     }
   }
-  @Published public internal(set) var unsupportedSearchMessage: String?
-  @Published public internal(set) var statusMessage: String = ""
-  @Published public internal(set) var libraryActivity: GrimoraLibraryActivity?
+  public internal(set) var unsupportedSearchMessage: String?
+  public internal(set) var statusMessage: String = ""
+  public internal(set) var libraryActivity: GrimoraLibraryActivity?
   /// Bumped whenever something (e.g. the Settings "Replay Tutorial" button) asks
   /// to replay onboarding; `GrimoraRootView` observes it and restarts the tour.
   /// Routed through the model because the macOS Settings scene can only reach
   /// `GrimoraAppModel`, not the root view's private onboarding object.
-  @Published public internal(set) var onboardingReplayRequestID = 0
-  @Published public internal(set) var updateManifest: BulkDataManifest?
-  @Published public internal(set) var isWorking = false
-  @Published public internal(set) var canLoadMoreCards = false
-  @Published public internal(set) var isLoadingMoreCards = false
-  @Published public internal(set) var isSearchingCards = false
-  @Published public internal(set) var isTranslatingSearch = false
-  @Published public internal(set) var isCreatingListFromSearch = false
-  @Published public internal(set) var libraryState: LibraryReadinessState = .missing
-  @Published public internal(set) var defaultSearchConfiguration =
+  public internal(set) var onboardingReplayRequestID = 0
+  public internal(set) var updateManifest: BulkDataManifest?
+  public internal(set) var isWorking = false
+  public internal(set) var canLoadMoreCards = false
+  public internal(set) var isLoadingMoreCards = false
+  public internal(set) var isSearchingCards = false
+  public internal(set) var isTranslatingSearch = false
+  public internal(set) var isCreatingListFromSearch = false
+  public internal(set) var libraryState: LibraryReadinessState = .missing
+  public internal(set) var defaultSearchConfiguration =
     GrimoraDefaultSearchConfiguration()
-  @Published public internal(set) var searchHistory: [String] = []
-  @Published public internal(set) var plainTextSearchHistory: [String] = []
-  @Published public internal(set) var hiddenSearchTerms: [SearchRefinement] = []
-  @Published public internal(set) var generatedSearchQuery: String?
-  @Published public internal(set) var plainTextSearchStatusMessage: String?
-  @Published public internal(set) var plainTextSearchErrorMessage: String?
-  @Published public internal(set) var cardLists: [CardListRecord] = []
-  @Published public internal(set) var cardListOverviewItems: [CardListOverviewItem] = []
-  @Published public internal(set) var sidebarSelection: GrimoraSidebarSelection = .search
-  @Published public internal(set) var selectedListID: CardListRecord.ID?
-  @Published public internal(set) var selectedListCategories: [CardListCategoryRecord] = []
-  @Published public internal(set) var selectedListEntries: [CardListEntryRecord] = []
-  @Published public internal(set) var selectedListSearchText = ""
-  @Published public internal(set) var searchedSelectedListEntries: [CardListEntryRecord]?
-  @Published public internal(set) var selectedListSearchUnsupportedMessage: String?
-  @Published public internal(set) var dashboardSearchText = ""
-  @Published public internal(set) var dashboardListMatchIDs: Set<CardListRecord.ID>?
-  @Published public internal(set) var dashboardListMatches: [CardListRecord.ID: CrossListSearchMatch] = [:]
-  @Published public internal(set) var dashboardSearchUnsupportedMessage: String?
-  @Published public internal(set) var selectedListRulesetWarnings: [CardListRulesetWarning] = []
-  @Published public internal(set) var selectedCardListEntryID: CardListEntryRecord.ID?
-  @Published public internal(set) var canUndoListAction = false
-  @Published public internal(set) var cloudSyncMode: GrimoraCloudSyncMode = .undecided
-  @Published public internal(set) var cloudSyncStatus: CloudSyncStatus = .disabled
-  @Published public internal(set) var cloudSyncRecoverySnapshots: [CloudSyncRecoverySnapshot] = []
-  @Published public internal(set) var cloudSyncPendingChangeCount = 0
-  @Published public internal(set) var cloudSyncLastDownloadAt: Date?
-  @Published public internal(set) var cloudSyncLastUploadAt: Date?
-  @Published public internal(set) var managedCatalogMigrationStatus:
+  public internal(set) var searchHistory: [String] = []
+  public internal(set) var plainTextSearchHistory: [String] = []
+  public internal(set) var hiddenSearchTerms: [SearchRefinement] = []
+  public internal(set) var generatedSearchQuery: String?
+  public internal(set) var plainTextSearchStatusMessage: String?
+  public internal(set) var plainTextSearchErrorMessage: String?
+  public internal(set) var cardLists: [CardListRecord] = []
+  public internal(set) var cardListOverviewItems: [CardListOverviewItem] = []
+  public internal(set) var sidebarSelection: GrimoraSidebarSelection = .search
+  public internal(set) var selectedListID: CardListRecord.ID?
+  public internal(set) var selectedListCategories: [CardListCategoryRecord] = []
+  public internal(set) var selectedListEntries: [CardListEntryRecord] = []
+  public internal(set) var selectedListSearchText = ""
+  public internal(set) var searchedSelectedListEntries: [CardListEntryRecord]?
+  public internal(set) var selectedListSearchUnsupportedMessage: String?
+  public internal(set) var dashboardSearchText = ""
+  public internal(set) var dashboardListMatchIDs: Set<CardListRecord.ID>?
+  public internal(set) var dashboardListMatches: [CardListRecord.ID: CrossListSearchMatch] = [:]
+  public internal(set) var dashboardSearchUnsupportedMessage: String?
+  public internal(set) var selectedListRulesetWarnings: [CardListRulesetWarning] = []
+  public internal(set) var selectedCardListEntryID: CardListEntryRecord.ID?
+  public internal(set) var canUndoListAction = false
+  public internal(set) var cloudSyncMode: GrimoraCloudSyncMode = .undecided
+  public internal(set) var cloudSyncStatus: CloudSyncStatus = .disabled
+  public internal(set) var cloudSyncRecoverySnapshots: [CloudSyncRecoverySnapshot] = []
+  public internal(set) var cloudSyncPendingChangeCount = 0
+  public internal(set) var cloudSyncLastDownloadAt: Date?
+  public internal(set) var cloudSyncLastUploadAt: Date?
+  public internal(set) var managedCatalogMigrationStatus:
     ManagedCatalogMigrationStatus?
 
   public var hasLibrary: Bool {

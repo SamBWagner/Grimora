@@ -7,7 +7,7 @@ import AppKit
 #endif
 
 struct CardListVisibleImageCachingModifier: ViewModifier {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var entryID: CardListEntryRecord.ID
     var card: CardRecord

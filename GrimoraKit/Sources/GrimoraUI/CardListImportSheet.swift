@@ -110,7 +110,7 @@ private enum CardListImportPresentation: Equatable {
 
 private struct CardListImportForm: View {
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var mode: CardListImportMode
     var presentation: CardListImportPresentation

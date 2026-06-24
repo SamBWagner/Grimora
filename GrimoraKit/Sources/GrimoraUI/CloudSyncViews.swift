@@ -3,7 +3,7 @@ import SwiftUI
 
 struct CloudSyncSetupView: View {
   @Environment(\.colorScheme) private var colorScheme
-  @EnvironmentObject private var model: GrimoraAppModel
+  @Environment(GrimoraAppModel.self) private var model
 
   var body: some View {
     ContentUnavailableView {
@@ -75,7 +75,7 @@ struct CloudSyncSetupView: View {
 
 struct CloudSyncResolutionView: View {
   @Environment(\.colorScheme) private var colorScheme
-  @EnvironmentObject private var model: GrimoraAppModel
+  @Environment(GrimoraAppModel.self) private var model
   @State private var sourceSnapshotID: DeviceSyncSnapshot.ID?
   @State private var importedListIDsBySnapshotID: [DeviceSyncSnapshot.ID: Set<CardListRecord.ID>] = [:]
 
@@ -243,7 +243,7 @@ struct CloudSyncResolutionView: View {
 }
 
 struct CloudSyncStatusSection: View {
-  @EnvironmentObject private var model: GrimoraAppModel
+  @Environment(GrimoraAppModel.self) private var model
 
   var body: some View {
     Section("iCloud Sync") {

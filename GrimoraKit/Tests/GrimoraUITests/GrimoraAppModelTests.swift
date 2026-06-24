@@ -1,4 +1,4 @@
-import Combine
+import Observation
 import XCTest
 
 @testable import GrimoraCore
@@ -3821,14 +3821,22 @@ final class GrimoraAppModelTests: XCTestCase {
 
     let noPublish = expectation(description: "Duplicate image patch should not publish changes")
     noPublish.isInverted = true
-    let cancellable = model.objectWillChange.sink { _ in
+    // @Observable notifies per tracked-property mutation. Track every property
+    // patchImageUpdate(_:) can touch; a duplicate patch is fully guarded by
+    // inequality checks, so none of them mutate and onChange must never fire.
+    withObservationTracking {
+      _ = model.cards
+      _ = model.selectedCardPrintings
+      _ = model.selectedListEntries
+      _ = model.cardListOverviewItems
+      _ = model.selectedCard
+    } onChange: {
       noPublish.fulfill()
     }
 
     model.patchImageUpdate(existingCard)
 
     await fulfillment(of: [noPublish], timeout: 0.1)
-    cancellable.cancel()
     XCTAssertEqual(model.cards, [existingCard])
   }
 

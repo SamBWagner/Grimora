@@ -3,7 +3,7 @@ import SwiftUI
 
 struct ControlPanelView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @State private var draggedListID: CardListRecord.ID?
     @State private var navigationFeedbackTrigger = 0
     @State private var createListFeedbackTrigger = 0
@@ -132,7 +132,7 @@ struct ControlPanelView: View {
 }
 
 private struct ManagedCatalogMigrationCallout: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var status: ManagedCatalogMigrationStatus
     var palette: GrimoraPalette
@@ -262,7 +262,7 @@ private struct SidebarDivider: View {
 }
 
 private struct UpdateCalloutView: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     var manifest: BulkDataManifest
     var palette: GrimoraPalette
 

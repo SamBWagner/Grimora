@@ -2,7 +2,7 @@ import GrimoraCore
 import SwiftUI
 
 struct SearchToolbarButtons: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @State private var createFeedbackTrigger = 0
     @State private var clearFeedbackTrigger = 0
     @State private var updateFeedbackTrigger = 0
@@ -62,7 +62,7 @@ struct SearchRefinementToolbar: ToolbarContent {
 }
 
 struct SearchSortMenu: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var body: some View {
         Menu {
@@ -104,7 +104,7 @@ struct SearchSortMenu: View {
 }
 
 struct SearchPrintingsToggle: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @State private var feedbackTrigger = 0
 
     var body: some View {
@@ -126,7 +126,7 @@ struct SearchPrintingsToggle: View {
 }
 
 struct SearchActionsMenu: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     var onCreateListFromSearch: () -> Void
 
     var body: some View {

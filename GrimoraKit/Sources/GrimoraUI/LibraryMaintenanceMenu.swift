@@ -64,7 +64,7 @@ struct LibraryMaintenanceMenu: View {
 }
 
 struct LibraryMaintenanceMenuItems: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @Environment(GrimoraLibraryMaintenanceController.self) private var maintenance
 
     var body: some View {
@@ -125,7 +125,7 @@ struct LibraryMaintenanceMenuItems: View {
 }
 
 struct LibraryMaintenanceConfirmationDialog: ViewModifier {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     var controller: GrimoraLibraryMaintenanceController
 
     func body(content: Content) -> some View {
@@ -180,7 +180,7 @@ extension View {
 }
 
 public struct GrimoraLibraryCommands: Commands {
-    @FocusedObject private var model: GrimoraAppModel?
+    @FocusedValue(\.appModel) private var model: GrimoraAppModel?
     @FocusedValue(\.libraryMaintenanceController) private var maintenance: GrimoraLibraryMaintenanceController?
 
     public init() {}

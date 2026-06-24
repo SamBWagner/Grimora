@@ -5,7 +5,7 @@ import SwiftUI
 /// Extracted so the same items can back both the standalone add button and the
 /// consolidated more menu.
 struct CardListAddMenuContent: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var card: CardRecord
     var selectedCardIDs: [CardRecord.ID] = []

@@ -5,7 +5,7 @@ import SwiftUI
 
 struct MacSearchFloatingHeader: View {
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @State private var showsSearchLoadingIndicator = false
     @State private var searchActivationFeedbackTrigger = 0
     @State private var createListFeedbackTrigger = 0

@@ -43,7 +43,7 @@ extension View {
 }
 
 private struct CardArtworkContextMenuModifier: ViewModifier {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @State private var isRefinementPresented = false
     @State private var refinementPresentationID = 0
     @State private var pendingAlwaysHiddenRefinement: SearchRefinement?
@@ -81,7 +81,7 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
                     onRefineSearch: presentRefinement,
                     onAlwaysHide: { pendingAlwaysHiddenRefinement = $0 }
                 )
-                .environmentObject(model)
+                .environment(model)
             }
             .cardListNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
                 onCreateCategory?(name)
@@ -142,7 +142,7 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
 }
 
 private struct CardArtworkContextMenuContent: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var card: CardRecord
     var selectedCardIDs: [CardRecord.ID]

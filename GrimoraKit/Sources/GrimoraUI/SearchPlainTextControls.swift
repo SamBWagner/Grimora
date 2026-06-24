@@ -61,7 +61,7 @@ struct SearchHistorySuggestions: View {
 /// button. History selection and clearing follow the active search input mode
 /// via `GrimoraAppModel`.
 struct SearchHistoryMenu: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @State private var feedbackTrigger = 0
 
     /// Applies a recent query to the search field and runs it.
@@ -127,7 +127,7 @@ struct SearchHistoryMenuContent: View {
 }
 
 struct SearchInputModeToggle: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var body: some View {
         Button {
@@ -170,7 +170,7 @@ struct SearchInputModeToggle: View {
 
 struct PlainTextSearchStatusView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var body: some View {
         if model.isPlainTextSearchModeActive {

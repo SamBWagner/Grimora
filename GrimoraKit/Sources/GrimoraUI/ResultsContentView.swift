@@ -7,7 +7,7 @@ import AppKit
 struct ResultsContentView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     var gridZoom: GridZoomController
     @State private var magnificationStartScale: Double?
     @State private var showsSearchLoadingIndicator = false

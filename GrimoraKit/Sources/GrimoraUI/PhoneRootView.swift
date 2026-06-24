@@ -9,7 +9,7 @@ import UIKit
 
 struct TouchRootView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @State private var gridZoom = GridZoomController()
     @State private var libraryMaintenance = GrimoraLibraryMaintenanceController()
     @State private var selectedTab = TouchRootTab.search

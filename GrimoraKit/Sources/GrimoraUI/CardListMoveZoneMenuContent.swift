@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The menu items for moving a list entry to a different zone.
 struct CardListMoveZoneMenuContent: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var entry: CardListEntryRecord
     var onMoveToZone: ((CardListZone) -> Void)?

@@ -4,7 +4,7 @@ import SwiftUI
 /// iCloud settings sections: the sync toggle, live status, and (when available)
 /// list recovery from local pre-sync snapshots.
 struct GrimoraSettingsSyncSections: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     @AppStorage(GrimoraCloudSyncPreferences.modeKey)
     private var cloudSyncModeRawValue = GrimoraCloudSyncMode.undecided.rawValue

@@ -13,7 +13,7 @@ enum CardListsBrowserRoute: Hashable {
 }
 
 struct CardListsBrowserView: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     var gridZoom: GridZoomController
 
     var onCreateList: () -> Void
@@ -79,7 +79,7 @@ struct CardListsBrowserView: View {
 }
 
 struct CardListsBrowserSidebarView: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var onCreateList: () -> Void
     var onRenameList: (CardListRecord) -> Void
@@ -145,7 +145,7 @@ struct CardListsBrowserSidebarView: View {
 }
 
 private struct CardListBrowserRowLabel: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var list: CardListRecord
 
@@ -171,7 +171,7 @@ private struct CardListBrowserRowLabel: View {
 }
 
 private struct CardListBrowserRowActions: ViewModifier {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var list: CardListRecord
     var onRenameList: (CardListRecord) -> Void

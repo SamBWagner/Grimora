@@ -2,7 +2,7 @@ import GrimoraCore
 import SwiftUI
 
 struct CardRefinementButton: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var groups: [SearchRefinementGroup]
 

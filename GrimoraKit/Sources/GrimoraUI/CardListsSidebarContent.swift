@@ -7,7 +7,7 @@ import AppKit
 #endif
 
 struct CardListsSidebarContent: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var lists: [CardListRecord]
     var isPinnedSection: Bool
@@ -65,7 +65,7 @@ struct CardListsSidebarContent: View {
 }
 
 struct CardListSidebarRow: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var list: CardListRecord
     var listIndex: Int

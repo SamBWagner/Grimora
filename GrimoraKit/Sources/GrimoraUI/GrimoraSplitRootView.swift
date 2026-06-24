@@ -23,7 +23,7 @@ struct MacRootView: View {
 }
 
 private struct SplitRootView: View {
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @State private var gridZoom = GridZoomController()
     @State private var searchFocus = GrimoraSearchFocusController.shared
     @State private var listCommands = GrimoraListCommandController()
@@ -43,7 +43,7 @@ private struct SplitRootView: View {
         navigationContent
         .focusedSceneValue(\.gridZoomController, gridZoom)
         .focusedSceneValue(\.listCommandController, listCommands)
-        .focusedSceneObject(model)
+        .focusedSceneValue(\.appModel, model)
         .focusedSceneValue(\.libraryMaintenanceController, libraryMaintenance)
         .environment(libraryMaintenance)
         .libraryMaintenanceConfirmationDialog(controller: libraryMaintenance)

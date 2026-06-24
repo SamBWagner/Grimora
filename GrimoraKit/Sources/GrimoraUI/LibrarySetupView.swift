@@ -3,7 +3,7 @@ import SwiftUI
 
 struct LibrarySetupView: View {
     @Environment(\.colorScheme) private var colorScheme
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
 
     var body: some View {
         ContentUnavailableView {

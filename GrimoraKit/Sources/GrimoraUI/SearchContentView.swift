@@ -11,7 +11,7 @@ struct SearchContentView: View {
     var onCreateListForCards: ([CardRecord.ID]) -> Void = { _ in }
     var onCreateListFromSearch: () -> Void
 
-    @EnvironmentObject private var model: GrimoraAppModel
+    @Environment(GrimoraAppModel.self) private var model
     @AppStorage(GrimoraSearchPreferences.advancedSearchEnabledKey)
     private var advancedSearchEnabled = GrimoraSearchPreferences.defaultAdvancedSearchEnabled
     @State private var advancedSearchBuilder = AdvancedSearchBuilder()
