@@ -25,12 +25,16 @@ final class VisionNavigationUITests: XCTestCase {
 
         XCTAssertTrue(firstElement(app, identifier: "touch-root-tab-view").waitForExistence(timeout: 8))
         XCTAssertFalse(firstElement(app, identifier: "search-sidebar-button").exists)
-        XCTAssertFalse(firstElement(app, identifier: "library-maintenance-menu").exists)
+        // Library maintenance lives only inside the ⋯ menu, never as a top-level control.
+        XCTAssertFalse(firstElement(app, identifier: "check-updates-button").exists)
 
         attachScreenshot(app, named: "Vision Search Grid")
 
         activate(firstElement(app, identifier: "search-options-menu"))
-        XCTAssertTrue(firstElement(app, identifier: "library-maintenance-menu").waitForExistence(timeout: 3))
+        let moreMenu = firstElement(app, identifier: "search-more-menu")
+        XCTAssertTrue(moreMenu.waitForExistence(timeout: 3))
+        activate(moreMenu)
+        XCTAssertTrue(firstElement(app, identifier: "check-updates-button").waitForExistence(timeout: 3))
         attachScreenshot(app, named: "Vision Search Options")
     }
 

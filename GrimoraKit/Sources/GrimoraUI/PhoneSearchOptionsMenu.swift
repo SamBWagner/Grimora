@@ -13,33 +13,19 @@ struct SearchOptionsMenu: View {
     var body: some View {
         Menu {
             viewOptionsMenu
-            libraryMenu
 
             Button {
                 feedbackTrigger += 1
                 onCreateListFromSearch()
             } label: {
-                Text("Create List")
+                Label("Create List", systemImage: "plus")
             }
             .accessibilityIdentifier("create-list-from-search-button")
             .disabled(!model.canCreateListFromCurrentSearch)
 
-            Button {
-                feedbackTrigger += 1
-                model.clearSearch()
-            } label: {
-                Text("Clear Search")
-            }
-            .accessibilityIdentifier("clear-search-button")
-            .disabled(!model.canClearSearch)
+            Divider()
 
-            Button {
-                feedbackTrigger += 1
-                onOpenSearchSettings()
-            } label: {
-                Text("Search Settings")
-            }
-            .accessibilityIdentifier("search-settings-button")
+            moreMenu
         } label: {
             searchOptionsMenuLabel
         }
@@ -47,6 +33,30 @@ struct SearchOptionsMenu: View {
         .accessibilityIdentifier("search-options-menu")
         .help("Search Options")
         .grimoraSelectionFeedback(trigger: feedbackTrigger)
+    }
+
+    /// Low-touch entries (library maintenance, app settings) tucked behind a
+    /// "More" flyout so the frequently used actions above stay one tap away.
+    /// Library items are inlined (not nested in another submenu) and rely on the
+    /// section headings `LibraryMaintenanceMenuItems` already provides; Settings
+    /// gets its own section so the flat list stays scannable.
+    private var moreMenu: some View {
+        Menu {
+            LibraryMaintenanceMenuItems()
+
+            Section("App") {
+                Button {
+                    feedbackTrigger += 1
+                    onOpenSearchSettings()
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .accessibilityIdentifier("search-settings-button")
+            }
+        } label: {
+            Text("More")
+        }
+        .accessibilityIdentifier("search-more-menu")
     }
 
     @ViewBuilder
@@ -79,15 +89,6 @@ struct SearchOptionsMenu: View {
             Text("View Options")
         }
         .accessibilityIdentifier("search-view-options-menu")
-    }
-
-    private var libraryMenu: some View {
-        Menu {
-            LibraryMaintenanceMenuItems()
-        } label: {
-            Text("Library")
-        }
-        .accessibilityIdentifier("library-maintenance-menu")
     }
 
     private var sortButtons: some View {

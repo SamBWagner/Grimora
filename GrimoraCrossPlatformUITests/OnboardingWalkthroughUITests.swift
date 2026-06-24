@@ -115,8 +115,11 @@ final class OnboardingWalkthroughUITests: XCTestCase {
     XCTAssertTrue(element(app, "search-options-menu").waitForExistence(timeout: 10))
     XCTAssertFalse(element(app, "onboarding-skip-button").exists)
 
-    // Open the search options menu → Settings.
+    // Open the search options menu → More → Settings.
     activate(element(app, "search-options-menu"))
+    let moreMenu = element(app, "search-more-menu")
+    XCTAssertTrue(moreMenu.waitForExistence(timeout: 5))
+    activate(moreMenu)
     let settingsButton = element(app, "search-settings-button")
     XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
     activate(settingsButton)

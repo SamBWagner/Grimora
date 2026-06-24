@@ -108,7 +108,7 @@ struct LibraryMaintenanceMenuItems: View {
             Button(role: .destructive) {
                 maintenance.confirm(.deleteImages)
             } label: {
-                Text("Delete Cached Images")
+                Label("Delete Cached Images", systemImage: "trash")
             }
             .accessibilityIdentifier("delete-cached-images-button")
             .disabled(model.isWorking)
@@ -116,7 +116,7 @@ struct LibraryMaintenanceMenuItems: View {
             Button(role: .destructive) {
                 maintenance.confirm(.deleteAndRefreshDatabase)
             } label: {
-                Text("Delete and Refresh Database")
+                Label("Delete and Refresh Database", systemImage: "trash")
             }
             .accessibilityIdentifier("delete-and-refresh-database-button")
             .disabled(model.isWorking)
