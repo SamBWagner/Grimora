@@ -6,7 +6,7 @@ public struct GrimoraRootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var model: GrimoraAppModel
-    @StateObject private var onboarding = GrimoraOnboardingModel()
+    @State private var onboarding = GrimoraOnboardingModel()
     @AppStorage(GrimoraSearchPreferences.defaultSearchTextKey)
     private var defaultSearchText = GrimoraSearchPreferences.defaultSearchText
     @AppStorage(GrimoraSearchPreferences.alwaysIncludedSearchTextKey)

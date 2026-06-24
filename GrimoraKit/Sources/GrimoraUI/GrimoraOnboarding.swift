@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// Where the user is in the first-run onboarding walkthrough.
 ///
@@ -213,9 +214,10 @@ public enum GrimoraOnboardingSampleSet {
 /// library transitions to ready (post-download); completing or skipping it marks
 /// it done so it never reappears. `restart()` exists for the "Replay tutorial"
 /// affordance added in S8d.
+@Observable
 @MainActor
-public final class GrimoraOnboardingModel: ObservableObject {
-  @Published public private(set) var state: GrimoraOnboardingState
+public final class GrimoraOnboardingModel {
+  public private(set) var state: GrimoraOnboardingState
 
   public let sampleCards: [GrimoraOnboardingSampleCard]
 

@@ -8,7 +8,7 @@ import SwiftUI
 /// finishing both mark onboarding complete via ``GrimoraOnboardingModel``.
 struct OnboardingTutorialView: View {
   @Environment(\.colorScheme) private var colorScheme
-  @ObservedObject var onboarding: GrimoraOnboardingModel
+  var onboarding: GrimoraOnboardingModel
 
   @State private var step: GrimoraOnboardingWalkthroughStep = .welcome
 
