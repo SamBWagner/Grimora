@@ -2,9 +2,10 @@ import SwiftUI
 
 // FocusedValues keys backing the macOS/iPad menu + command layer.
 //
-// These replace the `ObservableObject`-only focus API (`@FocusedObject` /
-// `.focusedSceneObject`) after the migration to `@Observable`, which requires
-// `@FocusedValue` / `.focusedSceneValue(\.key, value)` instead.
+// The controllers expose their focus state through `@FocusedValue` /
+// `.focusedSceneValue(\.key, value)`. The earlier focused-object scene API only
+// accepted reference types conforming to the legacy observation protocol, so it
+// could not carry these @Observable controllers.
 
 extension FocusedValues {
     var gridZoomController: GridZoomController? {
