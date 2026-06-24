@@ -70,6 +70,24 @@ final class OnboardingWalkthroughMacUITests: XCTestCase {
     XCTAssertFalse(element(app, "onboarding-skip-button").exists)
   }
 
+  func testReplayFromHelpMenuReopensTour() throws {
+    let app = try launchApp(onboardingState: "completed")
+    // No tour at launch (already completed).
+    XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10))
+    XCTAssertFalse(element(app, "onboarding-skip-button").exists)
+
+    // Help → Replay Tutorial brings the walkthrough back — the recovery path for
+    // a first-time user who skipped the tour by accident.
+    let helpMenu = app.menuBars.menuBarItems["Help"]
+    XCTAssertTrue(helpMenu.waitForExistence(timeout: 5))
+    helpMenu.click()
+    let replay = app.menuItems["Replay Tutorial"]
+    XCTAssertTrue(replay.waitForExistence(timeout: 5))
+    replay.click()
+
+    XCTAssertTrue(element(app, "onboarding-skip-button").waitForExistence(timeout: 5))
+  }
+
   // MARK: Launch + seeding
 
   private func launchApp(onboardingState: String?) throws -> XCUIApplication {
