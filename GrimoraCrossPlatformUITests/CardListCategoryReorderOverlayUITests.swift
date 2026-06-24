@@ -1,4 +1,4 @@
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 import Foundation
 import GrimoraCore
 import UIKit
@@ -6,6 +6,8 @@ import XCTest
 
 /// Verifies the touch category reorder overlay (L5): a category's drag handle opens a focused
 /// sheet listing every category, and dragging a row there reorders and persists the categories.
+/// The overlay ships on every touch platform (`#if os(iOS) || os(visionOS)` in
+/// `CardListCategoryViews`), so this coverage runs on both iOS and visionOS.
 final class CardListCategoryReorderOverlayUITests: XCTestCase {
     private var temporaryDirectory: URL!
 
@@ -46,14 +48,31 @@ final class CardListCategoryReorderOverlayUITests: XCTestCase {
         XCTAssertTrue(overlayLands.waitForExistence(timeout: 2))
         XCTAssertTrue(doneButton.waitForExistence(timeout: 2))
 
-        // Drag the last category (Lands) up onto the first (Ramp) to reorder.
-        overlayLands.press(forDuration: 0.7, thenDragTo: overlayRamp)
+        #if os(iOS)
+        // Drag Lands above Ramp to reorder. The sheet is a `List` in active edit mode, where a row
+        // reorders via a long-press that "lifts" the row, then a drag. The original gesture used a
+        // short press and a fast, hold-free drag, so the row frequently dropped before the move
+        // registered — that was the flake. Hold long enough to lift the row, drag slowly onto Ramp,
+        // and hold again before releasing so the drop settles.
+        overlayLands.press(
+            forDuration: 1.0,
+            thenDragTo: overlayRamp,
+            withVelocity: 150,
+            thenHoldForDuration: 1.0
+        )
+        #endif
 
         activate(doneButton)
         XCTAssertTrue(waitForNonExistence(of: doneButton, timeout: 3), "Done should dismiss the overlay")
 
+        #if os(iOS)
         // Dismissing the overlay returns to reorder mode; its inline rows reflect the new order,
         // with Lands now dragged above Ramp.
+        //
+        // The ordering assertion is iOS-only: the visionOS 26.5 simulator does not deliver the
+        // press-and-drag reorder gesture to the sheet's draggable rows, so it cannot move a row.
+        // visionOS still exercises the valuable half of this flow above — entering reorder mode,
+        // the 44pt drag handle, and the overlay presenting every category and dismissing via Done.
         let landsRow = firstElement(app, identifier: "compact-list-category-row-Lands")
         let rampRow = firstElement(app, identifier: "compact-list-category-row-Ramp")
         XCTAssertTrue(landsRow.waitForExistence(timeout: 3))
@@ -63,6 +82,12 @@ final class CardListCategoryReorderOverlayUITests: XCTestCase {
             rampRow.frame.minY,
             "Dragging Lands above Ramp in the overlay should reorder the categories"
         )
+        #else
+        // visionOS: confirm the overlay fully dismissed and reorder mode is still active.
+        XCTAssertTrue(
+            firstElement(app, identifier: "compact-list-category-row-Ramp").waitForExistence(timeout: 3)
+        )
+        #endif
     }
 
     @MainActor
@@ -178,33 +203,6 @@ final class CardListCategoryReorderOverlayUITests: XCTestCase {
             )
         }
         return databaseURL
-    }
-
-    @MainActor
-    private func firstElement(_ root: XCUIElement, identifier: String) -> XCUIElement {
-        root.descendants(matching: .any).matching(identifier: identifier).firstMatch
-    }
-
-    @MainActor
-    private func button(_ app: XCUIApplication, labeled label: String) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
-    }
-
-    @MainActor
-    private func activate(_ element: XCUIElement) {
-        element.tap()
-    }
-
-    @MainActor
-    private func waitForNonExistence(of element: XCUIElement, timeout: TimeInterval) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if !element.exists {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-        return !element.exists
     }
 }
 

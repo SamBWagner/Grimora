@@ -463,18 +463,6 @@ final class VisionNavigationUITests: XCTestCase {
     }
 
     @MainActor
-    private func firstElement(_ root: XCUIElement, identifier: String) -> XCUIElement {
-        root.descendants(matching: .any).matching(identifier: identifier).firstMatch
-    }
-
-    @MainActor
-    private func firstElementWithPrefix(_ root: XCUIElement, identifierPrefix: String) -> XCUIElement {
-        root.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", identifierPrefix))
-            .firstMatch
-    }
-
-    @MainActor
     private func waitForHittable(_ element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -484,16 +472,6 @@ final class VisionNavigationUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         return element.exists && element.isHittable
-    }
-
-    @MainActor
-    private func button(_ app: XCUIApplication, labeled label: String) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
-    }
-
-    @MainActor
-    private func activate(_ element: XCUIElement) {
-        element.tap()
     }
 
     @MainActor
@@ -630,50 +608,6 @@ final class VisionNavigationUITests: XCTestCase {
                 nil
             }
         }
-    }
-
-    @MainActor
-    private func waitForValue(
-        of element: XCUIElement,
-        toEqual expectedValue: String,
-        timeout: TimeInterval = 3
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if element.value as? String == expectedValue {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-        return element.value as? String == expectedValue
-    }
-
-    @MainActor
-    private func waitForText(
-        of element: XCUIElement,
-        toEqual expectedText: String,
-        timeout: TimeInterval = 3
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if element.label == expectedText || element.value as? String == expectedText {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-        return element.label == expectedText || element.value as? String == expectedText
-    }
-
-    @MainActor
-    private func waitForNonExistence(of element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if !element.exists {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-        return !element.exists
     }
 
     @MainActor

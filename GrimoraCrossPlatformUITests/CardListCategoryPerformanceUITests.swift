@@ -1,4 +1,4 @@
-#if os(iOS)
+#if os(iOS) || os(visionOS)
 import Foundation
 import GrimoraCore
 import UIKit
@@ -86,6 +86,13 @@ final class CardListCategoryPerformanceUITests: XCTestCase {
 
     }
 
+    // iOS-only: this pins a compact (iPhone) push-navigation regression — open a list, tap the
+    // navigation back button, and re-tap the just-visited overview tile. At visionOS's default
+    // window width the lists use the adaptive split view instead of push navigation, so there is
+    // no back button (`navigationBars.buttons.firstMatch` resolves to a system dictation control)
+    // and the tile never leaves the screen. The equivalent visionOS coverage forces compact mode
+    // in `VisionNavigationUITests.testVisionCompactDashboardTileStaysTappableAfterLeavingAList`.
+    #if os(iOS)
     @MainActor
     func testDashboardTileStaysTappableAfterLeavingAList() throws {
         let app = try launchSeededApp()
@@ -115,6 +122,7 @@ final class CardListCategoryPerformanceUITests: XCTestCase {
             toEqual: "120 cards"
         ))
     }
+    #endif
 
     @MainActor
     private func launchSeededApp() throws -> XCUIApplication {
@@ -230,78 +238,6 @@ final class CardListCategoryPerformanceUITests: XCTestCase {
         let fallback = app.buttons[fallbackLabel]
         XCTAssertTrue(fallback.waitForExistence(timeout: 2), file: file, line: line)
         activate(fallback)
-    }
-
-    @MainActor
-    private func firstElement(_ root: XCUIElement, identifier: String) -> XCUIElement {
-        root.descendants(matching: .any).matching(identifier: identifier).firstMatch
-    }
-
-    @MainActor
-    private func firstElementWithPrefix(
-        _ root: XCUIElement,
-        identifierPrefix: String
-    ) -> XCUIElement {
-        root.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", identifierPrefix))
-            .firstMatch
-    }
-
-    @MainActor
-    private func button(_ app: XCUIApplication, labeled label: String) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
-    }
-
-    @MainActor
-    private func activate(_ element: XCUIElement) {
-        element.tap()
-    }
-
-    @MainActor
-    private func waitForValue(
-        of element: XCUIElement,
-        toEqual expectedValue: String,
-        timeout: TimeInterval = 3
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if element.value as? String == expectedValue {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-        return element.value as? String == expectedValue
-    }
-
-    @MainActor
-    private func waitForText(
-        of element: XCUIElement,
-        toEqual expectedText: String,
-        timeout: TimeInterval = 3
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if element.label == expectedText || element.value as? String == expectedText {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-        return element.label == expectedText || element.value as? String == expectedText
-    }
-
-    @MainActor
-    private func waitForNonExistence(
-        of element: XCUIElement,
-        timeout: TimeInterval
-    ) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if !element.exists {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-        return !element.exists
     }
 }
 

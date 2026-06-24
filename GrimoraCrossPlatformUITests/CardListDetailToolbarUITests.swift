@@ -4,12 +4,19 @@ import GrimoraCore
 import UIKit
 import XCTest
 
-/// L3 — the iOS list-detail trailing cluster used to pack the view-mode picker
+/// L3 — the touch list-detail trailing cluster used to pack the view-mode picker
 /// and the actions menu into one `ToolbarItemGroup`. Opening the menu hid the
 /// sibling picker but left the group container behind ("empty box"). The fix
 /// gives each control its own `ToolbarItem`; this test pins that behaviour: the
 /// picker and the menu coexist, and the picker stays present while the menu is
 /// open.
+///
+/// iOS-only: although visionOS renders this cluster via the same `touchListToolbar`
+/// (`CardListDetailView`), on the visionOS 26.5 simulator opening the actions menu
+/// drops the sibling view-mode picker out of the accessibility tree, so the
+/// coexistence assertion cannot hold there. Whether that is a genuine visionOS
+/// toolbar-ornament regression or only a simulator AX-reporting quirk needs a
+/// separate look before this can be promoted — see the audit notes.
 final class CardListDetailToolbarUITests: XCTestCase {
     private var temporaryDirectory: URL!
 
@@ -153,21 +160,6 @@ final class CardListDetailToolbarUITests: XCTestCase {
             )
         }
         return databaseURL
-    }
-
-    @MainActor
-    private func firstElement(_ root: XCUIElement, identifier: String) -> XCUIElement {
-        root.descendants(matching: .any).matching(identifier: identifier).firstMatch
-    }
-
-    @MainActor
-    private func button(_ app: XCUIApplication, labeled label: String) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
-    }
-
-    @MainActor
-    private func activate(_ element: XCUIElement) {
-        element.tap()
     }
 }
 

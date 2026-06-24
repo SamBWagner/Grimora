@@ -595,11 +595,6 @@ final class ArtworkPresentationUITests: XCTestCase {
     }
 
     @MainActor
-    private func firstElement(_ root: XCUIElement, identifier: String) -> XCUIElement {
-        root.descendants(matching: .any).matching(identifier: identifier).firstMatch
-    }
-
-    @MainActor
     private func firstButton(_ app: XCUIApplication, labeled label: String) -> XCUIElement {
         app.buttons
             .matching(NSPredicate(format: "label == %@", label))
@@ -644,15 +639,6 @@ final class ArtworkPresentationUITests: XCTestCase {
             return nil
         }
         return element
-    }
-
-    @MainActor
-    private func activate(_ element: XCUIElement) {
-        #if os(macOS)
-        element.click()
-        #else
-        element.tap()
-        #endif
     }
 
     @MainActor
@@ -864,18 +850,6 @@ final class ArtworkPresentationUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         }
         return element.value as? String == expectedValue || element.label == expectedValue
-    }
-
-    @MainActor
-    private func waitForNonExistence(of element: XCUIElement, timeout: TimeInterval = 3) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if !element.exists {
-                return true
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        }
-        return !element.exists
     }
 }
 
