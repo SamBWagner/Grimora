@@ -233,8 +233,13 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertFalse(firstElement(app, identifier: "search-filter-menu").exists)
 
         openSearchResultCard(app: app, cardID: "alpha")
-        XCTAssertTrue(app.scrollViews["card-detail"].waitForExistence(timeout: 3) || app.staticTexts["Fixture Artist"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Fixture Artist"].exists)
+        // The artist is rendered as a tappable button (search-all-of-artist's-art),
+        // so its name is exposed via the button's accessibility label rather than a
+        // standalone static text.
+        let artistButton = app.buttons["card-detail-artist-button"]
+        XCTAssertTrue(app.scrollViews["card-detail"].waitForExistence(timeout: 3) || artistButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(artistButton.waitForExistence(timeout: 3))
+        XCTAssertEqual(artistButton.label, "Fixture Artist")
     }
 
     func testCardDetailInspectorClosesFromCloseButtonAndPersistsThroughOutsideClick() throws {
@@ -595,6 +600,10 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertFalse(firstElement(app, identifier: "search-filter-menu").exists)
 
         app.typeKey(",", modifierFlags: .command)
+        // macOS persists the last-selected Settings tab across launches, so the
+        // window may reopen on a different pane. Select the Search tab explicitly
+        // before asserting its fields are present.
+        selectSettingsTab(app: app, named: "Search")
         XCTAssertTrue(app.textFields["default-search-text-field"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.descendants(matching: .any)["default-search-sort-picker"].exists)
         XCTAssertTrue(app.descendants(matching: .any)["default-search-direction-picker"].exists)
@@ -657,7 +666,7 @@ final class GrimoraMacUITests: XCTestCase {
         }
         let currencyPicker = app.descendants(matching: .any)["value-currency-picker"]
         XCTAssertTrue(currencyPicker.waitForExistence(timeout: 3))
-        XCTAssertTrue(selectPickerOption(app: app, picker: currencyPicker, option: "AUD"))
+        XCTAssertTrue(selectPickerOption(app: app, picker: currencyPicker, option: "Australian Dollar (AUD)"))
         app.typeKey("w", modifierFlags: .command)
 
         openSearchResultCard(app: app, cardID: "value")
@@ -883,7 +892,9 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(preview.waitForExistence(timeout: 3))
         XCTAssertTrue(previewMetadata.waitForExistence(timeout: 3))
         XCTAssertTrue(printingsGrid.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["New Set (NEW #1)"].waitForExistence(timeout: 3))
+        // The metadata "Set" row combines its label and value into a single
+        // accessibility element, e.g. "Set, New Set (NEW #1)".
+        XCTAssertTrue(app.descendants(matching: .any)["Set, New Set (NEW #1)"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["card-printing-oldest-button"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["card-printing-oldest-button"].label.contains("Oldest Set"))
 
@@ -1513,7 +1524,9 @@ final class GrimoraMacUITests: XCTestCase {
 
         let card = app.buttons["open-card-battle"]
         XCTAssertTrue(card.waitForExistence(timeout: 5))
-        card.click()
+        // A single click only selects the card in the results grid; opening the
+        // detail inspector requires a double-click.
+        doubleClickSearchResultCard(card)
 
         let detail = app.scrollViews["card-detail"]
         XCTAssertTrue(detail.waitForExistence(timeout: 3))
@@ -1521,11 +1534,11 @@ final class GrimoraMacUITests: XCTestCase {
             .matching(identifier: "card-detail-artwork-layout")
             .firstMatch
         let detailText = detail.descendants(matching: .any)
-            .matching(identifier: "card-detail-text")
+            .matching(identifier: "card-detail-oracle-text")
             .firstMatch
         XCTAssertTrue(artworkLayout.waitForExistence(timeout: 3))
         XCTAssertTrue(detailText.waitForExistence(timeout: 3))
-        XCTAssertFalse(artworkLayout.frame.intersects(detailText.frame))
+        XCTAssertTrue(waitForNonOverlap(artworkLayout, detailText))
 
         let cycleButton = detail.descendants(matching: .button)
             .matching(identifier: "card-artwork-cycle-battle")
@@ -1535,7 +1548,9 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertLessThan(artworkLayout.frame.height, artworkLayout.frame.width)
         cycleButton.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
         XCTAssertTrue(waitForValue(of: cycleButton, toEqual: "Showing face-1-rotation-0"))
-        XCTAssertFalse(artworkLayout.frame.intersects(detailText.frame))
+        // The face flip animates; wait for the layout to settle before asserting
+        // the (now portrait) artwork still does not overlap the detail text.
+        XCTAssertTrue(waitForNonOverlap(artworkLayout, detailText))
     }
 
     func testEmptyLibraryStartsWithoutNetwork() throws {
@@ -2661,6 +2676,18 @@ final class GrimoraMacUITests: XCTestCase {
             .joined(separator: " ")
     }
 
+    /// Selects a tab in the macOS Settings window by its toolbar label. Scoped to
+    /// the Settings window so it never matches a same-named control in the main
+    /// window (e.g. the sidebar "Search" button). No-op if the tab isn't found.
+    private func selectSettingsTab(app: XCUIApplication, named name: String) {
+        let settingsWindow = app.windows["com_apple_SwiftUI_Settings_window"]
+        guard settingsWindow.waitForExistence(timeout: 3) else { return }
+        let tab = settingsWindow.buttons[name]
+        if tab.waitForExistence(timeout: 2) {
+            tab.click()
+        }
+    }
+
     private func selectPickerOption(
         app: XCUIApplication,
         picker: XCUIElement,
@@ -2687,6 +2714,23 @@ final class GrimoraMacUITests: XCTestCase {
         }
 
         return false
+    }
+
+    /// Polls until two elements' frames no longer intersect, tolerating the
+    /// in-flight bounding boxes reported while an artwork face-flip animates.
+    private func waitForNonOverlap(
+        _ first: XCUIElement,
+        _ second: XCUIElement,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if first.exists, second.exists, !first.frame.intersects(second.frame) {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        }
+        return first.exists && second.exists && !first.frame.intersects(second.frame)
     }
 
     private func waitForEnabled(of element: XCUIElement, timeout: TimeInterval = 3) -> Bool {

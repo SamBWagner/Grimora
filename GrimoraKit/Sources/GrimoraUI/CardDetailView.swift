@@ -222,6 +222,7 @@ public struct CardDetailView: View {
             )
                 .frame(maxWidth: Self.inspectorArtworkMaximumWidth)
                 .frame(maxWidth: .infinity, alignment: .center)
+                .accessibilityIdentifier("card-detail-artwork-layout")
 
             detailText
         }
