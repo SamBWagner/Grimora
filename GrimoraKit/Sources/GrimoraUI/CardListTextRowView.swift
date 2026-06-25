@@ -123,6 +123,12 @@ struct CardListTextRowView: View {
         .disabled(card == nil)
         .accessibilityIdentifier("open-list-entry-\(entry.id)")
 
+        if let card {
+            CardBuyMenu(card: card)
+        }
+
+        Divider()
+
         Button {
             onEditQuantity()
         } label: {

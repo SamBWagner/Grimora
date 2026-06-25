@@ -162,6 +162,10 @@ private struct CardArtworkContextMenuContent: View {
 
         shareMenu
 
+        CardBuyMenu(card: card)
+
+        Divider()
+
         Button {
             model.addCardsToFavourites(targetCardIDs, primaryCard: card)
         } label: {

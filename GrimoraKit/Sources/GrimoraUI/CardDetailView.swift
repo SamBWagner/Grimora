@@ -28,6 +28,7 @@ public struct CardDetailView: View {
     @State private var raisedPrintingArtworkID: CardRecord.ID?
     @State private var detailFeedbackTrigger = 0
     @State private var shareFeedbackTrigger = 0
+    @State private var buyFeedbackTrigger = 0
     @State private var isValueDetailsExpanded = false
     @State private var artistPendingArtSearch: String?
     @AppStorage(GrimoraValuePreferences.displayCurrencyKey)
@@ -133,6 +134,7 @@ public struct CardDetailView: View {
                 if usesToolbarActions {
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         addToListMenu
+                        buyMenu
                         shareMenu
                         closeButton
                     }
@@ -372,6 +374,7 @@ public struct CardDetailView: View {
             floatingInspectorActions {
                 HStack(spacing: 10) {
                     addToListMenu
+                    buyMenu
                     shareMenu
                     closeButton
                 }
@@ -400,6 +403,7 @@ public struct CardDetailView: View {
     private func headerActions(includesClose: Bool) -> some View {
         HStack(spacing: 8) {
             addToListMenu
+            buyMenu
             shareMenu
             if includesClose {
                 closeButton
@@ -493,6 +497,67 @@ public struct CardDetailView: View {
             }
         )
         .grimoraSelectionFeedback(trigger: shareFeedbackTrigger)
+        #endif
+    }
+
+    private var buyMenu: some View {
+        #if os(iOS) || os(visionOS)
+        Group {
+            if usesInspectorPresentation {
+                Menu {
+                    CardBuyMenuItems(card: card)
+                } label: {
+                    GrimoraFloatingActionIcon(
+                        title: "Buy",
+                        systemName: "cart",
+                        palette: palette,
+                        foregroundColor: palette.accent.color,
+                        feedbackTrigger: buyFeedbackTrigger
+                    )
+                }
+                .buttonStyle(GrimoraIconButtonStyle())
+            } else {
+                Menu {
+                    CardBuyMenuItems(card: card)
+                } label: {
+                    Label("Buy", systemImage: "cart")
+                        .labelStyle(.iconOnly)
+                        .imageScale(.large)
+                        .accessibilityLabel("Buy")
+                        .accessibilityIdentifier("card-buy-button")
+                }
+            }
+        }
+        .controlSize(.small)
+        .help("Buy")
+        .accessibilityLabel("Buy")
+        .accessibilityIdentifier("card-buy-button")
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                buyFeedbackTrigger += 1
+            }
+        )
+        .grimoraSelectionFeedback(trigger: buyFeedbackTrigger)
+        #else
+        Menu {
+            CardBuyMenuItems(card: card)
+        } label: {
+            CardGridControlIcon(
+                systemName: "cart",
+                feedbackTrigger: buyFeedbackTrigger
+            )
+        }
+        .buttonStyle(GrimoraIconButtonStyle())
+        .controlSize(.small)
+        .help("Buy")
+        .accessibilityLabel("Buy")
+        .accessibilityIdentifier("card-buy-button")
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                buyFeedbackTrigger += 1
+            }
+        )
+        .grimoraSelectionFeedback(trigger: buyFeedbackTrigger)
         #endif
     }
 
