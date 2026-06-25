@@ -1087,6 +1087,43 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.statusMessage, "Added 1 card to Favourites.")
   }
 
+  func testToggleFavouriteAddsThenRemovesCardForStarButton() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
+
+    // The star starts hollow: the card is not a favourite and nothing is tracked.
+    XCTAssertFalse(model.isFavourite(forest))
+    XCTAssertFalse(model.favouriteCardIDs.contains(forest.id))
+
+    // First tap of the star adds the card to Favourites.
+    model.toggleFavourite(forest)
+
+    let favourites = try XCTUnwrap(model.favouritesList)
+    XCTAssertTrue(model.isFavourite(forest))
+    XCTAssertTrue(model.favouriteCardIDs.contains(forest.id))
+    XCTAssertEqual(
+      try database.cardListEntries(forListID: favourites.id).map(\.cardID),
+      ["forest"]
+    )
+    XCTAssertEqual(model.statusMessage, "Added \(forest.name) to Favourites.")
+
+    // Second tap removes it again, leaving the Favourites list empty.
+    model.toggleFavourite(forest)
+
+    XCTAssertFalse(model.isFavourite(forest))
+    XCTAssertFalse(model.favouriteCardIDs.contains(forest.id))
+    XCTAssertTrue(try database.cardListEntries(forListID: favourites.id).isEmpty)
+    XCTAssertEqual(model.statusMessage, "Removed \(forest.name) from Favourites.")
+
+    // The protected Favourites list itself survives the round trip.
+    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites"])
+  }
+
   func testModelReusesFavoritesAliasForFavourites() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())

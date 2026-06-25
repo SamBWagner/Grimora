@@ -87,6 +87,9 @@ public final class GrimoraAppModel {
   public internal(set) var hiddenSearchTerms: [SearchRefinement] = []
   public internal(set) var cardLists: [CardListRecord] = []
   public internal(set) var cardListOverviewItems: [CardListOverviewItem] = []
+  /// Card IDs currently in the Favourites list, refreshed whenever the lists reload.
+  /// Backs the star toggle surfaced on search result cards.
+  public internal(set) var favouriteCardIDs: Set<CardRecord.ID> = []
   public internal(set) var sidebarSelection: GrimoraSidebarSelection = .search
   public internal(set) var selectedListID: CardListRecord.ID?
   public internal(set) var selectedListCategories: [CardListCategoryRecord] = []

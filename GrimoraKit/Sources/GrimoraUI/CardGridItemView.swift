@@ -15,6 +15,7 @@ struct CardGridItemView: View {
     @State private var isHovered = false
     @State private var openFeedbackTrigger = 0
     @State private var selectionFeedbackTrigger = 0
+    @State private var favouriteFeedbackTrigger = 0
 
     var card: CardRecord
     var quantity: Int = 1
@@ -44,6 +45,8 @@ struct CardGridItemView: View {
     var onCreateListForCards: (([CardRecord.ID]) -> Void)?
     var onAddCardsToList: ((CardListRecord.ID, CardRecord) -> Bool)?
     var onPrepareAddMenu: ((CardRecord) -> Void)?
+    var isFavourite = false
+    var onToggleFavourite: ((CardRecord) -> Void)?
     var onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)?
     var onCreateCategory: ((String) -> Void)?
     var onMoveToZone: ((CardListZone) -> Void)?
@@ -205,7 +208,27 @@ struct CardGridItemView: View {
                 decrementAccessibilityIdentifier: removeAccessibilityIdentifier ?? "remove-list-entry-\(card.id)",
                 quantityAccessibilityIdentifier: quantityAccessibilityIdentifier ?? "card-quantity-\(card.id)"
             )
+        } else if let onToggleFavourite {
+            favouriteButton(onToggleFavourite)
         }
+    }
+
+    private func favouriteButton(_ action: @escaping (CardRecord) -> Void) -> some View {
+        Button {
+            action(card)
+            favouriteFeedbackTrigger += 1
+        } label: {
+            CardGridControlIcon(
+                systemName: isFavourite ? "star.fill" : "star",
+                foregroundColor: isFavourite ? palette.accent.color : nil,
+                feedbackTrigger: favouriteFeedbackTrigger
+            )
+        }
+        .buttonStyle(GrimoraIconButtonStyle())
+        .help(isFavourite ? "Remove from Favourites" : "Add to Favourites")
+        .accessibilityLabel(isFavourite ? "Remove from Favourites" : "Add to Favourites")
+        .accessibilityIdentifier("toggle-favourite-\(card.id)")
+        .grimoraSuccessFeedback(trigger: favouriteFeedbackTrigger)
     }
 
     @ViewBuilder

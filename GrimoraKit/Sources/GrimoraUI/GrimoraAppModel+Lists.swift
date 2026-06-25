@@ -810,6 +810,46 @@ extension GrimoraAppModel {
     addCardsToFavourites([card.id], primaryCard: card)
   }
 
+  public func isFavourite(_ card: CardRecord) -> Bool {
+    favouriteCardIDs.contains(card.id)
+  }
+
+  /// Adds the card to Favourites if it isn't there yet, otherwise removes it.
+  /// Backs the star button on search result cards.
+  public func toggleFavourite(_ card: CardRecord) {
+    if favouriteCardIDs.contains(card.id) {
+      removeCardFromFavourites(card)
+    } else {
+      addCardToFavourites(card)
+    }
+  }
+
+  public func removeCardFromFavourites(_ card: CardRecord) {
+    guard let favouritesList else {
+      return
+    }
+
+    do {
+      let entryIDs = try database.cardListEntries(forListID: favouritesList.id)
+        .filter { $0.cardID == card.id }
+        .map(\.id)
+      guard !entryIDs.isEmpty else {
+        return
+      }
+
+      try performListMutation {
+        for id in entryIDs {
+          try database.removeCardListEntryCompletely(id: id)
+        }
+      }
+      reloadCardLists(selecting: selectedListID)
+      let listName = currentFavouriteListName(fallback: favouritesList.name)
+      statusMessage = "Removed \(card.name) from \(listName)."
+    } catch {
+      statusMessage = "List update failed."
+    }
+  }
+
   public func addCardsToFavourites(
     _ cardIDs: [CardRecord.ID],
     primaryCard: CardRecord? = nil

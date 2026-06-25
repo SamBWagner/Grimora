@@ -254,6 +254,7 @@ extension GrimoraAppModel {
       try ensureFavouritesList()
       let lists = orderedCardListsForDisplay(try database.cardLists())
       cardLists = lists
+      refreshFavouriteCardIDs()
       if let requestedSelection,
         lists.contains(where: { $0.id == requestedSelection })
       {
@@ -274,6 +275,22 @@ extension GrimoraAppModel {
       selectedListRulesetWarnings = []
       resetSelectedListSearchResults()
       sidebarSelection = .search
+      favouriteCardIDs = []
+    }
+  }
+
+  func refreshFavouriteCardIDs() {
+    guard let favouritesList else {
+      favouriteCardIDs = []
+      return
+    }
+
+    do {
+      favouriteCardIDs = Set(
+        try database.cardListEntries(forListID: favouritesList.id).map(\.cardID)
+      )
+    } catch {
+      favouriteCardIDs = []
     }
   }
 
