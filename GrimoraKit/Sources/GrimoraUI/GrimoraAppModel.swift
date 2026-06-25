@@ -128,6 +128,14 @@ public final class GrimoraAppModel {
     return cardLists.first { $0.id == selectedListID }
   }
 
+  /// Total cards in the selected list, derived from the freshly-loaded entries rather than
+  /// the denormalized `CardListRecord.entryCount`. The cached count can lag behind the
+  /// entries table (e.g. after an out-of-band cloud-sync apply), so the detail header reads
+  /// this to stay consistent with the cards actually on screen.
+  public var selectedListEntryTotal: Int {
+    selectedListEntries.reduce(0) { $0 + $1.quantity }
+  }
+
   public var favouritesList: CardListRecord? {
     cardLists.first { isProtectedFavouritesList($0) }
   }

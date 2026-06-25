@@ -5881,6 +5881,66 @@ final class GrimoraAppModelTests: XCTestCase {
     )
   }
 
+  // MARK: - List card-count coherence
+
+  func testSelectedListEntryTotalSumsLoadedQuantitiesIndependentOfSearch() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let list = try XCTUnwrap(model.createCardList(named: "Deck Box", selectAfterCreate: true))
+    _ = try database.appendCard("forest", toList: list.id, quantity: 3)
+    _ = try database.appendCard("beta", toList: list.id, quantity: 2)
+    model.selectCardList(id: list.id)
+
+    // The detail-header total reads the summed quantities of the loaded entries (3 + 2),
+    // matching the sum of the on-screen section counts rather than a cached value.
+    XCTAssertEqual(model.selectedListEntryTotal, 5)
+
+    // A list search narrows the visible rows but the header total stays the full-list total.
+    model.setSelectedListSearchDraft("forest")
+    XCTAssertEqual(model.searchedSelectedListEntries?.map(\.cardID), ["forest"])
+    XCTAssertEqual(model.selectedListEntryTotal, 5)
+  }
+
+  func testRefreshCardListCountsHealsStaleCountsWithoutDisturbingSelection() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    // A regular list (selected) plus the Favourites list, each seeded with one card through
+    // the model so their cached `entryCount` starts correct.
+    let deck = try XCTUnwrap(model.createCardList(named: "Deck Box", selectAfterCreate: true))
+    model.addCards(["forest"], toListID: deck.id)
+    let forest = try XCTUnwrap(database.card(id: "forest"))
+    model.addCardToFavourites(forest)
+    let favouritesID = try XCTUnwrap(model.favouritesList?.id)
+
+    XCTAssertEqual(model.cardLists.first { $0.id == deck.id }?.entryCount, 1)
+    XCTAssertEqual(model.favouritesList?.entryCount, 1)
+    XCTAssertEqual(model.selectedListID, deck.id)
+    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest"])
+
+    // Simulate an out-of-band write (e.g. a cloud-sync apply whose follow-up reload was
+    // skipped): mutate the entries table directly so the cached counts go stale.
+    _ = try database.appendCard("beta", toList: deck.id)
+    _ = try database.appendCard("beta", toList: favouritesID)
+
+    model.refreshCardListCounts()
+
+    // Cached per-list counts and favourite card IDs re-sync with the database...
+    XCTAssertEqual(model.cardLists.first { $0.id == deck.id }?.entryCount, 2)
+    XCTAssertEqual(model.favouritesList?.entryCount, 2)
+    XCTAssertTrue(model.favouriteCardIDs.contains("beta"))
+    // ...without changing the current selection or reloading the open list's entries.
+    XCTAssertEqual(model.selectedListID, deck.id)
+    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest"])
+  }
+
   private func activityStep(_ id: String, in model: GrimoraAppModel) throws -> GrimoraLibraryActivityStep {
     try XCTUnwrap(model.libraryActivity?.steps.first { $0.id == id })
   }

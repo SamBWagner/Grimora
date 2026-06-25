@@ -13,7 +13,7 @@ extension CardListDetailView {
 
     func makeListDetailSnapshot() -> CardListDetailSnapshot {
         let visibleEntries = model.searchedSelectedListEntries ?? model.selectedListEntries
-        let totalCount = model.selectedList?.entryCount ?? model.selectedListEntries.reduce(0) { $0 + $1.quantity }
+        let totalCount = model.selectedListEntryTotal
         return CardListDetailSnapshot(
             entries: visibleEntries,
             categories: model.selectedListCategories,

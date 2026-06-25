@@ -463,6 +463,59 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     )
   }
 
+  func testAppliedRemoteSnapshotPopulatesSidebarEntryCount() async throws {
+    // After an applied remote snapshot the cached `CardListRecord.entryCount` that the
+    // sidebar (and the list-detail header) read must match the entries that landed — the
+    // regression where a populated list showed "0 cards" because the in-memory count was
+    // never re-derived from the database.
+    let database = try CardDatabase(storage: .inMemory)
+    let date = Date(timeIntervalSince1970: 100)
+    let remoteList = CardListRecord(
+      id: "remote-list",
+      name: "Remote Picks",
+      createdAt: date,
+      updatedAt: date
+    )
+    let entries = [("alpha", 3), ("bravo", 2)].enumerated().map { index, pair in
+      CardListEntryRecord(
+        id: "remote-entry-\(pair.0)",
+        listID: remoteList.id,
+        cardID: pair.0,
+        position: index,
+        quantity: pair.1,
+        createdAt: date
+      )
+    }
+    let remoteSnapshot = DeviceSyncSnapshot(
+      id: "ipad",
+      deviceName: "iPad",
+      capturedAt: date,
+      libraryIdentity: LibraryIdentity(),
+      searchSettings: SyncSearchSettings(updatedAt: date),
+      listSnapshot: CardListLibrarySnapshot(
+        lists: [remoteList],
+        categories: [],
+        entries: entries
+      )
+    )
+    let coordinator = CloudSyncCoordinator(
+      database: database,
+      transport: MemoryCloudSyncTransport(state: CloudRemoteState(snapshots: [remoteSnapshot]))
+    )
+    let model = GrimoraAppModel(
+      environment: environment(database: database, cloudSyncCoordinator: coordinator)
+    )
+
+    model.cloudSyncMode = .enabled
+    await model.startCloudSync()
+
+    guard case .appliedRemoteSnapshot = model.cloudSyncStatus else {
+      return XCTFail("Expected remote snapshot application, got \(model.cloudSyncStatus)")
+    }
+    let applied = try XCTUnwrap(model.cardLists.first { $0.id == "remote-list" })
+    XCTAssertEqual(applied.entryCount, 5, "Sidebar count must reflect the applied entry quantities (3 + 2).")
+  }
+
   private func environment(
     database: CardDatabase,
     cloudSyncCoordinator: CloudSyncCoordinator? = nil

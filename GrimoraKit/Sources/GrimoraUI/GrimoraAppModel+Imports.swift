@@ -279,6 +279,23 @@ extension GrimoraAppModel {
     }
   }
 
+  /// Re-derives the per-list card counts (and favourite card IDs) from the database without
+  /// disturbing the current selection, loaded entries, search results, or image trackers.
+  ///
+  /// The sidebar shows counts for every list but only keeps the selected list's entries in
+  /// memory, so it relies on the denormalized `CardListRecord.entryCount`. That cache can go
+  /// stale relative to the entries table when an out-of-band write (e.g. a cloud-sync apply
+  /// whose follow-up reload was skipped) lands without a full `reloadCardLists()`. This is a
+  /// cheap, idempotent re-sync (one grouped `SUM` query) used to self-heal those counts.
+  func refreshCardListCounts() {
+    guard let lists = try? database.cardLists() else {
+      return
+    }
+    cardLists = orderedCardListsForDisplay(lists)
+    refreshFavouriteCardIDs()
+    refreshListOverviewItems()
+  }
+
   func refreshFavouriteCardIDs() {
     guard let favouritesList else {
       favouriteCardIDs = []

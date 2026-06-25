@@ -92,11 +92,25 @@ extension GrimoraAppModel {
         deviceName: deviceName,
         searchSettings: settings
       )
-      guard !Task.isCancelled else {
+      let didApplyRemote: Bool
+      if case .appliedRemoteSnapshot = status {
+        didApplyRemote = true
+      } else {
+        didApplyRemote = false
+      }
+
+      guard let self else {
         return
       }
 
-      guard let self, self.cloudSyncMode == .enabled else {
+      guard !Task.isCancelled, self.cloudSyncMode == .enabled else {
+        // `coordinator.start` may have already committed an applied snapshot to the
+        // database before this task was cancelled (or sync was switched off). The database
+        // is the source of truth and it has changed, so re-derive the in-memory list counts
+        // to reflect it — without republishing a sync status or surfacing a merge notice.
+        if didApplyRemote {
+          self.refreshCardListCounts()
+        }
         return
       }
       self.handleCloudSyncStatus(status)
@@ -402,6 +416,12 @@ extension GrimoraAppModel {
     publishCloudSyncStatus(status)
     reloadCloudSyncRecoverySnapshots()
     guard case .appliedRemoteSnapshot(let snapshot) = status else {
+      // A sync that settled without applying a remote snapshot still re-derives the cached
+      // list counts, so a count left stale by an earlier skipped reload self-heals on the
+      // next settle. Cheap and idempotent; never touches the current selection.
+      if case .ready = status {
+        refreshCardListCounts()
+      }
       return
     }
 

@@ -98,6 +98,7 @@ public struct GrimoraRootView: View {
         }
         .onChange(of: scenePhase) { _, newValue in
             if newValue == .active {
+                model.refreshCardListCounts()
                 model.refreshCloudSyncWhenActive()
             }
         }
