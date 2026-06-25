@@ -18,6 +18,10 @@ struct TouchRootView: View {
     @State private var listNameDraft = ""
     @State private var isSearchSettingsPresented = false
     @State private var previousListSplitSelection: GrimoraSidebarSelection = .search
+    @AppStorage(GrimoraSearchPreferences.advancedSearchEnabledKey)
+    private var advancedSearchEnabled = GrimoraSearchPreferences.defaultAdvancedSearchEnabled
+    @State private var advancedSearchBuilder = AdvancedSearchBuilder()
+    @State private var isAdvancedSearchPresented = false
 
     private static let wideListLayoutThreshold: CGFloat = 900
     private static let wideCardDetailLayoutThreshold: CGFloat = 980
@@ -65,6 +69,24 @@ struct TouchRootView: View {
         .adaptiveTouchTabViewStyle()
         .accessibilityIdentifier("touch-root-tab-view")
         .touchChromeBackground(palette: palette, colorScheme: colorScheme)
+        // Park the search-options gear in the very bottom-right corner, on the
+        // tab-bar row (to the trailing side of the floating Search/Lists pill) —
+        // overlaid on the TabView itself, and only while the search tab is active.
+        .overlay(alignment: .bottomTrailing) {
+            if selectedTab == .search {
+                SearchOptionsMenu(
+                    gridZoom: gridZoom,
+                    onCreateListFromSearch: {
+                        presentCreateSearchListPrompt()
+                    },
+                    onOpenSearchSettings: {
+                        isSearchSettingsPresented = true
+                    }
+                )
+                .padding(.trailing, 16)
+                .padding(.bottom, 10)
+            }
+        }
         .onChange(of: selectedTab) { _, newValue in
             if newValue == .search {
                 listNavigationPath = []
@@ -172,6 +194,10 @@ struct TouchRootView: View {
                 prompt: "Search cards"
             )
             #endif
+            // Scryfall syntax is case-insensitive but not English prose — don't let
+            // the keyboard auto-capitalise field keywords or autocorrect the query.
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
             .onSubmit(of: .search) {
                 Task {
                     await model.submitSearch()
@@ -188,25 +214,28 @@ struct TouchRootView: View {
             .searchPresentationToolbarBehavior(.avoidHidingContent)
             #endif
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     SearchHistoryMenu { query in
                         model.setSearchDraft(query)
                         Task {
                             await model.submitSearch()
                         }
                     }
-                }
 
-                ToolbarItem(placement: .topBarTrailing) {
-                    SearchOptionsMenu(
-                        gridZoom: gridZoom,
-                        onCreateListFromSearch: {
-                            presentCreateSearchListPrompt()
-                        },
-                        onOpenSearchSettings: {
-                            isSearchSettingsPresented = true
+                    if advancedSearchEnabled {
+                        Button("Advanced Search", systemImage: "slider.horizontal.3") {
+                            isAdvancedSearchPresented = true
                         }
-                    )
+                        .accessibilityIdentifier("advanced-search-launch-button")
+                        .help("Advanced Search")
+                    }
+                }
+            }
+            .sheet(isPresented: $isAdvancedSearchPresented) {
+                AdvancedSearchSheet(builder: $advancedSearchBuilder) { builder in
+                    Task { await model.applyAdvancedSearch(builder) }
+                } onReset: {
+                    model.clearSearch()
                 }
             }
         }

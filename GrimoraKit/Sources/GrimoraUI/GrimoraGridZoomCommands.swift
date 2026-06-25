@@ -64,6 +64,11 @@ public struct GrimoraSearchCommands: Commands {
                 GrimoraSearchFocusController.shared.focusSearch()
             }
             .keyboardShortcut("f", modifiers: .command)
+
+            Button("Advanced Search…") {
+                GrimoraSearchFocusController.shared.presentAdvancedSearch()
+            }
+            .keyboardShortcut("f", modifiers: [.command, .shift])
         }
     }
 }

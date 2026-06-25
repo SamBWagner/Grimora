@@ -46,6 +46,9 @@ log.txt*
 # Local task notes
 /tasks/
 
+# Local release planning notes (markdown + screenshot attachments)
+/Release 1.3 - Features & Bugs/
+
 # Local code-analysis tool cache
 .understand-anything/
 

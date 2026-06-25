@@ -8,11 +8,18 @@ public final class GrimoraSearchFocusController {
     public static let shared = GrimoraSearchFocusController()
 
     var focusRequestID = 0
+    var advancedSearchRequestID = 0
 
     public init() {}
 
     public func focusSearch() {
         focusRequestID += 1
+    }
+
+    /// Bumped by the ⇧⌘F menu command so the search content view presents the
+    /// Advanced Search sheet, mirroring the in-field launch button.
+    public func presentAdvancedSearch() {
+        advancedSearchRequestID += 1
     }
 }
 

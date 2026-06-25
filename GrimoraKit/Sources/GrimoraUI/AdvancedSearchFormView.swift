@@ -28,7 +28,7 @@ public struct AdvancedSearchFormView: View {
                 onChange: registerSelection
             )
             AdvancedSearchColorSection(
-                title: "Colour Identity",
+                title: "Colour Identity (Commander)",
                 criterion: $builder.colorIdentity,
                 identifier: "identity",
                 onChange: registerSelection
@@ -145,19 +145,23 @@ private struct ColorPipToggle: View {
 
     var body: some View {
         Button(action: action) {
-            ManaSymbolView(
-                symbol: ManaCostSymbol(rawValue: color.symbol),
-                palette: palette,
-                size: size
-            )
-            .opacity(isSelected ? 1 : 0.3)
-            .overlay {
-                if isSelected {
-                    Circle().strokeBorder(palette.accent.color, lineWidth: 2)
+            // The official Wizards/Scryfall WUBRG symbols (bundled SVGs) — each is a
+            // self-contained coloured disc + icon, so the black pip finally gets its
+            // real skull instead of a missing SF Symbol.
+            Image("Mana\(color.symbol)", bundle: .module)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                // Dim unselected pips to read as "off"; the accent ring is the
+                // non-colour selection cue for Differentiate Without Color.
+                .opacity(isSelected ? 1 : 0.55)
+                .overlay {
+                    if isSelected {
+                        Circle().strokeBorder(palette.accent.color, lineWidth: 2)
+                    }
                 }
-            }
-            .frame(minWidth: 44, minHeight: 44)
-            .contentShape(.rect)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(color.displayName)

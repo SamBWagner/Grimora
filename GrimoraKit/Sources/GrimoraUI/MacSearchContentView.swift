@@ -15,6 +15,7 @@ struct MacSearchContentView: View {
     var onCreateListForCard: (CardRecord) -> Void
     var onCreateListForCards: ([CardRecord.ID]) -> Void
     var onCreateListFromSearch: () -> Void
+    var onOpenAdvancedSearch: () -> Void
 
     private static let hiddenToolbarOverlap: CGFloat = 56
 
@@ -40,6 +41,7 @@ struct MacSearchContentView: View {
                 isSearchFocused: $isSearchFocused,
                 focusRequestID: fieldFocusRequestID,
                 onCreateListFromSearch: onCreateListFromSearch,
+                onOpenAdvancedSearch: onOpenAdvancedSearch,
                 onMouseDown: requestSearchSelectionClear,
                 onSearchActivated: requestFocusedHeaderExpansion
             )

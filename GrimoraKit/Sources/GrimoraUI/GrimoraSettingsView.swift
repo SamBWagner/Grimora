@@ -105,11 +105,15 @@ public struct GrimoraSettingsView: View {
             .accessibilityIdentifier("default-search-validation")
         }
 
+        // macOS always surfaces Advanced Search (search-field button + ⇧⌘F), so
+        // this opt-out only governs the touch toolbar button.
+        #if os(iOS)
         Toggle("Show advanced search builder", isOn: $advancedSearchEnabled)
           .accessibilityIdentifier("advanced-search-enabled-toggle")
         Text("Adds an on-screen button to build Scryfall queries with toggles and pickers.")
           .font(.caption)
           .foregroundStyle(.secondary)
+        #endif
       }
 
       Section("Always Hidden") {

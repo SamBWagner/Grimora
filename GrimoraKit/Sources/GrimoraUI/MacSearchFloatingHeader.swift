@@ -13,6 +13,7 @@ struct MacSearchFloatingHeader: View {
     @Binding var isSearchFocused: Bool
     var focusRequestID: Int
     var onCreateListFromSearch: () -> Void
+    var onOpenAdvancedSearch: () -> Void
     var onMouseDown: () -> Void = {}
     var onSearchActivated: () -> Void = {}
 
@@ -90,6 +91,7 @@ struct MacSearchFloatingHeader: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: Self.searchFieldHeight)
                         .accessibilityIdentifier("mac-expanded-search-bar")
+                    advancedSearchButton
                 } else {
                     compactSearchButton
                         .layoutPriority(1)
@@ -144,6 +146,25 @@ struct MacSearchFloatingHeader: View {
         }
         .controlSize(.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Permanent Advanced Search affordance pinned to the trailing edge of the
+    /// search field — the discoverable, always-visible entry point that mirrors
+    /// the ⇧⌘F menu command. Icon-only so it reads as a search accessory rather
+    /// than competing with the Sort/Printings/Create List controls below.
+    private var advancedSearchButton: some View {
+        Button(action: onOpenAdvancedSearch) {
+            Image(systemName: "slider.horizontal.3")
+                .imageScale(.medium)
+                .frame(width: Self.searchFieldHeight, height: Self.searchFieldHeight)
+                .contentShape(.rect)
+        }
+        .buttonStyle(GrimoraCapsuleSurfaceButtonStyle(palette: palette))
+        .clipShape(searchFieldShape)
+        .focusable(false)
+        .help("Advanced Search (⇧⌘F)")
+        .accessibilityLabel("Advanced Search")
+        .accessibilityIdentifier("advanced-search-launch-button")
     }
 
     private var createListButton: some View {

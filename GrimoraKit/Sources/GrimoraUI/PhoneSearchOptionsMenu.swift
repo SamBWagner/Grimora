@@ -4,6 +4,7 @@ import SwiftUI
 
 struct SearchOptionsMenu: View {
     @Environment(GrimoraAppModel.self) private var model
+    @Environment(\.colorScheme) private var colorScheme
     var gridZoom: GridZoomController
     @State private var feedbackTrigger = 0
 
@@ -59,11 +60,13 @@ struct SearchOptionsMenu: View {
         .accessibilityIdentifier("search-more-menu")
     }
 
-    @ViewBuilder
     private var searchOptionsMenuLabel: some View {
-        Label("Search Options", systemImage: "ellipsis")
-            .labelStyle(.iconOnly)
-            .imageScale(.large)
+        Image(systemName: "gearshape")
+            .floatingCircleChrome(palette: palette)
+    }
+
+    private var palette: GrimoraPalette {
+        GrimoraPalette(colorScheme: colorScheme)
     }
 
     private var viewOptionsMenu: some View {

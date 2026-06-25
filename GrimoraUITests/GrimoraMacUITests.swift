@@ -72,6 +72,64 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(app.buttons["open-card-token"].exists)
     }
 
+    func testAdvancedSearchFieldButtonOpensFormAndAppliesQuery() throws {
+        let databaseURL = try seedDatabase(cards: allCardClassFixtureCards())
+        let app = launchApp(databaseURL: databaseURL)
+        let total = app.staticTexts["search-results-total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+
+        // Open via the permanent search-field button.
+        let launchButton = firstElement(app, identifier: "advanced-search-launch-button")
+        XCTAssertTrue(launchButton.waitForExistence(timeout: 5))
+        launchButton.click()
+
+        let form = firstElement(app, identifier: "advanced-search-form")
+        XCTAssertTrue(form.waitForExistence(timeout: 5))
+
+        // Build a name query in the form.
+        let nameField = firstElement(app, identifier: "advanced-search-name-field")
+        XCTAssertTrue(nameField.waitForExistence(timeout: 3))
+        nameField.click()
+        nameField.typeText("Forest")
+
+        // Tapping Search runs it through the normal submit path and filters results.
+        let submit = firstElement(app, identifier: "advanced-search-submit")
+        XCTAssertTrue(submit.waitForExistence(timeout: 3))
+        submit.click()
+
+        XCTAssertTrue(waitForNonExistence(of: form, timeout: 5))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "1 card"))
+        XCTAssertTrue(app.buttons["open-card-alpha"].exists)
+        XCTAssertFalse(app.buttons["open-card-token"].exists)
+    }
+
+    func testAdvancedSearchMenuCommandOpensFormAndAppliesQuery() throws {
+        let databaseURL = try seedDatabase(cards: allCardClassFixtureCards())
+        let app = launchApp(databaseURL: databaseURL)
+        let total = app.staticTexts["search-results-total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+
+        // The ⇧⌘F menu command must open the same form, even when the search
+        // field already holds keyboard focus on launch.
+        app.typeKey("f", modifierFlags: [.command, .shift])
+
+        let form = firstElement(app, identifier: "advanced-search-form")
+        XCTAssertTrue(form.waitForExistence(timeout: 5))
+
+        let nameField = firstElement(app, identifier: "advanced-search-name-field")
+        XCTAssertTrue(nameField.waitForExistence(timeout: 3))
+        nameField.click()
+        nameField.typeText("Mage")
+        firstElement(app, identifier: "advanced-search-submit").click()
+
+        XCTAssertTrue(waitForNonExistence(of: form, timeout: 5))
+        XCTAssertTrue(waitForValue(of: total, toEqual: "1 card"))
+        XCTAssertTrue(app.buttons["open-card-beta"].exists)
+        XCTAssertFalse(app.buttons["open-card-token"].exists)
+    }
+
     func testSearchSupportsFirstPrintSyntax() throws {
         let databaseURL = try seedDatabase(cards: [
             CardRecord(
@@ -2052,6 +2110,63 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertFalse(app.menuItems["Always Hide"].exists)
     }
 
+    /// The full refine journey: search oracle text, open a result, refine on its
+    /// oracle text via "More cards with …" (which appends an `o:"…"` clause and
+    /// re-runs the search), and open a flying card from the narrowed results.
+    func testOracleRefineNarrowsSearchThenOpensFlyingCard() throws {
+        let databaseURL = try seedDatabase(cards: refineWorkflowFixtureCards())
+        let app = launchApp(databaseURL: databaseURL)
+        let total = app.staticTexts["search-results-total"]
+        XCTAssertTrue(total.waitForExistence(timeout: 5))
+
+        // Step 1 — type the oracle search and submit. The flyer-only distractor,
+        // which lacks "Deals combat damage", is filtered out.
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        searchField.click()
+        searchField.typeText("o:\"Deals combat damage\"")
+        searchField.typeKey(.return, modifierFlags: [])
+        XCTAssertTrue(waitForValue(of: total, toEqual: "3 cards"))
+        XCTAssertTrue(app.buttons["open-card-goad-combat"].exists)
+        XCTAssertTrue(app.buttons["open-card-goad-flyer"].exists)
+        XCTAssertTrue(app.buttons["open-card-combat-only"].exists)
+        XCTAssertFalse(app.buttons["open-card-flyer-only"].exists)
+
+        // Step 2 — open the goad card.
+        openSearchResultCard(app: app, cardID: "goad-combat")
+        let oracle = app.descendants(matching: .any)["card-detail-oracle-text"]
+        XCTAssertTrue(oracle.waitForExistence(timeout: 3))
+
+        // Step 3 — drag-select the leading "Goad target…" line, right-click, and
+        // choose "More cards with …". The captured text is a prefix of the goad
+        // cards' first oracle line and absent from the combat-only distractor, so
+        // the assertion holds even if the drag grabs only part of the phrase.
+        let start = oracle.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.22))
+        let end = oracle.coordinate(withNormalizedOffset: CGVector(dx: 0.45, dy: 0.22))
+        start.press(forDuration: 0.05, thenDragTo: end)
+        oracle.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.22)).rightClick()
+        let moreCards = app.descendants(matching: .menuItem)
+            .matching(identifier: "oracle-selection-more-cards")
+            .firstMatch
+        XCTAssertTrue(moreCards.waitForExistence(timeout: 2))
+        moreCards.click()
+
+        // "More cards with …" appends the clause to the search draft; like any edit,
+        // it waits for an explicit submit (Return) before the results re-run.
+        searchField.click()
+        searchField.typeKey(.return, modifierFlags: [])
+
+        // The refine narrows to the two goad cards; the combat-only card drops out.
+        XCTAssertTrue(waitForValue(of: total, toEqual: "2 cards"))
+        XCTAssertTrue(app.buttons["open-card-goad-flyer"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["open-card-combat-only"].exists)
+
+        // Step 4 — open the flying card from the still-visible grid (the macOS
+        // detail is a side inspector, so the grid stays usable).
+        openSearchResultCard(app: app, cardID: "goad-flyer")
+        XCTAssertTrue(app.scrollViews["card-detail"].waitForExistence(timeout: 3))
+    }
+
     func testCardListDirectSelectionClearsAndEntryActionsRemainAvailable() throws {
         let databaseURL = try seedDatabase(cards: makeZoomFixtureCards(count: 3))
         let database = try CardDatabase(storage: .file(databaseURL))
@@ -2356,6 +2471,9 @@ final class GrimoraMacUITests: XCTestCase {
         }
         app.launchEnvironment["GRIMORA_DISABLE_NETWORK"] = "1"
         app.launchEnvironment["GRIMORA_DISABLE_AUTO_UPDATE"] = "1"
+        // These suites drive a freshly-imported library; keep the first-run
+        // onboarding tour from overlaying the search UI under test.
+        app.launchEnvironment["GRIMORA_DISABLE_ONBOARDING"] = "1"
         app.launch()
         return app
     }
@@ -2412,6 +2530,86 @@ final class GrimoraMacUITests: XCTestCase {
                 typeLine: "Token Creature",
                 oracleText: "",
                 isRealCard: false
+            )
+        ]
+    }
+
+    /// Fixtures for the search → open → refine → open journey. The two goad cards
+    /// lead with "Goad target …" on the first oracle line and carry "Deals combat
+    /// damage" on the second, so a partial first-line selection still refines on a
+    /// goad-only substring. `combat-only` matches the initial search but not the
+    /// goad refine; `flyer-only` matches neither and proves the initial search filters.
+    private func refineWorkflowFixtureCards() -> [CardRecord] {
+        [
+            CardRecord(
+                id: "goad-combat",
+                name: "Pyre Goader",
+                releasedAt: "2026-01-01",
+                setCode: "tst",
+                setName: "Test Set",
+                setType: "expansion",
+                collectorNumber: "1",
+                collectorNumberNumber: 1,
+                rarity: "rare",
+                rarityRank: 2,
+                colorSortKey: 1,
+                layout: "normal",
+                typeLine: "Creature — Elemental",
+                oracleText: "Goad target creature you control until the start of your next turn, even while it stays tapped.\nDeals combat damage.",
+                isRealCard: true
+            ),
+            CardRecord(
+                id: "goad-flyer",
+                name: "Skyward Goader",
+                releasedAt: "2026-01-02",
+                setCode: "tst",
+                setName: "Test Set",
+                setType: "expansion",
+                collectorNumber: "2",
+                collectorNumberNumber: 2,
+                rarity: "rare",
+                rarityRank: 2,
+                colorSortKey: 2,
+                layout: "normal",
+                typeLine: "Creature — Bird",
+                oracleText: "Goad target creature you control until the start of your next turn, even while it stays tapped.\nDeals combat damage.",
+                keywords: ["Flying"],
+                isRealCard: true
+            ),
+            CardRecord(
+                id: "combat-only",
+                name: "Brutal Striker",
+                releasedAt: "2026-01-03",
+                setCode: "tst",
+                setName: "Test Set",
+                setType: "expansion",
+                collectorNumber: "3",
+                collectorNumberNumber: 3,
+                rarity: "common",
+                rarityRank: 0,
+                colorSortKey: 3,
+                layout: "normal",
+                typeLine: "Creature — Warrior",
+                oracleText: "Deals combat damage to any opponent.",
+                isRealCard: true
+            ),
+            CardRecord(
+                id: "flyer-only",
+                name: "Idle Sparrow",
+                releasedAt: "2026-01-04",
+                setCode: "tst",
+                setName: "Test Set",
+                setType: "expansion",
+                collectorNumber: "4",
+                collectorNumberNumber: 4,
+                rarity: "common",
+                rarityRank: 0,
+                colorSortKey: 4,
+                layout: "normal",
+                typeLine: "Creature — Bird",
+                oracleText: "Whenever this attacks, draw a card.",
+                keywords: ["Flying"],
+                isRealCard: true
             )
         ]
     }

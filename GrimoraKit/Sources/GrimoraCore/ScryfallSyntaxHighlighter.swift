@@ -70,13 +70,15 @@ public enum ScryfallSyntaxHighlighter {
         if hasUnfinishedGrouping(in: text) {
             return .incomplete
         }
-        // A plain token is held white until a space completes it. A multi-stage clause
-        // (a `(...)` group) instead evaluates the moment it closes, so the trailing-space
-        // rule does not apply to it.
+        let isValid = ScryfallSyntaxValidator.validate(text).isValidScryfall
+        // Confirm correct syntax live: a clause turns green the moment it is valid,
+        // even the one still being typed. A trailing clause that is not yet valid is
+        // held white (pending) rather than flashing red while it is mid-typed; a
+        // completing space then promotes it to red if it is still invalid.
         if isActiveTrailing, !text.contains("(") {
-            return .pending
+            return isValid ? .valid : .pending
         }
-        return ScryfallSyntaxValidator.validate(text).isValidScryfall ? .valid : .invalid
+        return isValid ? .valid : .invalid
     }
 
     /// True when a clause holds an unclosed group, quote, or regular expression and so

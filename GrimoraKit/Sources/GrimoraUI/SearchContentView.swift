@@ -11,28 +11,33 @@ struct SearchContentView: View {
     var onCreateListForCards: ([CardRecord.ID]) -> Void = { _ in }
     var onCreateListFromSearch: () -> Void
 
+    // Touch platforms surface Advanced Search from the search tab's top toolbar
+    // (see `TouchRootView`); only macOS keeps the in-content launch button + sheet.
+    // On macOS the feature is always available — through the search-field button
+    // and the ⇧⌘F menu command — rather than gated behind a setting, so it stays
+    // discoverable.
+    #if os(macOS)
     @Environment(GrimoraAppModel.self) private var model
-    @AppStorage(GrimoraSearchPreferences.advancedSearchEnabledKey)
-    private var advancedSearchEnabled = GrimoraSearchPreferences.defaultAdvancedSearchEnabled
     @State private var advancedSearchBuilder = AdvancedSearchBuilder()
     @State private var isAdvancedSearchPresented = false
+    #endif
 
     var body: some View {
+        #if os(macOS)
         platformContent
-            .overlay(alignment: .bottomLeading) {
-                if advancedSearchEnabled {
-                    AdvancedSearchLaunchButton {
-                        isAdvancedSearchPresented = true
-                    }
-                    .padding(.leading)
-                    .padding(.bottom, 12)
-                }
-            }
             .sheet(isPresented: $isAdvancedSearchPresented) {
                 AdvancedSearchSheet(builder: $advancedSearchBuilder) { builder in
                     Task { await model.applyAdvancedSearch(builder) }
+                } onReset: {
+                    model.clearSearch()
                 }
             }
+            .onChange(of: searchFocus.advancedSearchRequestID) { _, _ in
+                isAdvancedSearchPresented = true
+            }
+        #else
+        platformContent
+        #endif
     }
 
     @ViewBuilder
@@ -44,7 +49,8 @@ struct SearchContentView: View {
             onSelect: onSelect,
             onCreateListForCard: onCreateListForCard,
             onCreateListForCards: onCreateListForCards,
-            onCreateListFromSearch: onCreateListFromSearch
+            onCreateListFromSearch: onCreateListFromSearch,
+            onOpenAdvancedSearch: { isAdvancedSearchPresented = true }
         )
         #elseif os(visionOS)
         VisionSearchContentView(

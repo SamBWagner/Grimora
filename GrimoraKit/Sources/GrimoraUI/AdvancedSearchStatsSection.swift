@@ -14,6 +14,14 @@ struct AdvancedSearchStatsSection: View {
                 AdvancedSearchStatRow(stat: $stat) {
                     onRemove(stat)
                 }
+                #if os(iOS) || os(visionOS)
+                .swipeActions(edge: .trailing) {
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        onRemove(stat)
+                    }
+                    .accessibilityIdentifier("advanced-search-remove-stat")
+                }
+                #endif
             }
 
             Button("Add a stat filter", systemImage: "plus.circle", action: onAdd)
@@ -23,6 +31,8 @@ struct AdvancedSearchStatsSection: View {
         } footer: {
             if stats.isEmpty {
                 Text("Filter by mana value, power, or toughness — add as many comparisons as you like.")
+            } else {
+                Text("Swipe a row left to remove it.")
             }
         }
     }
@@ -30,8 +40,10 @@ struct AdvancedSearchStatsSection: View {
 
 // MARK: - Stat row
 
-/// One mana-value / power / toughness comparison row. The comparison picker
-/// already covers negation (`is not`), so there is no separate negate control.
+/// One mana-value / power / toughness comparison row, read as a phrase
+/// ("Mana value · is · 3"). The comparison picker already covers negation
+/// (`is not`), so there is no separate negate control. On touch platforms the
+/// row is removed by swiping; macOS keeps an inline remove button.
 private struct AdvancedSearchStatRow: View {
     @Binding var stat: AdvancedSearchStatConstraint
     var onRemove: () -> Void
@@ -44,6 +56,7 @@ private struct AdvancedSearchStatRow: View {
                 }
             }
             .labelsHidden()
+            .fixedSize()
             .accessibilityIdentifier("advanced-search-stat-field")
 
             Picker("Comparison", selection: $stat.comparison) {
@@ -52,22 +65,27 @@ private struct AdvancedSearchStatRow: View {
                 }
             }
             .labelsHidden()
+            .fixedSize()
             .accessibilityIdentifier("advanced-search-stat-comparison")
+
+            Spacer(minLength: 8)
 
             TextField("Value", text: $stat.value, prompt: Text("3"))
                 .labelsHidden()
                 .multilineTextAlignment(.trailing)
-                .frame(maxWidth: 72)
+                .frame(maxWidth: 64)
                 #if os(iOS) || os(visionOS)
                 .keyboardType(.numbersAndPunctuation)
                 #endif
                 .accessibilityIdentifier("advanced-search-stat-value")
 
+            #if os(macOS)
             Button("Remove stat filter", systemImage: "minus.circle.fill", role: .destructive, action: onRemove)
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
                 .foregroundStyle(.red)
                 .accessibilityIdentifier("advanced-search-remove-stat")
+            #endif
         }
     }
 }

@@ -748,6 +748,63 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.cards.map(\.id), ["forest", "beta", "alchemy", "token"])
   }
 
+  func testClearingTypedSearchFieldResetsResultsToDefaultSearch() async throws {
+    // Direction 1: a query committed by typing + submitting. Tapping the field's
+    // built-in clear control (the "✕") hands the model an empty draft in one step
+    // while it still mirrors the committed query — that must reset the results,
+    // not leave the previous matches perpetuated.
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    model.setSearchDraft("forest")
+    await model.submitSearch()
+    await model.drainSearchForTesting()
+
+    XCTAssertEqual(model.submittedSearchText, "forest")
+    XCTAssertEqual(model.cards.map(\.id), ["forest"])
+
+    // The clear control empties the field directly from the committed query.
+    model.setSearchDraft("")
+    await model.drainSearchForTesting()
+
+    XCTAssertEqual(model.searchText, "")
+    XCTAssertEqual(model.submittedSearchText, "")
+    XCTAssertFalse(model.hasUnsubmittedSearchText)
+    XCTAssertEqual(model.cards.map(\.id), ["forest", "beta", "alchemy", "token"])
+  }
+
+  func testClearingAdvancedSearchFieldResetsResultsToDefaultSearch() async throws {
+    // Direction 2: the same committed state, but reached through Advanced Search
+    // (which runs its generated query through the normal submit path). Clearing
+    // the field afterwards must reset just like a typed query — the two entry
+    // points share `submittedSearchText`, so neither may leave it stranded.
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    var builder = AdvancedSearchBuilder()
+    builder.name = .init(text: "forest")
+    await model.applyAdvancedSearch(builder)
+    await model.drainSearchForTesting()
+
+    XCTAssertEqual(model.submittedSearchText, "name:forest")
+    XCTAssertEqual(model.cards.map(\.id), ["forest"])
+
+    // Returning to the text field shows the applied query; clearing it resets.
+    model.setSearchDraft("")
+    await model.drainSearchForTesting()
+
+    XCTAssertEqual(model.searchText, "")
+    XCTAssertEqual(model.submittedSearchText, "")
+    XCTAssertFalse(model.hasUnsubmittedSearchText)
+    XCTAssertEqual(model.cards.map(\.id), ["forest", "beta", "alchemy", "token"])
+  }
+
   func testPrintingModeReloadUsesSubmittedQueryWhileDraftDiffers() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())

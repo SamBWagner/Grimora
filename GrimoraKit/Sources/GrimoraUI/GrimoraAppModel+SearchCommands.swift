@@ -3,6 +3,18 @@ import GrimoraCore
 
 extension GrimoraAppModel {
   public func setSearchDraft(_ text: String) {
+    // The search field's built-in clear control (and select-all + delete) empties
+    // the field in a single step while the draft still mirrors the committed
+    // query. Treat that as clearing the active search so the results return to
+    // the default set — matching what people expect from the "✕" regardless of
+    // whether the query was typed or applied from Advanced Search (both commit to
+    // `submittedSearchText`). Backspacing diverges the draft first, so it stays an
+    // unsubmitted edit and waits for an explicit submit, as covered by
+    // `testClearingSearchDraftWaitsForSubmitBeforeReturningToDefaultSearch`.
+    if text.isEmpty, !searchText.isEmpty, searchText == submittedSearchText {
+      clearSearch()
+      return
+    }
     searchText = text
   }
 
