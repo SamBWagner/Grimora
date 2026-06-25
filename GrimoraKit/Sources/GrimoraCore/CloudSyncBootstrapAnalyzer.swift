@@ -1,52 +1,28 @@
 import Foundation
 
-enum CloudSyncBootstrapDecision: Equatable, Sendable {
-  case apply(DeviceSyncSnapshot)
-  case resolve(CloudSyncResolutionContext)
-}
-
 enum CloudSyncBootstrapAnalyzer {
-  static func analyze(
+  /// Deterministically merges the local library with every remote snapshot using
+  /// per-entity last-writer-wins. CloudKit is the single source of truth, so first
+  /// launch never asks the user to resolve a conflict: divergent lists that share an
+  /// id collapse to the most recently edited copy (the overwritten copy is retained
+  /// as a recovery snapshot so it can be undone), lists that are semantically
+  /// identical are de-duplicated, and lists that merely share a name are kept side by
+  /// side ("Name", "Name 2", ...).
+  static func mergedBootstrapSnapshot(
     localSnapshot: DeviceSyncSnapshot,
     remoteSnapshots: [DeviceSyncSnapshot]
-  ) throws -> CloudSyncBootstrapDecision {
+  ) throws -> DeviceSyncSnapshot {
     precondition(!remoteSnapshots.isEmpty)
 
     let remoteSnapshot = normalizedRemoteSnapshot(
       remoteSnapshots,
       localIdentity: localSnapshot.libraryIdentity
     )
-    let snapshots = [remoteSnapshot, localSnapshot]
-    let conflictingIDs = conflictingListIDs(in: snapshots)
-
-    guard conflictingIDs.values.contains(where: { !$0.isEmpty }) else {
-      return .apply(
-        safelyMergedSnapshot(
-          snapshots,
-          deviceID: localSnapshot.id,
-          deviceName: localSnapshot.deviceName,
-          libraryIdentity: localSnapshot.libraryIdentity
-        )
-      )
-    }
-
-    // Lists are identified by their stable ID, so any snapshot can serve as the
-    // source of truth. The combined iCloud snapshot is offered by default.
-    let eligibleSourceIDs = Set(snapshots.map(\.id))
-    let defaultSourceID = remoteSnapshot.id
-
-    return .resolve(
-      CloudSyncResolutionContext(
-        snapshots: snapshots,
-        defaultSourceSnapshotID: defaultSourceID,
-        eligibleSourceSnapshotIDs: eligibleSourceIDs,
-        safeImportedListIDsBySourceSnapshotID: safeImports(
-          snapshots: snapshots,
-          conflicts: conflictingIDs,
-          eligibleSourceIDs: eligibleSourceIDs
-        ),
-        conflictingListIDsBySnapshotID: conflictingIDs
-      )
+    return safelyMergedSnapshot(
+      [remoteSnapshot, localSnapshot],
+      deviceID: localSnapshot.id,
+      deviceName: localSnapshot.deviceName,
+      libraryIdentity: localSnapshot.libraryIdentity
     )
   }
 
@@ -84,93 +60,6 @@ enum CloudSyncBootstrapAnalyzer {
         tombstoneRemovedDuplicates: true
       )
     )
-  }
-
-  private static func conflictingListIDs(
-    in snapshots: [DeviceSyncSnapshot]
-  ) -> [DeviceSyncSnapshot.ID: Set<CardListRecord.ID>] {
-    var conflicts = Dictionary(
-      uniqueKeysWithValues: snapshots.map { ($0.id, Set<CardListRecord.ID>()) }
-    )
-
-    // A genuine conflict only exists when the *same* list (matching ID) has been
-    // changed in incompatible ways across snapshots, or one side edited a list
-    // the other side deleted. Lists that merely share a name are independent
-    // lists and are kept side by side without asking the user to resolve them.
-    for leftIndex in snapshots.indices {
-      for rightIndex in snapshots.indices where rightIndex > leftIndex {
-        let left = snapshots[leftIndex]
-        let right = snapshots[rightIndex]
-        for leftList in left.listSnapshot.lists where !isFavourites(leftList) {
-          guard
-            let rightList = right.listSnapshot.lists.first(where: { $0.id == leftList.id }),
-            !isFavourites(rightList)
-          else {
-            continue
-          }
-          let leftIdentity = CloudSyncListSemanticIdentity(
-            listID: leftList.id,
-            snapshot: left.listSnapshot
-          )
-          let rightIdentity = CloudSyncListSemanticIdentity(
-            listID: rightList.id,
-            snapshot: right.listSnapshot
-          )
-          if leftIdentity != rightIdentity {
-            conflicts[left.id, default: []].insert(leftList.id)
-            conflicts[right.id, default: []].insert(rightList.id)
-          }
-        }
-
-        let leftDeletedIDs = Set(left.deletedLists.map(\.id))
-        let rightDeletedIDs = Set(right.deletedLists.map(\.id))
-        let leftListIDs = Set(left.listSnapshot.lists.map(\.id))
-        let rightListIDs = Set(right.listSnapshot.lists.map(\.id))
-        conflicts[left.id, default: []].formUnion(leftListIDs.intersection(rightDeletedIDs))
-        conflicts[right.id, default: []].formUnion(rightListIDs.intersection(leftDeletedIDs))
-      }
-    }
-    return conflicts
-  }
-
-  private static func safeImports(
-    snapshots: [DeviceSyncSnapshot],
-    conflicts: [DeviceSyncSnapshot.ID: Set<CardListRecord.ID>],
-    eligibleSourceIDs: Set<DeviceSyncSnapshot.ID>
-  ) -> [DeviceSyncSnapshot.ID: [DeviceSyncSnapshot.ID: Set<CardListRecord.ID>]] {
-    var result:
-      [DeviceSyncSnapshot.ID: [DeviceSyncSnapshot.ID: Set<CardListRecord.ID>]] = [:]
-
-    for source in snapshots where eligibleSourceIDs.contains(source.id) {
-      for candidate in snapshots where candidate.id != source.id {
-        for list in candidate.listSnapshot.lists {
-          guard !conflicts[candidate.id, default: []].contains(list.id) else {
-            continue
-          }
-          if isFavourites(list) {
-            result[source.id, default: [:]][candidate.id, default: []].insert(list.id)
-            continue
-          }
-          let identity = CloudSyncListSemanticIdentity(
-            listID: list.id,
-            snapshot: candidate.listSnapshot
-          )
-          let alreadyRepresented = source.listSnapshot.lists.contains { sourceList in
-            guard !isFavourites(sourceList) else {
-              return false
-            }
-            return CloudSyncListSemanticIdentity(
-              listID: sourceList.id,
-              snapshot: source.listSnapshot
-            ) == identity
-          }
-          if !alreadyRepresented {
-            result[source.id, default: [:]][candidate.id, default: []].insert(list.id)
-          }
-        }
-      }
-    }
-    return result
   }
 
   private static func collapsedIdenticalNamedLists(

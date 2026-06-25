@@ -393,6 +393,53 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     XCTAssertGreaterThan(model.cloudSyncRecoverySnapshots.count, 1)
   }
 
+  func testIncomingRemoteChangeSurfacesUndoableMergeNotice() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards([testCard()])
+    let list = try database.createCardList(named: "Picks", now: Date(timeIntervalSince1970: 10))
+    try database.markCloudSyncBootstrapResolved(true)
+
+    // The server already holds a newer copy of the same list, edited on another device.
+    let transport = MemoryCloudSyncTransport(
+      state: CloudRemoteState(
+        snapshots: [
+          deviceSnapshot(
+            id: "other-device",
+            deviceName: "iPad",
+            listID: list.id,
+            listName: "Renamed remotely"
+          )
+        ]
+      )
+    )
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        cloudSyncCoordinator: CloudSyncCoordinator(database: database, transport: transport)
+      ),
+      cloudSyncDeviceID: "device-a",
+      cloudSyncDeviceName: "Device A",
+      initialCloudSyncSearchSettingsUpdatedAt: .distantPast
+    )
+    model.cloudSyncMode = .enabled
+    // Pretend the first-launch sync already finished so incoming changes are notified.
+    model.hasCompletedInitialCloudSync = true
+
+    // Pulling applies the newer remote copy (last-writer-wins), overwriting the local
+    // name and surfacing a non-blocking, undoable notice — never a modal.
+    await model.pushCloudSyncChanges()
+    if case .resolving = model.cloudSyncStatus {
+      XCTFail("Applying a remote change must never require interactive resolution.")
+    }
+    XCTAssertEqual(model.cardLists.first { $0.id == list.id }?.name, "Renamed remotely")
+    XCTAssertNotNil(model.cloudSyncMergeNotice, "An overwriting remote change should offer Undo.")
+
+    // Undo restores the pre-merge local copy.
+    model.undoCloudSyncMerge()
+    XCTAssertNil(model.cloudSyncMergeNotice)
+    XCTAssertEqual(model.cardLists.first { $0.id == list.id }?.name, "Picks")
+  }
+
   private func waitUntil(
     attempts: Int = 100,
     condition: () -> Bool

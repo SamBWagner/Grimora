@@ -1,6 +1,19 @@
 import Foundation
 import GrimoraCore
 
+/// A non-blocking notice that an incoming iCloud change replaced local data, with the
+/// recovery snapshot needed to undo it. CloudKit stays the source of truth (latest edit
+/// wins); this just gives the user a one-tap escape hatch.
+public struct CloudSyncMergeNotice: Equatable, Sendable, Identifiable {
+  public var id: CloudSyncRecoverySnapshot.ID
+  public var message: String
+
+  public init(id: CloudSyncRecoverySnapshot.ID, message: String) {
+    self.id = id
+    self.message = message
+  }
+}
+
 extension GrimoraAppModel {
   public var isCloudSyncEnabled: Bool {
     cloudSyncMode == .enabled
@@ -100,6 +113,9 @@ extension GrimoraAppModel {
       self.handleCloudSyncStatus(status)
       switch status {
       case .ready, .appliedRemoteSnapshot:
+        // The first launch download/combine has settled; later incoming changes may now
+        // surface the "Updated from your other device" notice.
+        self.hasCompletedInitialCloudSync = true
         await self.startCloudSyncMonitoring()
         self.applyCloudSyncTestActionsIfNeeded()
       case .disabled, .unavailable, .preparing, .syncing, .needsAppUpdate, .resolving,
@@ -434,10 +450,34 @@ extension GrimoraAppModel {
       return
     }
 
+    // An incoming change replaced local data. Surface a non-blocking Undo wired to the
+    // recovery snapshot captured immediately before the merge (the newest one), but only
+    // after the first launch sync so the initial download doesn't nag the user.
+    if hasCompletedInitialCloudSync, let preMerge = cloudSyncRecoverySnapshots.first {
+      cloudSyncMergeNotice = CloudSyncMergeNotice(
+        id: preMerge.id,
+        message: "Updated from your other device."
+      )
+    }
+
     applySyncedSearchSettings(snapshot.searchSettings)
     reloadCardLists()
     if hasLibrary {
       reloadSearch()
     }
+  }
+
+  /// Reverts the most recent incoming iCloud merge by restoring the pre-merge recovery
+  /// snapshot. The restore re-stamps the restored data so it wins the next sync.
+  public func undoCloudSyncMerge() {
+    guard let notice = cloudSyncMergeNotice else {
+      return
+    }
+    cloudSyncMergeNotice = nil
+    restoreCloudSyncRecoverySnapshot(id: notice.id)
+  }
+
+  public func dismissCloudSyncMergeNotice() {
+    cloudSyncMergeNotice = nil
   }
 }

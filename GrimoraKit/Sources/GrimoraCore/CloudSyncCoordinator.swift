@@ -175,35 +175,35 @@ public actor CloudSyncCoordinator {
       let localSnapshot = localRead.snapshot
 
       if try !database.isCloudSyncBootstrapResolved(), !remoteState.snapshots.isEmpty {
-        switch try CloudSyncBootstrapAnalyzer.analyze(
+        // CloudKit is the single source of truth. On first join we deterministically
+        // merge the remote and local libraries (per-entity last-writer-wins) rather
+        // than ever prompting the user to pick a side. The pre-merge state is kept as
+        // a recovery snapshot so an unexpected overwrite can still be undone.
+        var mergedSnapshot = try CloudSyncBootstrapAnalyzer.mergedBootstrapSnapshot(
           localSnapshot: localSnapshot,
           remoteSnapshots: remoteState.snapshots
-        ) {
-        case .resolve(let context):
-          return .resolving(context)
-        case .apply(var mergedSnapshot):
-          try Task.checkCancellation()
-          let appliedSettings =
-            mergedSnapshot.searchSettings.updatedAt >= searchSettings.updatedAt
-            ? mergedSnapshot.searchSettings
-            : searchSettings
-          mergedSnapshot.searchSettings = appliedSettings
-          try database.applyDeviceSyncSnapshot(
-            mergedSnapshot,
-            recoveryReason: "Before automatically combining initial iCloud data",
-            expectedLocalRevision: localRead.revision,
-            alwaysCreateRecoverySnapshot: true
-          )
-          try database.markCloudSyncBootstrapResolved(true)
-          let refreshedSnapshot = try database.deviceSyncSnapshot(
-            deviceID: deviceID,
-            deviceName: deviceName,
-            searchSettings: appliedSettings
-          )
-          try await save(refreshedSnapshot)
-          try database.saveCloudSyncBaseSnapshot(refreshedSnapshot)
-          return .appliedRemoteSnapshot(mergedSnapshot)
-        }
+        )
+        try Task.checkCancellation()
+        let appliedSettings =
+          mergedSnapshot.searchSettings.updatedAt >= searchSettings.updatedAt
+          ? mergedSnapshot.searchSettings
+          : searchSettings
+        mergedSnapshot.searchSettings = appliedSettings
+        try database.applyDeviceSyncSnapshot(
+          mergedSnapshot,
+          recoveryReason: "Before automatically combining initial iCloud data",
+          expectedLocalRevision: localRead.revision,
+          alwaysCreateRecoverySnapshot: true
+        )
+        try database.markCloudSyncBootstrapResolved(true)
+        let refreshedSnapshot = try database.deviceSyncSnapshot(
+          deviceID: deviceID,
+          deviceName: deviceName,
+          searchSettings: appliedSettings
+        )
+        try await save(refreshedSnapshot)
+        try database.saveCloudSyncBaseSnapshot(refreshedSnapshot)
+        return .appliedRemoteSnapshot(mergedSnapshot)
       }
 
       if try !database.isCloudSyncBootstrapResolved() {
@@ -401,18 +401,9 @@ public actor CloudSyncCoordinator {
     localRevision: Int,
     forceSave: Bool
   ) async throws -> CloudSyncStatus {
-    if try hasConcurrentChanges(
-      localSnapshot: localSnapshot,
-      remoteState: remoteState
-    ) {
-      if case .resolve(let context) = try CloudSyncBootstrapAnalyzer.analyze(
-        localSnapshot: localSnapshot,
-        remoteSnapshots: remoteState.snapshots
-      ) {
-        return .resolving(context)
-      }
-    }
-
+    // CloudKit is the single source of truth. Reconciliation is always an automatic
+    // per-entity last-writer-wins merge of the remote and local state — concurrent
+    // edits converge deterministically and never surface an interactive prompt.
     let mergedSnapshot = try mergedEntitySnapshot(
       snapshots: remoteState.snapshots.filter { $0.id != localSnapshot.id } + [localSnapshot],
       deviceID: localSnapshot.id,
@@ -491,78 +482,6 @@ public actor CloudSyncCoordinator {
       )
     }
     return nil
-  }
-
-  private func hasConcurrentChanges(
-    localSnapshot: DeviceSyncSnapshot,
-    remoteState: CloudRemoteState
-  ) throws -> Bool {
-    guard try database.isCloudSyncBootstrapResolved(),
-      let baseSnapshot = try database.cloudSyncBaseSnapshot(),
-      !remoteState.snapshots.isEmpty
-    else {
-      return false
-    }
-
-    let remoteSnapshot = try mergedEntitySnapshot(
-      snapshots: remoteState.snapshots,
-      deviceID: CloudSyncEntityCodec.entitySnapshotID,
-      deviceName: "iCloud",
-      libraryIdentity: localSnapshot.libraryIdentity
-    )
-    let listIDs = Set(baseSnapshot.listSnapshot.lists.map(\.id))
-      .union(localSnapshot.listSnapshot.lists.map(\.id))
-      .union(remoteSnapshot.listSnapshot.lists.map(\.id))
-      .union(baseSnapshot.deletedLists.map(\.id))
-      .union(localSnapshot.deletedLists.map(\.id))
-      .union(remoteSnapshot.deletedLists.map(\.id))
-
-    for listID in listIDs {
-      let base = listState(for: listID, in: baseSnapshot)
-      let local = listState(for: listID, in: localSnapshot)
-      let remote = listState(for: listID, in: remoteSnapshot)
-      if local != base, remote != base, local != remote {
-        return true
-      }
-    }
-
-    let baseSettings = baseSnapshot.searchSettings
-    let localSettings = localSnapshot.searchSettings
-    let remoteSettings = remoteSnapshot.searchSettings
-    return localSettings != baseSettings
-      && remoteSettings != baseSettings
-      && localSettings != remoteSettings
-  }
-
-  private func listState(
-    for listID: CardListRecord.ID,
-    in snapshot: DeviceSyncSnapshot
-  ) -> SyncListState {
-    if let deletion = snapshot.deletedLists
-      .filter({ $0.id == listID })
-      .max(by: { $0.deletedAt < $1.deletedAt })
-    {
-      return .deleted(deletion.deletedAt)
-    }
-    guard let list = snapshot.listSnapshot.lists.first(where: { $0.id == listID }) else {
-      return .missing
-    }
-    return .present(
-      SyncListDocument(
-        list: list,
-        categories: snapshot.listSnapshot.categories
-          .filter { $0.listID == listID }
-          .sorted { $0.id < $1.id },
-        entries: snapshot.listSnapshot.entries
-          .filter { $0.listID == listID }
-          .map { entry in
-            var entry = entry
-            entry.card = nil
-            return entry
-          }
-          .sorted { $0.id < $1.id }
-      )
-    )
   }
 
   private func blockedStatus(
@@ -658,16 +577,4 @@ public actor CloudSyncCoordinator {
     }
     return result
   }
-}
-
-private struct SyncListDocument: Equatable, Sendable {
-  var list: CardListRecord
-  var categories: [CardListCategoryRecord]
-  var entries: [CardListEntryRecord]
-}
-
-private enum SyncListState: Equatable, Sendable {
-  case missing
-  case deleted(Date)
-  case present(SyncListDocument)
 }

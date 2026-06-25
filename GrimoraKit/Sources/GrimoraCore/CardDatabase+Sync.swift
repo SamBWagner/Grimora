@@ -437,6 +437,13 @@ extension CardDatabase {
         category.updatedAt = now
         return category
       }
+      // Re-stamp entries too so the restored copy wins the next last-writer-wins sync;
+      // otherwise a newer remote entry would simply re-apply and undo the restore.
+      recoverySnapshot.listSnapshot.entries = recoverySnapshot.listSnapshot.entries.map { entry in
+        var entry = entry
+        entry.updatedAt = now
+        return entry
+      }
 
       try database.transaction {
         try insertCloudSyncRecoverySnapshotUnlocked(currentSnapshot, payload: currentPayload)

@@ -972,11 +972,12 @@ extension CardDatabase {
           let update = try database.prepare(
             """
             UPDATE card_list_entries
-            SET quantity = quantity + ?
+            SET quantity = quantity + ?, updated_at = ?
             WHERE id = ?
             """)
           try update.bind(quantity, at: 1)
-          try update.bind(existingEntry.id, at: 2)
+          try update.bind(date, at: 2)
+          try update.bind(existingEntry.id, at: 3)
           try update.step()
         } else {
           let insert = try database.prepare(
@@ -1092,10 +1093,11 @@ extension CardDatabase {
           let decrement = try database.prepare(
             """
             UPDATE card_list_entries
-            SET quantity = quantity - 1
+            SET quantity = quantity - 1, updated_at = ?
             WHERE id = ?
             """)
-          try decrement.bind(id, at: 1)
+          try decrement.bind(Self.formattedListDate(now), at: 1)
+          try decrement.bind(id, at: 2)
           try decrement.step()
         } else {
           let delete = try database.prepare("DELETE FROM card_list_entries WHERE id = ?")
@@ -1129,12 +1131,13 @@ extension CardDatabase {
       let update = try database.prepare(
         """
         UPDATE card_list_entries
-        SET quantity = quantity + ?
+        SET quantity = quantity + ?, updated_at = ?
         WHERE id = ?
         """)
       try database.transaction {
         try update.bind(quantityDelta, at: 1)
-        try update.bind(id, at: 2)
+        try update.bind(Self.formattedListDate(now), at: 2)
+        try update.bind(id, at: 3)
         try update.step()
         try touchCardListUnlocked(id: entry.listID, date: Self.formattedListDate(now))
       }
@@ -1162,12 +1165,13 @@ extension CardDatabase {
       let update = try database.prepare(
         """
         UPDATE card_list_entries
-        SET quantity = ?
+        SET quantity = ?, updated_at = ?
         WHERE id = ?
         """)
       try database.transaction {
         try update.bind(quantity, at: 1)
-        try update.bind(id, at: 2)
+        try update.bind(Self.formattedListDate(now), at: 2)
+        try update.bind(id, at: 3)
         try update.step()
         try touchCardListUnlocked(id: entry.listID, date: Self.formattedListDate(now))
       }

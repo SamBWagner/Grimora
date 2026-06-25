@@ -107,6 +107,9 @@ public final class GrimoraAppModel {
   public internal(set) var cloudSyncPendingChangeCount = 0
   public internal(set) var cloudSyncLastDownloadAt: Date?
   public internal(set) var cloudSyncLastUploadAt: Date?
+  /// A non-blocking notice shown when an incoming iCloud change overwrote local data,
+  /// offering a one-tap Undo. Set to `nil` once dismissed or acted on.
+  public internal(set) var cloudSyncMergeNotice: CloudSyncMergeNotice?
   public internal(set) var managedCatalogMigrationStatus:
     ManagedCatalogMigrationStatus?
 
@@ -230,6 +233,9 @@ public final class GrimoraAppModel {
   var cloudSyncMonitorTask: Task<Void, Never>?
   var cloudSyncPushTask: Task<Void, Never>?
   var didApplyCloudSyncTestActions = false
+  /// Tracks whether the first launch sync (initial download / combine) has finished, so
+  /// the "Updated from your other device" notice only appears for later incoming changes.
+  var hasCompletedInitialCloudSync = false
   var valueHistoryRefreshTask: Task<Void, Never>?
   var valueHistoryBackgroundTask: Task<Void, Never>?
   var libraryActivityDismissTask: Task<Void, Never>?

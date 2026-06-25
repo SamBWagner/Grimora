@@ -623,14 +623,11 @@ final class CloudSyncTests: XCTestCase {
         duplicate.listSnapshot.entries[0].id = "ipad-entry"
         duplicate.listSnapshot.entries[0].listID = "ipad-list"
 
-        let decision = try CloudSyncBootstrapAnalyzer.analyze(
+        let merged = try CloudSyncBootstrapAnalyzer.mergedBootstrapSnapshot(
             localSnapshot: source,
             remoteSnapshots: [duplicate]
         )
 
-        guard case .apply(let merged) = decision else {
-            return XCTFail("Expected identical lists to merge automatically.")
-        }
         XCTAssertEqual(merged.listSnapshot.lists.map(\.name), ["Shared"])
         XCTAssertEqual(merged.listSnapshot.entries.count, 1)
     }
@@ -650,14 +647,11 @@ final class CloudSyncTests: XCTestCase {
             timestamp: timestamp
         )
 
-        let decision = try CloudSyncBootstrapAnalyzer.analyze(
+        let merged = try CloudSyncBootstrapAnalyzer.mergedBootstrapSnapshot(
             localSnapshot: local,
             remoteSnapshots: [remote]
         )
 
-        guard case .apply(let merged) = decision else {
-            return XCTFail("Expected empty lists to combine automatically.")
-        }
         XCTAssertTrue(merged.listSnapshot.lists.isEmpty)
         XCTAssertTrue(merged.deletedLists.contains { $0.id == "local-empty" })
         XCTAssertTrue(merged.deletedLists.contains { $0.id == "remote-empty" })
@@ -677,14 +671,11 @@ final class CloudSyncTests: XCTestCase {
             updatedAt: Date(timeIntervalSince1970: 20)
         )
 
-        let decision = try CloudSyncBootstrapAnalyzer.analyze(
+        let merged = try CloudSyncBootstrapAnalyzer.mergedBootstrapSnapshot(
             localSnapshot: local,
             remoteSnapshots: [remote]
         )
 
-        guard case .apply(let merged) = decision else {
-            return XCTFail("Expected favourites and settings to merge automatically.")
-        }
         XCTAssertEqual(merged.listSnapshot.lists.map(\.name), ["Favourites"])
         XCTAssertEqual(
             Set(merged.listSnapshot.entries.map(\.cardID)),
@@ -697,7 +688,10 @@ final class CloudSyncTests: XCTestCase {
         )
     }
 
-    func testBootstrapAnalyzerRequiresResolutionForDeleteVersusEdit() throws {
+    func testBootstrapDeleteVersusEditResolvesToNewestAction() throws {
+        // The remote deleted the shared list (t=30) more recently than the local edit
+        // (t=10). Last-writer-wins removes it automatically — no prompt — and the
+        // pre-merge copy stays recoverable from the 30-day history.
         let local = snapshot(deviceID: "mac", listID: "shared-list", listName: "Shared")
         let remote = DeviceSyncSnapshot(
             id: "ipad",
@@ -718,20 +712,19 @@ final class CloudSyncTests: XCTestCase {
             ]
         )
 
-        let decision = try CloudSyncBootstrapAnalyzer.analyze(
+        let merged = try CloudSyncBootstrapAnalyzer.mergedBootstrapSnapshot(
             localSnapshot: local,
             remoteSnapshots: [remote]
         )
 
-        guard case .resolve(let context) = decision else {
-            return XCTFail("Expected delete-versus-edit resolution.")
-        }
-        XCTAssertEqual(context.conflictingListIDs(for: local.id), ["shared-list"])
+        XCTAssertFalse(merged.listSnapshot.lists.contains { $0.id == "shared-list" })
+        XCTAssertTrue(merged.deletedLists.contains { $0.id == "shared-list" })
     }
 
-    func testBootstrapResolutionDefaultsIncludeOnlySafeUniqueLists() throws {
-        // The same list (matching ID) was edited differently on each device, which
-        // is a genuine conflict. Each device's unique lists remain safe to import.
+    func testBootstrapMergeKeepsUniqueListsAndPicksNewestSharedCopy() throws {
+        // The same list (matching ID) was edited differently on each device. Rather
+        // than prompting, last-writer-wins keeps the most recently edited copy and
+        // every device's genuinely unique list is preserved side by side.
         var local = snapshot(deviceID: "mac", listID: "shared-list", listName: "Shared")
         let localUnique = snapshot(
             deviceID: "mac-unique",
@@ -750,22 +743,21 @@ final class CloudSyncTests: XCTestCase {
         remote.listSnapshot.lists.append(contentsOf: remoteUnique.listSnapshot.lists)
         remote.listSnapshot.entries.append(contentsOf: remoteUnique.listSnapshot.entries)
 
-        let decision = try CloudSyncBootstrapAnalyzer.analyze(
+        let merged = try CloudSyncBootstrapAnalyzer.mergedBootstrapSnapshot(
             localSnapshot: local,
             remoteSnapshots: [remote]
         )
 
-        guard case .resolve(let context) = decision else {
-            return XCTFail("Expected a genuine same-list edit conflict.")
-        }
-        XCTAssertEqual(context.defaultSourceSnapshotID, CloudSyncEntityCodec.entitySnapshotID)
         XCTAssertEqual(
-            context.safeImportedListIDs(for: context.defaultSourceSnapshotID)[local.id],
-            ["local-unique"]
+            Set(merged.listSnapshot.lists.map(\.id)),
+            ["shared-list", "local-unique", "remote-unique"]
         )
-        XCTAssertFalse(
-            context.safeImportedListIDs(for: context.defaultSourceSnapshotID)[local.id, default: []]
-                .contains("shared-list")
+        // The remote edited the shared list more recently (t=20 vs t=10), so its copy wins.
+        XCTAssertEqual(
+            merged.listSnapshot.entries
+                .filter { $0.listID == "shared-list" }
+                .map(\.cardID),
+            ["beta"]
         )
     }
 

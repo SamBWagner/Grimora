@@ -64,6 +64,17 @@ public struct GrimoraRootView: View {
                     .accessibilityLabel(model.statusMessage)
             }
         }
+        .overlay(alignment: .bottom) {
+            if let notice = model.cloudSyncMergeNotice {
+                CloudSyncMergeNoticeBanner(
+                    notice: notice,
+                    onUndo: { model.undoCloudSyncMerge() },
+                    onDismiss: { model.dismissCloudSyncMergeNotice() }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(duration: 0.3), value: model.cloudSyncMergeNotice)
         .onAppear {
             if cloudSyncModePreference == .undecided, model.cloudSyncMode == .enabled {
                 cloudSyncModeRawValue = GrimoraCloudSyncMode.enabled.rawValue
