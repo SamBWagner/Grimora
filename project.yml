@@ -210,7 +210,8 @@ schemes:
     test:
       config: Debug
       targets:
-        - GrimoraiOSUITests
+        - name: GrimoraiOSUITests
+          parallelizable: true
   GrimoraVisionOS:
     build:
       targets:
@@ -221,4 +222,5 @@ schemes:
     test:
       config: Debug
       targets:
-        - GrimoraVisionOSUITests
+        - name: GrimoraVisionOSUITests
+          parallelizable: true
