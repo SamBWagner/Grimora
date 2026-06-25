@@ -19,17 +19,6 @@ extension GrimoraAppModel {
     cloudSyncMode == .enabled
   }
 
-  public var cloudSyncResolutionContext: CloudSyncResolutionContext? {
-    if case .resolving(let context) = cloudSyncStatus {
-      return context
-    }
-    return nil
-  }
-
-  public var cloudSyncResolutionSnapshots: [DeviceSyncSnapshot] {
-    cloudSyncResolutionContext?.snapshots ?? []
-  }
-
   public func applyCloudSyncModePreference(_ mode: GrimoraCloudSyncMode) {
     guard mode != cloudSyncMode else {
       return
@@ -118,7 +107,7 @@ extension GrimoraAppModel {
         self.hasCompletedInitialCloudSync = true
         await self.startCloudSyncMonitoring()
         self.applyCloudSyncTestActionsIfNeeded()
-      case .disabled, .unavailable, .preparing, .syncing, .needsAppUpdate, .resolving,
+      case .disabled, .unavailable, .preparing, .syncing, .needsAppUpdate,
         .accountChangeRequiresResolution, .failed:
         break
       }
@@ -163,45 +152,13 @@ extension GrimoraAppModel {
     switch cloudSyncStatus {
     case .ready, .appliedRemoteSnapshot:
       break
-    case .disabled, .unavailable, .preparing, .syncing, .needsAppUpdate, .resolving,
+    case .disabled, .unavailable, .preparing, .syncing, .needsAppUpdate,
       .accountChangeRequiresResolution, .failed:
       return
     }
 
     Task { [weak self] in
       await self?.refreshCloudSync(requestTransportRefresh: true)
-    }
-  }
-
-  public func resolveCloudSync(
-    sourceSnapshotID: DeviceSyncSnapshot.ID,
-    importedListIDsBySnapshotID: [DeviceSyncSnapshot.ID: Set<CardListRecord.ID>]
-  ) async {
-    guard let context = cloudSyncResolutionContext else {
-      return
-    }
-    let snapshots = context.snapshots
-
-    let selectedSearchSettings = snapshots.first { $0.id == sourceSnapshotID }?.searchSettings
-    cloudSyncStatus = .syncing
-    let status = await cloudSyncCoordinator.applyResolution(
-      SyncResolutionPlan(
-        sourceSnapshotID: sourceSnapshotID,
-        importedListIDsBySnapshotID: importedListIDsBySnapshotID
-      ),
-      snapshots: snapshots,
-      deviceID: cloudSyncDeviceID,
-      deviceName: cloudSyncDeviceName,
-      searchSettings: currentSyncSearchSettings()
-    )
-    handleCloudSyncStatus(status)
-    if case .ready = status, let selectedSearchSettings {
-      applySyncedSearchSettings(selectedSearchSettings)
-      await startCloudSyncMonitoring()
-    }
-    reloadCardLists()
-    if hasLibrary {
-      reloadSearch()
     }
   }
 
@@ -339,8 +296,6 @@ extension GrimoraAppModel {
       statusMessage = "Syncing with iCloud..."
     case .needsAppUpdate:
       statusMessage = "Update Grimora to continue syncing across devices."
-    case .resolving:
-      statusMessage = "Choose which device data to sync."
     case .accountChangeRequiresResolution:
       statusMessage = "Choose how Grimora should handle the changed iCloud account."
     }

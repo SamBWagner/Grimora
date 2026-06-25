@@ -373,29 +373,11 @@ public final class GrimoraAppModel {
   public static func configuredForCurrentPreferences(
     environment: GrimoraEnvironment
   ) -> GrimoraAppModel {
-    let preferredCloudSyncMode = GrimoraCloudSyncPreferences.resolvedMode()
-    #if DEBUG
-      let usesConflictFixture =
-        ProcessInfo.processInfo.environment["GRIMORA_SYNC_TEST_CONFLICT_FIXTURE"] == "1"
-        || ProcessInfo.processInfo.arguments.contains("--grimora-sync-conflict-fixture")
-        || UserDefaults.standard.bool(forKey: "GRIMORA_SYNC_TEST_CONFLICT_FIXTURE")
-    #else
-      let usesConflictFixture = false
-    #endif
-    let model = GrimoraAppModel(
+    GrimoraAppModel(
       environment: environment,
       initialDefaultSearchConfiguration: GrimoraSearchPreferences.configuration(),
-      initialCloudSyncMode: usesConflictFixture
-        ? .disabled
-        : preferredCloudSyncMode,
+      initialCloudSyncMode: GrimoraCloudSyncPreferences.resolvedMode(),
       cloudSyncDeviceName: GrimoraDeviceLabel.current
     )
-    #if DEBUG
-      if usesConflictFixture {
-        model.cloudSyncMode = preferredCloudSyncMode
-        model.cloudSyncStatus = .resolving(CloudSyncConflictFixture.context())
-      }
-    #endif
-    return model
   }
 }

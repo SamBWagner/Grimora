@@ -7,8 +7,9 @@ import XCTest
 /// These tests stand in for two iCloud-connected devices: each "device" is an in-memory
 /// `CardDatabase` + `CloudSyncCoordinator` sharing one ``SimulatedCloudKitTransport``.
 /// They assert the two properties the user's data safety depends on:
-///   1. Steady-state editing never surfaces an interactive resolution prompt
-///      (`.resolving`) — the regression that made the app unusable.
+///   1. Steady-state editing never errors out mid-convergence (the interactive
+///      "which copy?" resolution flow that made the app unusable was removed, so the
+///      `.resolving` status no longer exists — the type system now enforces that too).
 ///   2. Arbitrary interleavings of edits across devices converge to identical libraries
 ///      with no last-written change lost.
 final class CloudSyncConvergenceTests: XCTestCase {
@@ -61,7 +62,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
   }
 
   /// Runs rounds of every device pushing then pulling until the shared library is
-  /// stable. Returns every status produced so callers can assert none asked to resolve.
+  /// stable. Returns every status produced so callers can assert the run stayed healthy.
   @discardableResult
   private func settle(_ devices: [Device], rounds: Int = 5) async throws -> [CloudSyncStatus] {
     var statuses: [CloudSyncStatus] = []
@@ -93,10 +94,10 @@ final class CloudSyncConvergenceTests: XCTestCase {
     }
   }
 
-  private func assertNeverResolved(_ statuses: [CloudSyncStatus], file: StaticString = #filePath, line: UInt = #line) {
+  private func assertNoSyncFailure(_ statuses: [CloudSyncStatus], file: StaticString = #filePath, line: UInt = #line) {
     for status in statuses {
-      if case .resolving = status {
-        XCTFail("Steady-state sync must never require interactive resolution", file: file, line: line)
+      if case .failed(let message) = status {
+        XCTFail("Sync should not fail during convergence: \(message)", file: file, line: line)
       }
     }
   }
@@ -138,8 +139,9 @@ final class CloudSyncConvergenceTests: XCTestCase {
     }
     statuses += try await settle([deviceA, deviceB])
 
-    // The prompt that made the app unusable must never appear...
-    assertNeverResolved(statuses)
+    // Sync must stay healthy across all those edits (the interactive prompt that made
+    // the app unusable is gone)...
+    assertNoSyncFailure(statuses)
     // ...and both devices must end up identical.
     try assertConverged([deviceA, deviceB])
 
@@ -184,12 +186,10 @@ final class CloudSyncConvergenceTests: XCTestCase {
       deviceName: deviceB.name,
       searchSettings: SyncSearchSettings(updatedAt: .distantPast)
     )
-    if case .resolving = startStatus {
-      XCTFail("First-launch bootstrap must never require interactive resolution.")
-    }
+    assertNoSyncFailure([startStatus])
 
     let statuses = try await settle([deviceA, deviceB])
-    assertNeverResolved(statuses)
+    assertNoSyncFailure(statuses)
     try assertConverged([deviceA, deviceB])
   }
 
@@ -208,7 +208,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
     try deviceB.database.appendCard("beta", toList: list.id, now: nextDate())
     let statuses = try await settle([deviceA, deviceB])
 
-    assertNeverResolved(statuses)
+    assertNoSyncFailure(statuses)
     try assertConverged([deviceA, deviceB])
     XCTAssertEqual(
       Set(try deviceA.database.cardListEntries(forListID: list.id).map(\.cardID)),
@@ -235,7 +235,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
     _ = deleteDate
 
     let statuses = try await settle([deviceA, deviceB])
-    assertNeverResolved(statuses)
+    assertNoSyncFailure(statuses)
     try assertConverged([deviceA, deviceB])
     XCTAssertFalse(
       try deviceA.database.cardLists().contains { $0.id == list.id },
@@ -270,7 +270,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
 
     // The next attempt succeeds and everything converges with no data lost.
     let statuses = try await settle([deviceA, deviceB])
-    assertNeverResolved(statuses)
+    assertNoSyncFailure(statuses)
     try assertConverged([deviceA, deviceB])
     XCTAssertEqual(
       Set(try deviceB.database.cardLists().map(\.name)),
@@ -324,7 +324,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
     }
 
     statuses += try await settle(devices)
-    assertNeverResolved(statuses)
+    assertNoSyncFailure(statuses)
     try assertConverged(devices)
   }
 }

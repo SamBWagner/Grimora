@@ -233,36 +233,6 @@ public actor CloudSyncCoordinator {
     }
   }
 
-  public func applyResolution(
-    _ plan: SyncResolutionPlan,
-    snapshots: [DeviceSyncSnapshot],
-    deviceID: String,
-    deviceName: String,
-    searchSettings: SyncSearchSettings
-  ) async -> CloudSyncStatus {
-    do {
-      try snapshots.forEach { try $0.validateForApplication() }
-      let resolved = try database.applySyncResolutionPlan(plan, snapshots: snapshots)
-      let refreshed = try database.deviceSyncSnapshot(
-        deviceID: deviceID,
-        deviceName: deviceName,
-        searchSettings: resolved.searchSettings.updatedAt >= searchSettings.updatedAt
-          ? resolved.searchSettings
-          : searchSettings
-      )
-      try await save(refreshed)
-      try database.markCloudSyncBootstrapResolved(true)
-      try database.saveCloudSyncBaseSnapshot(refreshed)
-      return .ready
-    } catch is CloudSyncSnapshotValidationError {
-      return .failed("iCloud sync data could not be validated. Local data was not changed.")
-    } catch SyncResolutionError.sourceSnapshotNotFound {
-      return .failed("The selected sync source was no longer available.")
-    } catch {
-      return .failed("Could not apply the sync choice.")
-    }
-  }
-
   public func pushLocalState(
     deviceID: String,
     deviceName: String,

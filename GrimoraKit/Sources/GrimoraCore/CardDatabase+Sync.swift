@@ -118,26 +118,6 @@ extension CardDatabase {
     }
   }
 
-  public func applySyncResolutionPlan(
-    _ plan: SyncResolutionPlan,
-    snapshots: [DeviceSyncSnapshot]
-  ) throws -> DeviceSyncSnapshot {
-    let resolved = try plan.resolvedSnapshot(from: snapshots)
-    try applyDeviceSyncSnapshot(
-      resolved,
-      recoveryReason: "Before manually combining iCloud data",
-      alwaysCreateRecoverySnapshot: true
-    )
-    try markCloudSyncBootstrapResolved(true)
-    try recordLocalSyncChange(
-      entityType: .snapshot,
-      recordID: resolved.id,
-      operation: .snapshot,
-      payload: Self.syncJSONData(resolved)
-    )
-    return resolved
-  }
-
   public func isCloudSyncBootstrapResolved() throws -> Bool {
     try syncMetadataString(forKey: SyncMetadataKey.bootstrapResolved) == "true"
   }

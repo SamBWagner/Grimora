@@ -210,10 +210,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     model.cloudSyncMode = .enabled
     await model.startCloudSync()
 
-    XCTAssertTrue(model.cloudSyncResolutionSnapshots.isEmpty)
-    if case .resolving = model.cloudSyncStatus {
-      return XCTFail("A name collision must not require resolution.")
-    }
+    // A name collision auto-merges (both kept side by side) — never a prompt.
     XCTAssertEqual(
       model.cardLists.filter { $0.name == "Remote Picks" }.count,
       2
@@ -428,9 +425,6 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     // Pulling applies the newer remote copy (last-writer-wins), overwriting the local
     // name and surfacing a non-blocking, undoable notice — never a modal.
     await model.pushCloudSyncChanges()
-    if case .resolving = model.cloudSyncStatus {
-      XCTFail("Applying a remote change must never require interactive resolution.")
-    }
     XCTAssertEqual(model.cardLists.first { $0.id == list.id }?.name, "Renamed remotely")
     XCTAssertNotNil(model.cloudSyncMergeNotice, "An overwriting remote change should offer Undo.")
 

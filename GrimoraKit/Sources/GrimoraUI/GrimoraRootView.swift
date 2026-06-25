@@ -132,9 +132,7 @@ public struct GrimoraRootView: View {
 
     @ViewBuilder
     private var root: some View {
-        if model.cloudSyncResolutionContext != nil {
-            CloudSyncResolutionView()
-        } else if !model.hasLibrary, model.cloudSyncMode == .undecided, model.canOfferInitialCloudSync {
+        if !model.hasLibrary, model.cloudSyncMode == .undecided, model.canOfferInitialCloudSync {
             CloudSyncSetupView()
         } else if model.hasLibrary {
             #if os(macOS)
