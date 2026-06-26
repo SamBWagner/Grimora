@@ -67,6 +67,14 @@ struct SelectableOracleText: UIViewRepresentable {
         textView.backgroundColor = .clear
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
+        // Wrap to the view's width instead of laying the oracle text out as one long
+        // line. Without this the text view reports (and renders at) its full single-line
+        // intrinsic width, which on the iPad fly-up sheet overflowed the panel — the
+        // start of each line was clipped off the leading edge.
+        textView.textContainer.widthTracksTextView = true
+        textView.textContainer.lineBreakMode = .byWordWrapping
+        textView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.adjustsFontForContentSizeCategory = true
         textView.font = .grimoraBody
         textView.accessibilityIdentifier = "card-detail-oracle-text"

@@ -1,20 +1,21 @@
 import GrimoraCore
 import SwiftUI
 
-/// Wraps the platform `SelectableOracleText` representable and pins it to the
-/// width of the surrounding stack. The underlying text view sizes itself from
-/// the width SwiftUI proposes; in the card detail inspector that proposal can
-/// come through wider than the visible column, so the text lays out past the
-/// trailing edge that the sibling sections respect and the last word of each
-/// line gets clipped. Measuring the slot and feeding an explicit width back to
-/// the representable keeps it inside the same container as everything else.
+/// Wraps the platform `SelectableOracleText` representable so it wraps to the
+/// width of the surrounding stack instead of laying the oracle text out as one
+/// long line. The underlying text view reports its full single-line intrinsic
+/// width when SwiftUI proposes an unspecified width during layout negotiation;
+/// left unchecked that stretched the whole card-detail column past its
+/// container (most visibly on the iPad fly-up sheet, where the start of each
+/// line was clipped off the leading edge). `fixedSize(horizontal: false,
+/// vertical: true)` makes it accept the proposed width and grow only
+/// vertically — the same contract a plain `Text` honours — so it stays inside
+/// the same bounds as the sibling sections.
 struct CardOracleText: View {
     var text: String
     var color: GrimoraColorValue
     var onIncludeSelection: (String) -> Void
     var onExcludeSelection: (String) -> Void
-
-    @State private var resolvedWidth: CGFloat?
 
     var body: some View {
         SelectableOracleText(
@@ -23,15 +24,7 @@ struct CardOracleText: View {
             onIncludeSelection: onIncludeSelection,
             onExcludeSelection: onExcludeSelection
         )
-        .frame(width: resolvedWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            GeometryReader { proxy in
-                Color.clear
-                    .onChange(of: proxy.size.width, initial: true) { _, newValue in
-                        resolvedWidth = newValue
-                    }
-            }
-        }
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
