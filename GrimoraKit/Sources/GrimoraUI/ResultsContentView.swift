@@ -379,12 +379,13 @@ struct ResultsContentView: View {
                     }
                     .accessibilityIdentifier("search-results-scroll")
                     .simultaneousGesture(GridZoomAvailability.isSupported ? magnifyGesture : nil)
-                    // Live pinch feedback: scale the results pane as a single layer while
-                    // the gesture is active, then commit the discrete layout on release.
-                    // `clipped()` keeps the scaled-up pane inside the results area (the
-                    // ScrollView already clips at rest, so this is a no-op when idle).
+                    // Live pinch feedback: scale the results pane as a single layer while the
+                    // gesture is active, then commit the discrete layout on release. No extra
+                    // clipping here — the scaled cards tuck under the opaque floating search
+                    // header and bottom controls just like normal scrolling, and the window
+                    // clips the sides. (Clipping the ScrollView frame would sever that overflow
+                    // and leave a hard edge under the search bar.)
                     .scaleEffect(liveMagnification, anchor: magnificationAnchor)
-                    .clipped()
                 )
             }
             .jumpToTopButtonInset(
