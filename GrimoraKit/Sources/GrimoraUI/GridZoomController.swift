@@ -78,11 +78,19 @@ final class GridZoomController {
     }
 
     func setMagnifiedScale(startScale: Double, magnification: Double) {
+        setScale(magnifiedScale(startScale: startScale, magnification: magnification))
+    }
+
+    /// The clamped scale a pinch would commit to, without mutating state.
+    ///
+    /// Used to drive the live on-screen pinch transform so it stops growing
+    /// exactly at the supported bounds rather than overshooting.
+    func magnifiedScale(startScale: Double, magnification: Double) -> Double {
         guard magnification.isFinite else {
-            return
+            return scale
         }
 
-        setScale(startScale * magnification)
+        return Self.clamped(startScale * magnification)
     }
 
     private func setScale(_ newScale: Double) {

@@ -123,6 +123,21 @@ final class GridZoomControllerTests: XCTestCase {
         XCTAssertEqual(controller.scale, 0.7, accuracy: 0.0001)
     }
 
+    func testMagnifiedScalePreviewsClampedTargetWithoutMutating() {
+        let controller = GridZoomController(scale: 1.2)
+
+        XCTAssertEqual(
+            controller.magnifiedScale(startScale: 1.2, magnification: 1.25),
+            1.5,
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(controller.magnifiedScale(startScale: 1.2, magnification: 10), 1.6, accuracy: 0.0001)
+        XCTAssertEqual(controller.magnifiedScale(startScale: 1.2, magnification: 0.1), 0.7, accuracy: 0.0001)
+        // A non-finite magnification falls back to the current scale and never mutates state.
+        XCTAssertEqual(controller.magnifiedScale(startScale: 1.2, magnification: .nan), 1.2, accuracy: 0.0001)
+        XCTAssertEqual(controller.scale, 1.2, accuracy: 0.0001)
+    }
+
     func testVisibleImageQualitySwitchesAtEnlargedThreshold() {
         let belowThreshold = GridZoomController(scale: 0.99)
         XCTAssertEqual(belowThreshold.visibleImageQuality, .small)

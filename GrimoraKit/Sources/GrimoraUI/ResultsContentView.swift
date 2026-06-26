@@ -10,6 +10,8 @@ struct ResultsContentView: View {
     @Environment(GrimoraAppModel.self) private var model
     var gridZoom: GridZoomController
     @State private var magnificationStartScale: Double?
+    @State private var liveMagnification: CGFloat = 1
+    @State private var magnificationAnchor: UnitPoint = .center
     @State private var showsSearchLoadingIndicator = false
     @State private var searchJumpToTopState = JumpToTopScrollState.top
     @State private var searchResultSelection = CardGridSelectionState<CardRecord.ID>()
@@ -377,6 +379,12 @@ struct ResultsContentView: View {
                     }
                     .accessibilityIdentifier("search-results-scroll")
                     .simultaneousGesture(GridZoomAvailability.isSupported ? magnifyGesture : nil)
+                    // Live pinch feedback: scale the results pane as a single layer while
+                    // the gesture is active, then commit the discrete layout on release.
+                    // `clipped()` keeps the scaled-up pane inside the results area (the
+                    // ScrollView already clips at rest, so this is a no-op when idle).
+                    .scaleEffect(liveMagnification, anchor: magnificationAnchor)
+                    .clipped()
                 )
             }
             .jumpToTopButtonInset(
@@ -488,13 +496,27 @@ struct ResultsContentView: View {
             .onChanged { value in
                 let startScale = magnificationStartScale ?? gridZoom.scale
                 magnificationStartScale = startScale
-                gridZoom.setMagnifiedScale(
+                magnificationAnchor = value.startAnchor
+                // Scale the pane live, but cap the on-screen growth at the scale the
+                // layout can actually commit to so we never overshoot the limits.
+                let targetScale = gridZoom.magnifiedScale(
                     startScale: startScale,
                     magnification: value.magnification
                 )
+                liveMagnification = CGFloat(targetScale / startScale)
             }
-            .onEnded { _ in
+            .onEnded { value in
+                let startScale = magnificationStartScale ?? gridZoom.scale
                 magnificationStartScale = nil
+                // Commit the discrete layout and unwind the transform together so the
+                // scaled pane cross-fades into the reflowed grid.
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    gridZoom.setMagnifiedScale(
+                        startScale: startScale,
+                        magnification: value.magnification
+                    )
+                    liveMagnification = 1
+                }
             }
     }
 }
