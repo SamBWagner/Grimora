@@ -902,8 +902,13 @@ public struct CardDetailView: View {
         .scrollTargetBehavior(.paging)
         .scrollIndicators(.hidden)
         .scrollPosition(id: compactGalleryScrollSelection)
-        .frame(maxWidth: Self.compactGalleryMaximumWidth)
+        // Derive the gallery's reserved height from the *capped* card width, not
+        // the full container width. The aspect ratio must sit inside the maxWidth
+        // cap — otherwise a wide host (e.g. the iPad fly-up sheet) reserves a box
+        // sized to the whole panel width while the card is only 420pt, leaving a
+        // tall empty band above and below the artwork.
         .aspectRatio(Self.cardAspectRatio, contentMode: .fit)
+        .frame(maxWidth: Self.compactGalleryMaximumWidth)
         .frame(maxWidth: .infinity, alignment: .center)
         .accessibilityIdentifier("card-printings-gallery")
         .simultaneousGesture(compactGalleryMagnifyGesture)
