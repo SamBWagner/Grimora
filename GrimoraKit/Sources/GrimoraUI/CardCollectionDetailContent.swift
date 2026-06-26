@@ -394,11 +394,7 @@ extension CardCollectionDetailView {
     }
 
     private var listGridHorizontalAlignment: AdaptiveCardGridHorizontalAlignment {
-        #if os(iOS)
-        .center
-        #else
         .leading
-        #endif
     }
 
     private var listGridFillsSingleColumn: Bool {
