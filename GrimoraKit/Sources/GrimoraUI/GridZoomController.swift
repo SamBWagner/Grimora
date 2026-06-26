@@ -153,3 +153,59 @@ enum GridZoomAvailability {
         #endif
     }
 }
+
+/// Photos-style live pinch-to-zoom for a card/tile grid.
+///
+/// Attach to the grid's `ScrollView` so the gesture's `startAnchor` is reported
+/// in viewport coordinates. While the pinch is active the whole pane is scaled
+/// as a single layer (capped to the committable range so it never overshoots the
+/// limits); on release the discrete layout is committed with a spring and the
+/// transform unwinds together, cross-fading into the reflowed grid. Because
+/// `gridZoom.scale` is untouched mid-gesture, image quality never reloads while
+/// pinching. No clipping is applied — scaled content tucks under the surrounding
+/// opaque chrome just like normal scrolling.
+private struct GridZoomPinchModifier: ViewModifier {
+    var gridZoom: GridZoomController
+
+    @State private var startScale: Double?
+    @State private var liveMagnification: CGFloat = 1
+    @State private var anchor: UnitPoint = .center
+
+    func body(content: Content) -> some View {
+        content
+            .simultaneousGesture(GridZoomAvailability.isSupported ? pinch : nil)
+            .scaleEffect(liveMagnification, anchor: anchor)
+    }
+
+    private var pinch: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let start = startScale ?? gridZoom.scale
+                startScale = start
+                anchor = value.startAnchor
+                let target = gridZoom.magnifiedScale(
+                    startScale: start,
+                    magnification: value.magnification
+                )
+                liveMagnification = CGFloat(target / start)
+            }
+            .onEnded { value in
+                let start = startScale ?? gridZoom.scale
+                startScale = nil
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    gridZoom.setMagnifiedScale(
+                        startScale: start,
+                        magnification: value.magnification
+                    )
+                    liveMagnification = 1
+                }
+            }
+    }
+}
+
+extension View {
+    /// Adds live pinch-to-zoom that drives `gridZoom`. See `GridZoomPinchModifier`.
+    func gridZoomPinch(_ gridZoom: GridZoomController) -> some View {
+        modifier(GridZoomPinchModifier(gridZoom: gridZoom))
+    }
+}

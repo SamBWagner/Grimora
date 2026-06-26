@@ -5,6 +5,7 @@ struct CardCollectionsOverviewView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(GrimoraAppModel.self) private var model
 
+    var gridZoom: GridZoomController
     var onCreateList: () -> Void
     var onSelectList: (CardCollectionRecord.ID) -> Void
     var onRenameList: (CardCollectionRecord) -> Void = { _ in }
@@ -65,6 +66,7 @@ struct CardCollectionsOverviewView: View {
             .padding(.vertical, verticalPadding)
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
+        .gridZoomPinch(gridZoom)
         .background {
             GrimoraAppBackground(palette: palette)
         }
@@ -159,7 +161,17 @@ struct CardCollectionsOverviewView: View {
         #endif
     }
 
+    // Pinch-to-zoom scales the tile footprint off the same shared GridZoomController
+    // used by the card grids, so the user's zoom preference is consistent everywhere.
     private var tileMinimumWidth: CGFloat {
+        baseTileMinimumWidth * gridZoom.scale
+    }
+
+    private var tileMaximumWidth: CGFloat {
+        baseTileMaximumWidth * gridZoom.scale
+    }
+
+    private var baseTileMinimumWidth: CGFloat {
         #if os(visionOS)
         280
         #elseif os(macOS)
@@ -169,7 +181,7 @@ struct CardCollectionsOverviewView: View {
         #endif
     }
 
-    private var tileMaximumWidth: CGFloat {
+    private var baseTileMaximumWidth: CGFloat {
         #if os(visionOS)
         420
         #elseif os(macOS)

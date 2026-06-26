@@ -28,6 +28,7 @@ struct CardCollectionsBrowserView: View {
 
     var body: some View {
         CardCollectionsOverviewView(
+            gridZoom: gridZoom,
             onCreateList: onCreateList,
             onSelectList: { _ in },
             onRenameList: onRenameList
@@ -36,6 +37,7 @@ struct CardCollectionsBrowserView: View {
             switch route {
             case .overview:
                 CardCollectionsOverviewView(
+                    gridZoom: gridZoom,
                     onCreateList: onCreateList,
                     onSelectList: { _ in },
                     onRenameList: onRenameList

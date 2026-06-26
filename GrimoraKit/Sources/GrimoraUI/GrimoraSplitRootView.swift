@@ -158,6 +158,7 @@ private struct SplitRootView: View {
         switch model.sidebarSelection {
         case .listsOverview:
             CardCollectionsOverviewView(
+                gridZoom: gridZoom,
                 onCreateList: {
                     presentCreateListDestination()
                 },
@@ -213,6 +214,7 @@ private struct SplitRootView: View {
             }
         case .list:
             CardCollectionsOverviewView(
+                gridZoom: gridZoom,
                 onCreateList: {
                     presentCreateListDestination()
                 },

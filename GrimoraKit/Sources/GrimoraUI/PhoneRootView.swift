@@ -333,6 +333,7 @@ struct TouchRootView: View {
         switch model.sidebarSelection {
         case .listsOverview:
             CardCollectionsOverviewView(
+                gridZoom: gridZoom,
                 onCreateList: {
                     presentCreateListDestinationInSplit()
                 },
@@ -372,6 +373,7 @@ struct TouchRootView: View {
             .navigationTitle(model.selectedCollection?.name ?? "Collection")
         case .list, .search:
             CardCollectionsOverviewView(
+                gridZoom: gridZoom,
                 onCreateList: {
                     presentCreateListDestinationInSplit()
                 },
