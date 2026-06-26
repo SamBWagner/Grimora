@@ -217,7 +217,36 @@ enum ManaSymbolBackground {
 }
 
 enum ManaCostSymbolParser {
+    // The set of distinct mana-cost strings across all of Magic is small (a few hundred) and
+    // repeats constantly across cells, so memoizing the parse turns per-render work into a dictionary
+    // lookup with a near-100% hit rate. Guarded by a lock because SwiftUI may evaluate from off the
+    // main actor and image-preload paths can touch it concurrently.
+    private static let cacheLock = NSLock()
+    // Safe: every access is serialised through `cacheLock`.
+    private nonisolated(unsafe) static var symbolCache: [String: [ManaCostSymbol]] = [:]
+    private nonisolated(unsafe) static var accessibilityCache: [String: String] = [:]
+    private static let cacheLimit = 512
+
     static func symbols(in manaCost: String) -> [ManaCostSymbol] {
+        cacheLock.lock()
+        if let cached = symbolCache[manaCost] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        let parsed = parseSymbols(in: manaCost)
+
+        cacheLock.lock()
+        if symbolCache.count >= cacheLimit {
+            symbolCache.removeAll(keepingCapacity: true)
+        }
+        symbolCache[manaCost] = parsed
+        cacheLock.unlock()
+        return parsed
+    }
+
+    private static func parseSymbols(in manaCost: String) -> [ManaCostSymbol] {
         let trimmed = manaCost.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return []
@@ -255,14 +284,30 @@ enum ManaCostSymbolParser {
     }
 
     static func accessibilityText(for manaCost: String) -> String {
+        cacheLock.lock()
+        if let cached = accessibilityCache[manaCost] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        let text: String
         let symbols = symbols(in: manaCost)
-        guard !symbols.isEmpty else {
-            return "none"
+        if symbols.isEmpty {
+            text = "none"
+        } else {
+            text = symbols
+                .map { accessibilityText(for: $0) }
+                .joined(separator: " ")
         }
 
-        return symbols
-            .map { accessibilityText(for: $0) }
-            .joined(separator: " ")
+        cacheLock.lock()
+        if accessibilityCache.count >= cacheLimit {
+            accessibilityCache.removeAll(keepingCapacity: true)
+        }
+        accessibilityCache[manaCost] = text
+        cacheLock.unlock()
+        return text
     }
 
     private static func accessibilityText(for symbol: ManaCostSymbol) -> String {

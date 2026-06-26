@@ -180,7 +180,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     }
 
     XCTAssertEqual(appliedSnapshot.deviceName, "Grimora Device")
-    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites", "Remote Picks"])
+    XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites", "Remote Picks"])
     XCTAssertEqual(model.defaultSearchConfiguration.text, "type:creature")
     XCTAssertEqual(model.statusMessage, "iCloud sync is ready.")
   }
@@ -191,7 +191,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     let database = try CardDatabase(storage: .inMemory)
     let card = testCard()
     try database.replaceAllCards([card])
-    let localList = try database.createCardList(named: "Remote Picks")
+    let localList = try database.createCardCollection(named: "Remote Picks")
     try database.appendCard(card.id, toList: localList.id)
     let remoteSnapshot = deviceSnapshot(
       id: "ipad",
@@ -212,7 +212,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
 
     // A name collision auto-merges (both kept side by side) — never a prompt.
     XCTAssertEqual(
-      model.cardLists.filter { $0.name == "Remote Picks" }.count,
+      model.cardCollections.filter { $0.name == "Remote Picks" }.count,
       2
     )
   }
@@ -256,23 +256,23 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     XCTAssertTrue(hiddenTermArrived)
 
     let sharedList = try XCTUnwrap(
-      modelA.createCardList(named: "Live Picks", selectAfterCreate: true)
+      modelA.createCardCollection(named: "Live Picks", selectAfterCreate: true)
     )
     let createdListArrived = await waitUntil {
-      modelB.cardLists.contains { $0.id == sharedList.id }
+      modelB.cardCollections.contains { $0.id == sharedList.id }
     }
     XCTAssertTrue(createdListArrived)
 
-    modelB.selectCardList(id: sharedList.id)
-    modelA.renameCardList(id: sharedList.id, to: "Renamed Live Picks")
+    modelB.selectCardCollection(id: sharedList.id)
+    modelA.renameCardCollection(id: sharedList.id, to: "Renamed Live Picks")
     XCTAssertEqual(
-      modelA.cardLists.first { $0.id == sharedList.id }?.name,
+      modelA.cardCollections.first { $0.id == sharedList.id }?.name,
       "Renamed Live Picks",
       "The local rename must commit before any remote reconciliation."
     )
-    let immediateRenameTimestamp = try databaseA.cardList(id: sharedList.id)?.updatedAt
+    let immediateRenameTimestamp = try databaseA.cardCollection(id: sharedList.id)?.updatedAt
     let renamedListArrived = await waitUntil {
-      modelB.selectedList?.name == "Renamed Live Picks"
+      modelB.selectedCollection?.name == "Renamed Live Picks"
         && modelB.sidebarSelection == .list(sharedList.id)
     }
     let renamedRemoteState = await transport.currentState()
@@ -282,9 +282,9 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
       """
       immediateRenameTimestamp=\(String(describing: immediateRenameTimestamp?.timeIntervalSince1970)), \
       aStatus=\(modelA.cloudSyncStatus), \
-      aLists=\(modelA.cardLists.map { "\($0.id):\($0.name):\($0.updatedAt.timeIntervalSince1970)" }), \
+      aLists=\(modelA.cardCollections.map { "\($0.id):\($0.name):\($0.updatedAt.timeIntervalSince1970)" }), \
       bStatus=\(modelB.cloudSyncStatus), \
-      bLists=\(modelB.cardLists.map { "\($0.id):\($0.name):\($0.updatedAt.timeIntervalSince1970)" }), \
+      bLists=\(modelB.cardCollections.map { "\($0.id):\($0.name):\($0.updatedAt.timeIntervalSince1970)" }), \
       remote=\(renamedRemoteState.snapshots.flatMap(\.listSnapshot.lists).map { "\($0.id):\($0.name):\($0.updatedAt.timeIntervalSince1970)" }), \
       saves=\(saveHistory.map { snapshot in
         "\(snapshot.id)[\(snapshot.listSnapshot.lists.map { "\($0.name):\($0.updatedAt.timeIntervalSince1970)" }.joined(separator: ","))]"
@@ -297,27 +297,27 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
       guard let favouritesID = modelB.favouritesList?.id else {
         return false
       }
-      modelB.selectCardList(id: favouritesID)
-      return modelB.selectedListEntries.map(\.cardID) == [card.id]
+      modelB.selectCardCollection(id: favouritesID)
+      return modelB.selectedCollectionEntries.map(\.cardID) == [card.id]
     }
     XCTAssertTrue(favouriteArrived)
 
     let favouriteEntry = try XCTUnwrap(modelA.favouritesList).id
-    modelA.selectCardList(id: favouriteEntry)
-    let favouriteEntryID = try XCTUnwrap(modelA.selectedListEntries.first).id
-    modelA.removeCardListEntriesCompletely(ids: [favouriteEntryID])
+    modelA.selectCardCollection(id: favouriteEntry)
+    let favouriteEntryID = try XCTUnwrap(modelA.selectedCollectionEntries.first).id
+    modelA.removeCardCollectionEntriesCompletely(ids: [favouriteEntryID])
     let favouriteRemovalArrived = await waitUntil {
       modelB.favouritesList.map { list in
-        modelB.selectCardList(id: list.id)
-        return modelB.selectedListEntries.isEmpty
+        modelB.selectCardCollection(id: list.id)
+        return modelB.selectedCollectionEntries.isEmpty
       } ?? false
     }
     XCTAssertTrue(favouriteRemovalArrived)
 
-    modelA.deleteCardList(id: sharedList.id)
+    modelA.deleteCardCollection(id: sharedList.id)
     let deletionArrived = await waitUntil {
-      !modelB.cardLists.contains { $0.id == sharedList.id }
-        && modelB.selectedListID != sharedList.id
+      !modelB.cardCollections.contains { $0.id == sharedList.id }
+        && modelB.selectedCollectionID != sharedList.id
     }
     XCTAssertTrue(deletionArrived)
 
@@ -365,7 +365,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
 
   func testRecoveryCopyIsVisibleAndRestorableThroughAppModel() throws {
     let database = try CardDatabase(storage: .inMemory)
-    let localList = try database.createCardList(
+    let localList = try database.createCardCollection(
       named: "Existing Deck",
       now: Date(timeIntervalSince1970: 10)
     )
@@ -384,8 +384,8 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
 
     model.restoreCloudSyncRecoverySnapshot(id: recovery.id)
 
-    XCTAssertEqual(Set(model.cardLists.map(\.name)), ["Existing Deck", "Favourites"])
-    XCTAssertEqual(model.statusMessage, "Restored lists from before iCloud sync.")
+    XCTAssertEqual(Set(model.cardCollections.map(\.name)), ["Existing Deck", "Favourites"])
+    XCTAssertEqual(model.statusMessage, "Restored collections from before iCloud sync.")
     XCTAssertFalse(try database.pendingSyncChanges().isEmpty)
     XCTAssertGreaterThan(model.cloudSyncRecoverySnapshots.count, 1)
   }
@@ -393,7 +393,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
   func testIncomingRemoteChangeSurfacesUndoableMergeNotice() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards([testCard()])
-    let list = try database.createCardList(named: "Picks", now: Date(timeIntervalSince1970: 10))
+    let list = try database.createCardCollection(named: "Picks", now: Date(timeIntervalSince1970: 10))
     try database.markCloudSyncBootstrapResolved(true)
 
     // The server already holds a newer copy of the same list, edited on another device.
@@ -425,13 +425,13 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     // Pulling applies the newer remote copy (last-writer-wins), overwriting the local
     // name and surfacing a non-blocking, undoable notice — never a modal.
     await model.pushCloudSyncChanges()
-    XCTAssertEqual(model.cardLists.first { $0.id == list.id }?.name, "Renamed remotely")
+    XCTAssertEqual(model.cardCollections.first { $0.id == list.id }?.name, "Renamed remotely")
     XCTAssertNotNil(model.cloudSyncMergeNotice, "An overwriting remote change should offer Undo.")
 
     // Undo restores the pre-merge local copy.
     model.undoCloudSyncMerge()
     XCTAssertNil(model.cloudSyncMergeNotice)
-    XCTAssertEqual(model.cardLists.first { $0.id == list.id }?.name, "Picks")
+    XCTAssertEqual(model.cardCollections.first { $0.id == list.id }?.name, "Picks")
   }
 
   private func waitUntil(
@@ -464,20 +464,20 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
   }
 
   func testAppliedRemoteSnapshotPopulatesSidebarEntryCount() async throws {
-    // After an applied remote snapshot the cached `CardListRecord.entryCount` that the
+    // After an applied remote snapshot the cached `CardCollectionRecord.entryCount` that the
     // sidebar (and the list-detail header) read must match the entries that landed — the
     // regression where a populated list showed "0 cards" because the in-memory count was
     // never re-derived from the database.
     let database = try CardDatabase(storage: .inMemory)
     let date = Date(timeIntervalSince1970: 100)
-    let remoteList = CardListRecord(
+    let remoteList = CardCollectionRecord(
       id: "remote-list",
       name: "Remote Picks",
       createdAt: date,
       updatedAt: date
     )
     let entries = [("alpha", 3), ("bravo", 2)].enumerated().map { index, pair in
-      CardListEntryRecord(
+      CardCollectionEntryRecord(
         id: "remote-entry-\(pair.0)",
         listID: remoteList.id,
         cardID: pair.0,
@@ -492,7 +492,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
       capturedAt: date,
       libraryIdentity: LibraryIdentity(),
       searchSettings: SyncSearchSettings(updatedAt: date),
-      listSnapshot: CardListLibrarySnapshot(
+      listSnapshot: CardCollectionLibrarySnapshot(
         lists: [remoteList],
         categories: [],
         entries: entries
@@ -512,7 +512,7 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     guard case .appliedRemoteSnapshot = model.cloudSyncStatus else {
       return XCTFail("Expected remote snapshot application, got \(model.cloudSyncStatus)")
     }
-    let applied = try XCTUnwrap(model.cardLists.first { $0.id == "remote-list" })
+    let applied = try XCTUnwrap(model.cardCollections.first { $0.id == "remote-list" })
     XCTAssertEqual(applied.entryCount, 5, "Sidebar count must reflect the applied entry quantities (3 + 2).")
   }
 
@@ -571,9 +571,9 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
       capturedAt: date,
       libraryIdentity: LibraryIdentity(),
       searchSettings: SyncSearchSettings(defaultSearchText: "type:creature", updatedAt: date),
-      listSnapshot: CardListLibrarySnapshot(
+      listSnapshot: CardCollectionLibrarySnapshot(
         lists: [
-          CardListRecord(
+          CardCollectionRecord(
             id: listID,
             name: listName,
             descriptionPlainText: "synced notes",

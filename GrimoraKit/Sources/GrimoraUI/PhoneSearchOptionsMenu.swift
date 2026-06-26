@@ -2,46 +2,40 @@
 import GrimoraCore
 import SwiftUI
 
-struct SearchOptionsMenu: View {
-    @Environment(GrimoraAppModel.self) private var model
-    @Environment(\.colorScheme) private var colorScheme
-    var gridZoom: GridZoomController
-    @State private var feedbackTrigger = 0
+/// Bottom-corner floating controls for the Cards tab.
+///
+/// On compact width (iPhone) the settings cog parks in the bottom-leading
+/// corner, flanking the floating tab bar so the centre stays clear for cards.
+/// On regular width (iPad / visionOS) it rests on the trailing side.
+struct SearchFloatingControls: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
-    var onCreateListFromSearch: () -> Void
     var onOpenSearchSettings: () -> Void
 
     var body: some View {
-        Menu {
-            viewOptionsMenu
-
-            Button {
-                feedbackTrigger += 1
-                onCreateListFromSearch()
-            } label: {
-                Label("Create List", systemImage: "plus")
+        HStack(spacing: 12) {
+            if horizontalSizeClass == .regular {
+                Spacer(minLength: 0)
+                SearchSettingsMenu(onOpenSearchSettings: onOpenSearchSettings)
+            } else {
+                SearchSettingsMenu(onOpenSearchSettings: onOpenSearchSettings)
+                Spacer(minLength: 0)
             }
-            .accessibilityIdentifier("create-list-from-search-button")
-            .disabled(!model.canCreateListFromCurrentSearch)
-
-            Divider()
-
-            moreMenu
-        } label: {
-            searchOptionsMenuLabel
         }
-        .accessibilityLabel("Search Options")
-        .accessibilityIdentifier("search-options-menu")
-        .help("Search Options")
-        .grimoraSelectionFeedback(trigger: feedbackTrigger)
     }
+}
 
-    /// Low-touch entries (library maintenance, app settings) tucked behind a
-    /// "More" flyout so the frequently used actions above stay one tap away.
-    /// Library items are inlined (not nested in another submenu) and rely on the
-    /// section headings `LibraryMaintenanceMenuItems` already provides; Settings
-    /// gets its own section so the flat list stays scannable.
-    private var moreMenu: some View {
+/// The bottom-corner cog. Surfaces library-maintenance actions and app settings
+/// directly — previously these were buried behind a nested "More" flyout inside
+/// a busier options menu. Sort/printing/zoom moved up to the toolbar, leaving
+/// the cog a focused settings affordance.
+struct SearchSettingsMenu: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var feedbackTrigger = 0
+
+    var onOpenSearchSettings: () -> Void
+
+    var body: some View {
         Menu {
             LibraryMaintenanceMenuItems()
 
@@ -55,21 +49,29 @@ struct SearchOptionsMenu: View {
                 .accessibilityIdentifier("search-settings-button")
             }
         } label: {
-            Text("More")
+            Image(systemName: "gearshape")
+                .floatingCircleChrome(palette: palette)
         }
-        .accessibilityIdentifier("search-more-menu")
-    }
-
-    private var searchOptionsMenuLabel: some View {
-        Image(systemName: "gearshape")
-            .floatingCircleChrome(palette: palette)
+        .accessibilityLabel("Settings")
+        .accessibilityIdentifier("search-options-menu")
+        .help("Settings")
+        .grimoraSelectionFeedback(trigger: feedbackTrigger)
     }
 
     private var palette: GrimoraPalette {
         GrimoraPalette(colorScheme: colorScheme)
     }
+}
 
-    private var viewOptionsMenu: some View {
+/// Result-display options (sort, order, printings, zoom) presented in the top
+/// trailing toolbar alongside search history and advanced search — grouped with
+/// the other controls that shape what the results look like.
+struct SearchViewOptionsMenu: View {
+    @Environment(GrimoraAppModel.self) private var model
+    var gridZoom: GridZoomController
+    @State private var feedbackTrigger = 0
+
+    var body: some View {
         Menu {
             Section("Sort") {
                 sortButtons
@@ -89,9 +91,11 @@ struct SearchOptionsMenu: View {
                 }
             }
         } label: {
-            Text("View Options")
+            Label("View Options", systemImage: "square.grid.2x2")
         }
         .accessibilityIdentifier("search-view-options-menu")
+        .help("View Options")
+        .grimoraSelectionFeedback(trigger: feedbackTrigger)
     }
 
     private var sortButtons: some View {
@@ -170,7 +174,6 @@ struct SearchOptionsMenu: View {
     private var searchSortDirections: [SearchSortDirection] {
         [.ascending, .descending]
     }
-
 }
 
 enum TouchRootTab: String, CaseIterable, Identifiable {
@@ -182,9 +185,9 @@ enum TouchRootTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .search:
-            "Search"
+            "Cards"
         case .lists:
-            "Lists"
+            "Collections"
         }
     }
 

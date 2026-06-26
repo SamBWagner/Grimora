@@ -883,8 +883,8 @@ final class CardDatabaseTests: XCTestCase {
         try database.saveMetadataValue("https://example.test/default.json", forKey: MetadataKey.defaultCardsDownloadURI.rawValue)
         try database.saveMetadataValue(CardDatabase.currentSearchSchemaVersion, forKey: MetadataKey.searchSchemaVersion.rawValue)
         try database.saveMetadataValue("true", forKey: MetadataKey.requiredImagesCached.rawValue)
-        let list = try database.createCardList(named: "Keep Me")
-        let category = try database.createCardListCategory(inList: list.id, named: "Ramp")
+        let list = try database.createCardCollection(named: "Keep Me")
+        let category = try database.createCardCollectionCategory(inList: list.id, named: "Ramp")
         try database.appendCard("listed", toList: list.id, categoryID: category.id, quantity: 2)
 
         try database.deleteAllCardsPreservingLists()
@@ -894,9 +894,9 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertNil(try database.metadataValue(forKey: MetadataKey.defaultCardsDownloadURI.rawValue))
         XCTAssertNil(try database.metadataValue(forKey: MetadataKey.searchSchemaVersion.rawValue))
         XCTAssertNil(try database.metadataValue(forKey: MetadataKey.requiredImagesCached.rawValue))
-        XCTAssertEqual(try database.cardLists().map(\.name), ["Keep Me"])
-        XCTAssertEqual(try database.cardListCategories(forListID: list.id).map(\.name), ["Ramp"])
-        let entries = try database.cardListEntries(forListID: list.id)
+        XCTAssertEqual(try database.cardCollections().map(\.name), ["Keep Me"])
+        XCTAssertEqual(try database.cardCollectionCategories(forListID: list.id).map(\.name), ["Ramp"])
+        let entries = try database.cardCollectionEntries(forListID: list.id)
         XCTAssertEqual(entries.map(\.cardID), ["listed"])
         XCTAssertEqual(entries.map(\.quantity), [2])
         XCTAssertNil(entries.first?.card)
@@ -924,20 +924,130 @@ final class CardDatabaseTests: XCTestCase {
         ]
         try database.replaceAllCards([card])
         try database.saveMetadataValue("true", forKey: MetadataKey.requiredImagesCached.rawValue)
-        let list = try database.createCardList(named: "Keep Me")
+        let list = try database.createCardCollection(named: "Keep Me")
         try database.appendCard("listed", toList: list.id)
 
         try database.clearStoredImagePaths()
 
         XCTAssertEqual(try database.cardCount(), 1)
         XCTAssertEqual(try database.metadataValue(forKey: MetadataKey.requiredImagesCached.rawValue), "false")
-        XCTAssertEqual(try database.cardLists().map(\.name), ["Keep Me"])
+        XCTAssertEqual(try database.cardCollections().map(\.name), ["Keep Me"])
         let cards = try cards(matching: "listed", database: database)
         XCTAssertNil(cards.first?.normalImagePath)
         XCTAssertNil(cards.first?.artCropImagePath)
         XCTAssertNil(cards.first?.faces.first?.normalImagePath)
         XCTAssertNil(cards.first?.faces.first?.artCropImagePath)
-        XCTAssertEqual(try database.cardListEntries(forListID: list.id).map(\.cardID), ["listed"])
+        XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.cardID), ["listed"])
+    }
+
+    func testListEntriesPreserveOrderAndBatchHydrateEveryCard() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let cards = ["aaa", "bbb", "ccc"].map {
+            preferredTestCard(id: $0, oracleID: "oracle-\($0)", name: $0.uppercased())
+        }
+        try database.replaceAllCards(cards)
+        let list = try database.createCardCollection(named: "Order")
+        try database.appendCard("aaa", toList: list.id)
+        try database.appendCard("bbb", toList: list.id)
+        try database.appendCard("ccc", toList: list.id)
+
+        let entries = try database.cardCollectionEntries(forListID: list.id)
+        XCTAssertEqual(entries.map(\.cardID), ["aaa", "bbb", "ccc"])
+        XCTAssertEqual(entries.map(\.position), [0, 1, 2])
+        XCTAssertEqual(entries.compactMap(\.card?.id), ["aaa", "bbb", "ccc"])
+        XCTAssertEqual(entries.compactMap(\.card?.name), ["AAA", "BBB", "CCC"])
+    }
+
+    func testListEntriesHydrateCardFacesViaBatchPath() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        var card = preferredTestCard(
+            id: "dfc", oracleID: "oracle-dfc", name: "Double Face", layout: "transform")
+        card.faces = [
+            CardFaceRecord(cardID: "dfc", faceIndex: 0, name: "Front", typeLine: "Creature", oracleText: "Front."),
+            CardFaceRecord(cardID: "dfc", faceIndex: 1, name: "Back", typeLine: "Creature", oracleText: "Back.")
+        ]
+        try database.replaceAllCards([card])
+        let list = try database.createCardCollection(named: "DFCs")
+        try database.appendCard("dfc", toList: list.id)
+
+        let entries = try database.cardCollectionEntries(forListID: list.id)
+        XCTAssertEqual(entries.first?.card?.faces.map(\.name), ["Front", "Back"])
+        XCTAssertEqual(entries.first?.card?.faces.map(\.faceIndex), [0, 1])
+    }
+
+    func testListEntriesWithSameCardAcrossZonesEachReceiveTheCard() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let card = preferredTestCard(
+            id: "dup", oracleID: "oracle-dup", name: "Duplicated", legalities: ["modern": "legal"])
+        try database.replaceAllCards([card])
+        let list = try database.createCardCollection(named: "Modern")
+        try database.setCardCollectionRuleset(id: list.id, ruleset: .modern)
+        try database.appendCard("dup", toList: list.id, zone: .mainboard)
+        try database.appendCard("dup", toList: list.id, zone: .sideboard)
+
+        let entries = try database.cardCollectionEntries(forListID: list.id)
+        XCTAssertEqual(entries.count, 2)
+        XCTAssertEqual(entries.map(\.cardID), ["dup", "dup"])
+        XCTAssertEqual(entries.compactMap(\.card?.id), ["dup", "dup"])
+    }
+
+    func testListEntryWithUnknownCardYieldsNilCardAlongsideHydratedEntries() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let card = preferredTestCard(id: "known", oracleID: "oracle-known", name: "Known")
+        try database.replaceAllCards([card])
+        let list = try database.createCardCollection(named: "Mixed")
+        try database.appendCard("known", toList: list.id)
+        try database.appendCard("missing", toList: list.id)
+
+        let entries = try database.cardCollectionEntries(forListID: list.id)
+        XCTAssertEqual(entries.map(\.cardID), ["known", "missing"])
+        XCTAssertEqual(entries.first(where: { $0.cardID == "known" })?.card?.id, "known")
+        XCTAssertNil(entries.first(where: { $0.cardID == "missing" })?.card)
+    }
+
+    func testLargeListBatchHydrationCrossesChunkBoundary() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let cardCount = 1_000  // greater than the 900-id IN-clause chunk size in cardsByID(forIDs:)
+        let cards = (0..<cardCount).map { index in
+            preferredTestCard(
+                id: String(format: "card-%04d", index),
+                oracleID: "oracle-\(index)",
+                name: "Card \(index)")
+        }
+        try database.replaceAllCards(cards)
+        let list = try database.createCardCollection(named: "Big")
+        for card in cards {
+            try database.appendCard(card.id, toList: list.id)
+        }
+
+        let entries = try database.cardCollectionEntries(forListID: list.id)
+        XCTAssertEqual(entries.count, cardCount)
+        XCTAssertEqual(entries.compactMap(\.card).count, cardCount)
+        XCTAssertEqual(entries.first?.card?.id, "card-0000")
+        XCTAssertEqual(entries.last?.card?.id, String(format: "card-%04d", cardCount - 1))
+    }
+
+    func testArtworkVariantsAreStableAcrossRepeatedResolves() {
+        let card = preferredTestCard(
+            id: "art", oracleID: "oracle-art", name: "Arty", normalImagePath: "/tmp/art-normal.jpg")
+        let first = CardArtworkPresentationResolver.variants(for: card)
+        let second = CardArtworkPresentationResolver.variants(for: card)
+        XCTAssertEqual(first, second)
+        XCTAssertFalse(first.isEmpty)
+    }
+
+    func testArtworkVariantsRecomputeWhenImagePathChanges() {
+        // Same card id, image backfilled later: the memo must not serve a stale, image-less result.
+        let withoutImage = preferredTestCard(id: "backfill", oracleID: "oracle-backfill", name: "Backfill")
+        let imagelessVariants = CardArtworkPresentationResolver.variants(for: withoutImage)
+
+        let withImage = preferredTestCard(
+            id: "backfill", oracleID: "oracle-backfill", name: "Backfill",
+            normalImagePath: "/tmp/backfill-normal.jpg")
+        let imageVariants = CardArtworkPresentationResolver.variants(for: withImage)
+
+        XCTAssertNotEqual(imagelessVariants, imageVariants)
+        XCTAssertEqual(imageVariants.first?.imagePath, "/tmp/backfill-normal.jpg")
     }
 
     func testExistingLibrarySchemaMigratesBeforeCreatingSearchIndexes() throws {
@@ -1133,9 +1243,9 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(stored?.mtgoID, 12345)
     }
 
-    func testCardListsPersistExactPrintQuantitiesInInsertionOrder() throws {
+    func testCardCollectionsPersistExactPrintQuantitiesInInsertionOrder() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
@@ -1157,9 +1267,9 @@ final class CardDatabaseTests: XCTestCase {
         )
         try database.replaceAllCards([oldPrinting, newPrinting])
 
-        XCTAssertThrowsError(try database.createCardList(named: "   "))
+        XCTAssertThrowsError(try database.createCardCollection(named: "   "))
 
-        let list = try database.createCardList(
+        let list = try database.createCardCollection(
             named: "  Commander Maybes  ",
             now: Date(timeIntervalSince1970: 10)
         )
@@ -1172,14 +1282,14 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(first.id, third.id)
         XCTAssertEqual(third.quantity, 2)
 
-        let entries = try database.cardListEntries(forListID: list.id)
+        let entries = try database.cardCollectionEntries(forListID: list.id)
         XCTAssertEqual(entries.map(\.cardID), ["krenko-old", "krenko-new"])
         XCTAssertEqual(entries.map(\.quantity), [2, 1])
         XCTAssertEqual(entries.map(\.position), [0, 1])
         XCTAssertEqual(entries.compactMap(\.card?.id), ["krenko-old", "krenko-new"])
-        XCTAssertEqual(try database.cardLists().first?.entryCount, 3)
+        XCTAssertEqual(try database.cardCollections().first?.entryCount, 3)
 
-        let renamed = try database.renameCardList(
+        let renamed = try database.renameCardCollection(
             id: list.id,
             to: "Krenko Box",
             now: Date(timeIntervalSince1970: 14)
@@ -1187,61 +1297,61 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(renamed.name, "Krenko Box")
 
         let reopened = try CardDatabase(storage: .file(databaseURL))
-        XCTAssertEqual(try reopened.cardLists().map(\.name), ["Krenko Box"])
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.cardID), ["krenko-old", "krenko-new"])
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.quantity), [2, 1])
+        XCTAssertEqual(try reopened.cardCollections().map(\.name), ["Krenko Box"])
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.cardID), ["krenko-old", "krenko-new"])
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.quantity), [2, 1])
 
-        try reopened.removeCardListEntry(id: second.id)
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.cardID), ["krenko-old"])
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.quantity), [2])
-        XCTAssertEqual(try reopened.cardList(id: list.id)?.entryCount, 2)
+        try reopened.removeCardCollectionEntry(id: second.id)
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.cardID), ["krenko-old"])
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.quantity), [2])
+        XCTAssertEqual(try reopened.cardCollection(id: list.id)?.entryCount, 2)
 
-        try reopened.removeCardListEntry(id: first.id)
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.cardID), ["krenko-old"])
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.quantity), [1])
-        XCTAssertEqual(try reopened.cardList(id: list.id)?.entryCount, 1)
+        try reopened.removeCardCollectionEntry(id: first.id)
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.cardID), ["krenko-old"])
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.quantity), [1])
+        XCTAssertEqual(try reopened.cardCollection(id: list.id)?.entryCount, 1)
 
-        try reopened.deleteCardList(id: list.id)
-        XCTAssertTrue(try reopened.cardLists().isEmpty)
-        XCTAssertTrue(try reopened.cardListEntries(forListID: list.id).isEmpty)
+        try reopened.deleteCardCollection(id: list.id)
+        XCTAssertTrue(try reopened.cardCollections().isEmpty)
+        XCTAssertTrue(try reopened.cardCollectionEntries(forListID: list.id).isEmpty)
     }
 
-    func testCardListSnapshotRestoresListsCategoriesEntriesAndQuantities() throws {
+    func testCardCollectionSnapshotRestoresListsCategoriesEntriesAndQuantities() throws {
         let database = try CardDatabase(storage: .inMemory)
         try database.replaceAllCards([
             preferredTestCard(id: "forest", oracleID: "forest-oracle", name: "Alpha Forest"),
             preferredTestCard(id: "mage", oracleID: "mage-oracle", name: "Beta Mage")
         ])
 
-        let list = try database.createCardList(named: "Drafts", now: Date(timeIntervalSince1970: 10))
-        let ramp = try database.createCardListCategory(
+        let list = try database.createCardCollection(named: "Drafts", now: Date(timeIntervalSince1970: 10))
+        let ramp = try database.createCardCollectionCategory(
             inList: list.id,
             named: "Ramp",
             now: Date(timeIntervalSince1970: 11)
         )
         let forest = try database.appendCard("forest", toList: list.id, categoryID: ramp.id, quantity: 2)
         try database.appendCard("mage", toList: list.id)
-        try database.setCardListDisplaySort(id: list.id, mode: .edhrecRank, direction: .descending)
-        let snapshot = try database.cardListLibrarySnapshot()
+        try database.setCardCollectionDisplaySort(id: list.id, mode: .edhrecRank, direction: .descending)
+        let snapshot = try database.cardCollectionLibrarySnapshot()
 
-        try database.incrementCardListEntryQuantity(id: forest.id)
-        try database.removeCardListEntryCompletely(id: forest.id)
-        try database.renameCardList(id: list.id, to: "Changed")
-        try database.setCardListDisplaySort(id: list.id, mode: nil, direction: .ascending)
-        try database.restoreCardListLibrarySnapshot(snapshot)
+        try database.incrementCardCollectionEntryQuantity(id: forest.id)
+        try database.removeCardCollectionEntryCompletely(id: forest.id)
+        try database.renameCardCollection(id: list.id, to: "Changed")
+        try database.setCardCollectionDisplaySort(id: list.id, mode: nil, direction: .ascending)
+        try database.restoreCardCollectionLibrarySnapshot(snapshot)
 
-        XCTAssertEqual(try database.cardLists().map(\.name), ["Drafts"])
-        XCTAssertEqual(try database.cardList(id: list.id)?.displaySortMode, .edhrecRank)
-        XCTAssertEqual(try database.cardList(id: list.id)?.displaySortDirection, .descending)
-        XCTAssertEqual(try database.cardListCategories(forListID: list.id).map(\.name), ["Ramp"])
-        XCTAssertEqual(try database.cardListEntries(forListID: list.id).map(\.cardID), ["forest", "mage"])
-        XCTAssertEqual(try database.cardListEntries(forListID: list.id).map(\.quantity), [2, 1])
-        XCTAssertEqual(try database.cardListEntries(forListID: list.id).first?.categoryID, ramp.id)
+        XCTAssertEqual(try database.cardCollections().map(\.name), ["Drafts"])
+        XCTAssertEqual(try database.cardCollection(id: list.id)?.displaySortMode, .edhrecRank)
+        XCTAssertEqual(try database.cardCollection(id: list.id)?.displaySortDirection, .descending)
+        XCTAssertEqual(try database.cardCollectionCategories(forListID: list.id).map(\.name), ["Ramp"])
+        XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.cardID), ["forest", "mage"])
+        XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.quantity), [2, 1])
+        XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).first?.categoryID, ramp.id)
     }
 
-    func testCardListEntryPrintReplacementPersistsAndMergesQuantities() throws {
+    func testCardCollectionEntryPrintReplacementPersistsAndMergesQuantities() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListPrintReplacementTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionPrintReplacementTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
@@ -1270,11 +1380,11 @@ final class CardDatabaseTests: XCTestCase {
         )
         try database.replaceAllCards([oldPrinting, newPrinting, promoPrinting])
 
-        let list = try database.createCardList(named: "Commander Maybes")
+        let list = try database.createCardCollection(named: "Commander Maybes")
         let oldEntry = try database.appendCard(oldPrinting.id, toList: list.id, quantity: 2)
         let newEntry = try database.appendCard(newPrinting.id, toList: list.id)
 
-        let replaced = try database.replaceCardListEntryPrint(
+        let replaced = try database.replaceCardCollectionEntryPrint(
             id: oldEntry.id,
             withCardID: promoPrinting.id,
             now: Date(timeIntervalSince1970: 20)
@@ -1283,32 +1393,32 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(replaced.cardID, promoPrinting.id)
         XCTAssertEqual(replaced.quantity, 2)
         XCTAssertEqual(replaced.card?.id, promoPrinting.id)
-        XCTAssertEqual(try database.cardListEntries(forListID: list.id).map(\.cardID), ["krenko-promo", "krenko-new"])
-        XCTAssertEqual(try database.cardListEntries(forListID: list.id).map(\.quantity), [2, 1])
+        XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.cardID), ["krenko-promo", "krenko-new"])
+        XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.quantity), [2, 1])
 
         let reopened = try CardDatabase(storage: .file(databaseURL))
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.cardID), ["krenko-promo", "krenko-new"])
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.cardID), ["krenko-promo", "krenko-new"])
 
-        let merged = try reopened.replaceCardListEntryPrint(id: oldEntry.id, withCardID: newPrinting.id)
+        let merged = try reopened.replaceCardCollectionEntryPrint(id: oldEntry.id, withCardID: newPrinting.id)
         XCTAssertEqual(merged.id, newEntry.id)
         XCTAssertEqual(merged.cardID, newPrinting.id)
         XCTAssertEqual(merged.quantity, 3)
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.cardID), ["krenko-new"])
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.quantity), [3])
-        XCTAssertEqual(try reopened.cardList(id: list.id)?.entryCount, 3)
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.cardID), ["krenko-new"])
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.quantity), [3])
+        XCTAssertEqual(try reopened.cardCollection(id: list.id)?.entryCount, 3)
     }
 
-    func testCardListPinningPersistsPinnedStateAndTimestamp() throws {
+    func testCardCollectionPinningPersistsPinnedStateAndTimestamp() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListPinningTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionPinningTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
         let databaseURL = temporaryDirectory.appendingPathComponent("pinned-lists.sqlite")
         let database = try CardDatabase(storage: .file(databaseURL))
-        let list = try database.createCardList(named: "Pinned Deck", now: Date(timeIntervalSince1970: 10))
+        let list = try database.createCardCollection(named: "Pinned Deck", now: Date(timeIntervalSince1970: 10))
 
-        let pinned = try database.setCardListPinned(
+        let pinned = try database.setCardCollectionPinned(
             id: list.id,
             isPinned: true,
             now: Date(timeIntervalSince1970: 20)
@@ -1318,12 +1428,12 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(pinned.position, 0)
 
         let reopened = try CardDatabase(storage: .file(databaseURL))
-        let persisted = try XCTUnwrap(reopened.cardList(id: list.id))
+        let persisted = try XCTUnwrap(reopened.cardCollection(id: list.id))
         XCTAssertTrue(persisted.isPinned)
         XCTAssertEqual(persisted.pinnedAt, Date(timeIntervalSince1970: 20))
         XCTAssertEqual(persisted.position, 0)
 
-        let unpinned = try reopened.setCardListPinned(
+        let unpinned = try reopened.setCardCollectionPinned(
             id: list.id,
             isPinned: false,
             now: Date(timeIntervalSince1970: 30)
@@ -1333,59 +1443,59 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(unpinned.position, 0)
     }
 
-    func testCardListOrderingPersistsAndMovesAcrossPinnedSections() throws {
+    func testCardCollectionOrderingPersistsAndMovesAcrossPinnedSections() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListOrderingTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionOrderingTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
         let databaseURL = temporaryDirectory.appendingPathComponent("ordered-lists.sqlite")
         let database = try CardDatabase(storage: .file(databaseURL))
-        let first = try database.createCardList(named: "First", now: Date(timeIntervalSince1970: 10))
-        let second = try database.createCardList(named: "Second", now: Date(timeIntervalSince1970: 20))
-        let third = try database.createCardList(named: "Third", now: Date(timeIntervalSince1970: 30))
+        let first = try database.createCardCollection(named: "First", now: Date(timeIntervalSince1970: 10))
+        let second = try database.createCardCollection(named: "Second", now: Date(timeIntervalSince1970: 20))
+        let third = try database.createCardCollection(named: "Third", now: Date(timeIntervalSince1970: 30))
 
-        XCTAssertEqual(try database.cardLists().map(\.name), ["First", "Second", "Third"])
-        XCTAssertEqual(try database.cardLists().map(\.position), [0, 1, 2])
+        XCTAssertEqual(try database.cardCollections().map(\.name), ["First", "Second", "Third"])
+        XCTAssertEqual(try database.cardCollections().map(\.position), [0, 1, 2])
 
-        try database.moveCardList(id: third.id, toPosition: 0, now: Date(timeIntervalSince1970: 40))
-        XCTAssertEqual(try database.cardLists().map(\.name), ["Third", "First", "Second"])
-        XCTAssertEqual(try database.cardLists().map(\.position), [0, 1, 2])
+        try database.moveCardCollection(id: third.id, toPosition: 0, now: Date(timeIntervalSince1970: 40))
+        XCTAssertEqual(try database.cardCollections().map(\.name), ["Third", "First", "Second"])
+        XCTAssertEqual(try database.cardCollections().map(\.position), [0, 1, 2])
 
-        try database.moveCardList(
+        try database.moveCardCollection(
             id: second.id,
             toPosition: 0,
             isPinned: true,
             now: Date(timeIntervalSince1970: 50)
         )
-        try database.moveCardList(
+        try database.moveCardCollection(
             id: first.id,
             toPosition: 0,
             isPinned: true,
             now: Date(timeIntervalSince1970: 60)
         )
-        XCTAssertEqual(try database.cardLists().map(\.name), ["First", "Second", "Third"])
-        XCTAssertEqual(try database.cardLists().map(\.isPinned), [true, true, false])
-        XCTAssertEqual(try database.cardLists().map(\.position), [0, 1, 0])
+        XCTAssertEqual(try database.cardCollections().map(\.name), ["First", "Second", "Third"])
+        XCTAssertEqual(try database.cardCollections().map(\.isPinned), [true, true, false])
+        XCTAssertEqual(try database.cardCollections().map(\.position), [0, 1, 0])
 
-        try database.moveCardList(
+        try database.moveCardCollection(
             id: first.id,
             toPosition: 0,
             isPinned: false,
             now: Date(timeIntervalSince1970: 70)
         )
-        XCTAssertEqual(try database.cardLists().map(\.name), ["Second", "First", "Third"])
-        XCTAssertEqual(try database.cardLists().map(\.isPinned), [true, false, false])
-        XCTAssertEqual(try database.cardLists().map(\.position), [0, 0, 1])
+        XCTAssertEqual(try database.cardCollections().map(\.name), ["Second", "First", "Third"])
+        XCTAssertEqual(try database.cardCollections().map(\.isPinned), [true, false, false])
+        XCTAssertEqual(try database.cardCollections().map(\.position), [0, 0, 1])
 
         let reopened = try CardDatabase(storage: .file(databaseURL))
-        XCTAssertEqual(try reopened.cardLists().map(\.name), ["Second", "First", "Third"])
-        XCTAssertEqual(try reopened.cardLists().map(\.position), [0, 0, 1])
+        XCTAssertEqual(try reopened.cardCollections().map(\.name), ["Second", "First", "Third"])
+        XCTAssertEqual(try reopened.cardCollections().map(\.position), [0, 0, 1])
     }
 
-    func testLegacyCardListSchemaMigratesPinnedColumnsWithDefaults() throws {
+    func testLegacyCardCollectionSchemaMigratesPinnedColumnsWithDefaults() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListPinnedMigrationTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionPinnedMigrationTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
@@ -1409,12 +1519,12 @@ final class CardDatabaseTests: XCTestCase {
         }
 
         let migratedDatabase = try CardDatabase(storage: .file(databaseURL))
-        let migratedList = try XCTUnwrap(migratedDatabase.cardList(id: "legacy"))
+        let migratedList = try XCTUnwrap(migratedDatabase.cardCollection(id: "legacy"))
         XCTAssertFalse(migratedList.isPinned)
         XCTAssertNil(migratedList.pinnedAt)
         XCTAssertEqual(migratedList.position, 0)
 
-        let pinned = try migratedDatabase.setCardListPinned(
+        let pinned = try migratedDatabase.setCardCollectionPinned(
             id: "legacy",
             isPinned: true,
             now: Date(timeIntervalSince1970: 40)
@@ -1424,9 +1534,9 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(pinned.position, 0)
     }
 
-    func testLegacyCardListSchemaMigratesPositionsUsingPreviousSidebarOrder() throws {
+    func testLegacyCardCollectionSchemaMigratesPositionsUsingPreviousSidebarOrder() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListPositionMigrationTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionPositionMigrationTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
@@ -1456,15 +1566,15 @@ final class CardDatabaseTests: XCTestCase {
         }
 
         let migratedDatabase = try CardDatabase(storage: .file(databaseURL))
-        let migratedLists = try migratedDatabase.cardLists()
+        let migratedLists = try migratedDatabase.cardCollections()
 
         XCTAssertEqual(migratedLists.map(\.name), ["Pinned New", "Pinned Old", "Unpinned Old", "Unpinned New"])
         XCTAssertEqual(migratedLists.map(\.position), [0, 1, 0, 1])
     }
 
-    func testCardListMigrationConsolidatesDuplicateRowsIntoQuantities() throws {
+    func testCardCollectionMigrationConsolidatesDuplicateRowsIntoQuantities() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListMigrationTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionMigrationTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
@@ -1525,39 +1635,39 @@ final class CardDatabaseTests: XCTestCase {
         }
 
         let migratedDatabase = try CardDatabase(storage: .file(databaseURL))
-        let entries = try migratedDatabase.cardListEntries(forListID: "list")
+        let entries = try migratedDatabase.cardCollectionEntries(forListID: "list")
 
         XCTAssertEqual(entries.map(\.id), ["mountain-1", "island-1", "mountain-main-1"])
         XCTAssertEqual(entries.map(\.cardID), ["mountain", "island", "mountain"])
         XCTAssertEqual(entries.map(\.categoryID), ["lands", "lands", nil])
         XCTAssertEqual(entries.map(\.zone), [.mainboard, .mainboard, .mainboard])
         XCTAssertEqual(entries.map(\.quantity), [2, 1, 2])
-        XCTAssertEqual(try migratedDatabase.cardList(id: "list")?.ruleset, .some(.none))
-        XCTAssertEqual(try migratedDatabase.cardList(id: "list")?.entryCount, 5)
-        let categories = try migratedDatabase.cardListCategories(forListID: "list")
+        XCTAssertEqual(try migratedDatabase.cardCollection(id: "list")?.ruleset, .some(.none))
+        XCTAssertEqual(try migratedDatabase.cardCollection(id: "list")?.entryCount, 5)
+        let categories = try migratedDatabase.cardCollectionCategories(forListID: "list")
         XCTAssertEqual(categories.map(\.zone), [.mainboard])
         XCTAssertEqual(categories.map(\.entryCount), [3])
     }
 
-    func testCardListEntriesSurviveCardReplacementAndResolveMissingCardsAsNil() throws {
+    func testCardCollectionEntriesSurviveCardReplacementAndResolveMissingCardsAsNil() throws {
         let database = try CardDatabase(storage: .inMemory)
         let alpha = preferredTestCard(id: "alpha-print", oracleID: "alpha-oracle", name: "Alpha Forest")
         let beta = preferredTestCard(id: "beta-print", oracleID: "beta-oracle", name: "Beta Mage")
         try database.replaceAllCards([alpha, beta])
-        let list = try database.createCardList(named: "Keepers")
+        let list = try database.createCardCollection(named: "Keepers")
         try database.appendCard(alpha.id, toList: list.id)
         try database.appendCard(beta.id, toList: list.id)
 
         try database.replaceAllCards([beta])
 
-        let entries = try database.cardListEntries(forListID: list.id)
+        let entries = try database.cardCollectionEntries(forListID: list.id)
         XCTAssertEqual(entries.map(\.cardID), ["alpha-print", "beta-print"])
         XCTAssertNil(entries[0].card)
         XCTAssertEqual(entries[1].card?.id, "beta-print")
-        XCTAssertEqual(try database.cardLists().first?.entryCount, 2)
+        XCTAssertEqual(try database.cardCollections().first?.entryCount, 2)
     }
 
-    func testCardListDashboardColorStatsSurviveDatabaseRoundTrip() throws {
+    func testCardCollectionDashboardColorStatsSurviveDatabaseRoundTrip() throws {
         let database = try CardDatabase(storage: .inMemory)
         let red = preferredTestCard(id: "red-print", oracleID: "red-oracle", name: "Red Spell", colorIdentity: ["R"])
         let blue = preferredTestCard(id: "blue-print", oracleID: "blue-oracle", name: "Blue Spell", colorIdentity: ["U"])
@@ -1568,33 +1678,33 @@ final class CardDatabaseTests: XCTestCase {
             colorIdentity: ["R", "U"]
         )
         try database.replaceAllCards([red, blue, izzet])
-        let list = try database.createCardList(named: "Izzet")
+        let list = try database.createCardCollection(named: "Izzet")
         try database.appendCard(red.id, toList: list.id, quantity: 2)
         try database.appendCard(blue.id, toList: list.id, quantity: 3)
         try database.appendCard(izzet.id, toList: list.id, quantity: 4)
 
-        let entries = try database.cardListEntries(forListID: list.id)
-        let stats = CardListDashboardStats.make(entries: entries, includeLandsInTypes: false)
+        let entries = try database.cardCollectionEntries(forListID: list.id)
+        let stats = CardCollectionDashboardStats.make(entries: entries, includeLandsInTypes: false)
 
         XCTAssertEqual(entries.compactMap(\.card?.colorIdentity), [["r"], ["u"], ["r", "u"]])
         XCTAssertEqual(stats.colorDistribution.map(\.bucket), [.blue, .red, .multicolor])
         XCTAssertEqual(stats.colorDistribution.map(\.quantity), [3, 2, 4])
     }
 
-    func testCardListDescriptionPersistsRTFDDataPlainTextAndUpdatedAt() throws {
+    func testCardCollectionDescriptionPersistsRTFDDataPlainTextAndUpdatedAt() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListDescriptionTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionDescriptionTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
         let databaseURL = temporaryDirectory.appendingPathComponent("descriptions.sqlite")
         let database = try CardDatabase(storage: .file(databaseURL))
-        let list = try database.createCardList(named: "Notes", now: Date(timeIntervalSince1970: 10))
+        let list = try database.createCardCollection(named: "Notes", now: Date(timeIntervalSince1970: 10))
         XCTAssertNil(list.descriptionRTFDData)
         XCTAssertEqual(list.descriptionPlainText, "")
 
         let data = Data([0x52, 0x54, 0x46, 0x44])
-        let updated = try database.updateCardListDescription(
+        let updated = try database.updateCardCollectionDescription(
             id: list.id,
             rtfdData: data,
             plainText: "Keep this opener.",
@@ -1606,25 +1716,25 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(updated.updatedAt, Date(timeIntervalSince1970: 20))
 
         let reopened = try CardDatabase(storage: .file(databaseURL))
-        let persisted = try XCTUnwrap(reopened.cardList(id: list.id))
+        let persisted = try XCTUnwrap(reopened.cardCollection(id: list.id))
         XCTAssertEqual(persisted.descriptionRTFDData, data)
         XCTAssertEqual(persisted.descriptionPlainText, "Keep this opener.")
-        XCTAssertEqual(try reopened.cardLists().first?.descriptionPlainText, "Keep this opener.")
+        XCTAssertEqual(try reopened.cardCollections().first?.descriptionPlainText, "Keep this opener.")
     }
 
-    func testCardListDashboardPreferencesDefaultPersistAndMigrate() throws {
+    func testCardCollectionDashboardPreferencesDefaultPersistAndMigrate() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListDashboardPreferenceTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionDashboardPreferenceTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
         let databaseURL = temporaryDirectory.appendingPathComponent("dashboard.sqlite")
         let database = try CardDatabase(storage: .file(databaseURL))
-        let list = try database.createCardList(named: "Stats", now: Date(timeIntervalSince1970: 10))
+        let list = try database.createCardCollection(named: "Stats", now: Date(timeIntervalSince1970: 10))
         XCTAssertFalse(list.showsDashboard)
         XCTAssertFalse(list.dashboardIncludesLands)
 
-        let shown = try database.setCardListDashboardVisibility(
+        let shown = try database.setCardCollectionDashboardVisibility(
             id: list.id,
             showsDashboard: true,
             now: Date(timeIntervalSince1970: 20)
@@ -1632,7 +1742,7 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertTrue(shown.showsDashboard)
         XCTAssertEqual(shown.updatedAt, Date(timeIntervalSince1970: 20))
 
-        let hidden = try database.setCardListDashboardVisibility(
+        let hidden = try database.setCardCollectionDashboardVisibility(
             id: list.id,
             showsDashboard: false,
             now: Date(timeIntervalSince1970: 25)
@@ -1640,7 +1750,7 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertFalse(hidden.showsDashboard)
         XCTAssertEqual(hidden.updatedAt, Date(timeIntervalSince1970: 25))
 
-        let includesLands = try database.setCardListDashboardIncludesLands(
+        let includesLands = try database.setCardCollectionDashboardIncludesLands(
             id: list.id,
             includesLands: true,
             now: Date(timeIntervalSince1970: 30)
@@ -1649,7 +1759,7 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(includesLands.updatedAt, Date(timeIntervalSince1970: 30))
 
         let reopened = try CardDatabase(storage: .file(databaseURL))
-        let persisted = try XCTUnwrap(reopened.cardList(id: list.id))
+        let persisted = try XCTUnwrap(reopened.cardCollection(id: list.id))
         XCTAssertFalse(persisted.showsDashboard)
         XCTAssertTrue(persisted.dashboardIncludesLands)
 
@@ -1673,24 +1783,24 @@ final class CardDatabaseTests: XCTestCase {
         }
 
         let migratedDatabase = try CardDatabase(storage: .file(legacyDatabaseURL))
-        let migratedList = try XCTUnwrap(migratedDatabase.cardList(id: "legacy"))
+        let migratedList = try XCTUnwrap(migratedDatabase.cardCollection(id: "legacy"))
         XCTAssertFalse(migratedList.showsDashboard)
         XCTAssertFalse(migratedList.dashboardIncludesLands)
     }
 
-    func testCardListDisplaySortPreferencesDefaultPersistAndMigrate() throws {
+    func testCardCollectionDisplaySortPreferencesDefaultPersistAndMigrate() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListDisplaySortPreferenceTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionDisplaySortPreferenceTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
         let databaseURL = temporaryDirectory.appendingPathComponent("display-sort.sqlite")
         let database = try CardDatabase(storage: .file(databaseURL))
-        let list = try database.createCardList(named: "Sorted", now: Date(timeIntervalSince1970: 10))
+        let list = try database.createCardCollection(named: "Sorted", now: Date(timeIntervalSince1970: 10))
         XCTAssertNil(list.displaySortMode)
         XCTAssertEqual(list.displaySortDirection, .ascending)
 
-        let sorted = try database.setCardListDisplaySort(
+        let sorted = try database.setCardCollectionDisplaySort(
             id: list.id,
             mode: .edhrecRank,
             direction: .descending,
@@ -1701,11 +1811,11 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(sorted.updatedAt, Date(timeIntervalSince1970: 20))
 
         let reopened = try CardDatabase(storage: .file(databaseURL))
-        let persisted = try XCTUnwrap(reopened.cardList(id: list.id))
+        let persisted = try XCTUnwrap(reopened.cardCollection(id: list.id))
         XCTAssertEqual(persisted.displaySortMode, .edhrecRank)
         XCTAssertEqual(persisted.displaySortDirection, .descending)
 
-        let listOrder = try reopened.setCardListDisplaySort(
+        let listOrder = try reopened.setCardCollectionDisplaySort(
             id: list.id,
             mode: nil,
             direction: .descending,
@@ -1734,23 +1844,23 @@ final class CardDatabaseTests: XCTestCase {
         }
 
         let migratedDatabase = try CardDatabase(storage: .file(legacyDatabaseURL))
-        let migratedList = try XCTUnwrap(migratedDatabase.cardList(id: "legacy"))
+        let migratedList = try XCTUnwrap(migratedDatabase.cardCollection(id: "legacy"))
         XCTAssertNil(migratedList.displaySortMode)
         XCTAssertEqual(migratedList.displaySortDirection, .ascending)
     }
 
-    func testCardListViewModeDefaultsPersistsMigratesAndRestores() throws {
+    func testCardCollectionViewModeDefaultsPersistsMigratesAndRestores() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListViewModeTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionViewModeTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
         let databaseURL = temporaryDirectory.appendingPathComponent("view-mode.sqlite")
         let database = try CardDatabase(storage: .file(databaseURL))
-        let list = try database.createCardList(named: "Views", now: Date(timeIntervalSince1970: 10))
+        let list = try database.createCardCollection(named: "Views", now: Date(timeIntervalSince1970: 10))
         XCTAssertEqual(list.viewMode, .grid)
 
-        let updated = try database.setCardListViewMode(
+        let updated = try database.setCardCollectionViewMode(
             id: list.id,
             viewMode: .list,
             now: Date(timeIntervalSince1970: 20)
@@ -1759,13 +1869,13 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertEqual(updated.updatedAt, Date(timeIntervalSince1970: 20))
 
         let reopened = try CardDatabase(storage: .file(databaseURL))
-        let persisted = try XCTUnwrap(reopened.cardList(id: list.id))
+        let persisted = try XCTUnwrap(reopened.cardCollection(id: list.id))
         XCTAssertEqual(persisted.viewMode, .list)
 
-        let snapshot = try reopened.cardListLibrarySnapshot()
+        let snapshot = try reopened.cardCollectionLibrarySnapshot()
         let restoredDatabase = try CardDatabase(storage: .inMemory)
-        try restoredDatabase.restoreCardListLibrarySnapshot(snapshot)
-        XCTAssertEqual(try restoredDatabase.cardList(id: list.id)?.viewMode, .list)
+        try restoredDatabase.restoreCardCollectionLibrarySnapshot(snapshot)
+        XCTAssertEqual(try restoredDatabase.cardCollection(id: list.id)?.viewMode, .list)
 
         let legacyJSON = Data(
             """
@@ -1776,7 +1886,7 @@ final class CardDatabaseTests: XCTestCase {
               "updatedAt": 0
             }
             """.utf8)
-        let decodedLegacyList = try JSONDecoder().decode(CardListRecord.self, from: legacyJSON)
+        let decodedLegacyList = try JSONDecoder().decode(CardCollectionRecord.self, from: legacyJSON)
         XCTAssertEqual(decodedLegacyList.viewMode, .grid)
 
         let legacyDatabaseURL = temporaryDirectory.appendingPathComponent("legacy-view-mode.sqlite")
@@ -1799,13 +1909,13 @@ final class CardDatabaseTests: XCTestCase {
         }
 
         let migratedDatabase = try CardDatabase(storage: .file(legacyDatabaseURL))
-        let migratedList = try XCTUnwrap(migratedDatabase.cardList(id: "legacy"))
+        let migratedList = try XCTUnwrap(migratedDatabase.cardCollection(id: "legacy"))
         XCTAssertEqual(migratedList.viewMode, .grid)
     }
 
-    func testCardListCategoriesPersistOrderMoveEntriesAndDeleteToUncategorized() throws {
+    func testCardCollectionCategoriesPersistOrderMoveEntriesAndDeleteToUncategorized() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("CardListCategoryTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("CardCollectionCategoryTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
@@ -1814,24 +1924,24 @@ final class CardDatabaseTests: XCTestCase {
         let alpha = preferredTestCard(id: "alpha-print", oracleID: "alpha-oracle", name: "Alpha Forest")
         let beta = preferredTestCard(id: "beta-print", oracleID: "beta-oracle", name: "Beta Mage")
         try database.replaceAllCards([alpha, beta])
-        let list = try database.createCardList(named: "Commander")
+        let list = try database.createCardCollection(named: "Commander")
 
-        let ramp = try database.createCardListCategory(
+        let ramp = try database.createCardCollectionCategory(
             inList: list.id,
             named: "  Ramp  ",
             now: Date(timeIntervalSince1970: 10)
         )
-        let removal = try database.createCardListCategory(
+        let removal = try database.createCardCollectionCategory(
             inList: list.id,
             named: "Removal",
             now: Date(timeIntervalSince1970: 11)
         )
-        XCTAssertEqual(try database.cardListCategories(forListID: list.id).map(\.name), ["Ramp", "Removal"])
-        XCTAssertThrowsError(try database.createCardListCategory(inList: list.id, named: "ramp")) { error in
-            XCTAssertEqual(error as? CardListDatabaseError, .duplicateName)
+        XCTAssertEqual(try database.cardCollectionCategories(forListID: list.id).map(\.name), ["Ramp", "Removal"])
+        XCTAssertThrowsError(try database.createCardCollectionCategory(inList: list.id, named: "ramp")) { error in
+            XCTAssertEqual(error as? CardCollectionDatabaseError, .duplicateName)
         }
-        XCTAssertThrowsError(try database.createCardListCategory(inList: list.id, named: "uncategorized")) { error in
-            XCTAssertEqual(error as? CardListDatabaseError, .duplicateName)
+        XCTAssertThrowsError(try database.createCardCollectionCategory(inList: list.id, named: "uncategorized")) { error in
+            XCTAssertEqual(error as? CardCollectionDatabaseError, .duplicateName)
         }
 
         let uncategorized = try database.appendCard(alpha.id, toList: list.id)
@@ -1840,80 +1950,80 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertNil(uncategorized.categoryID)
         XCTAssertEqual(rampEntry.categoryID, ramp.id)
         XCTAssertEqual(removalEntry.categoryID, removal.id)
-        XCTAssertEqual(try database.cardListCategories(forListID: list.id).map(\.entryCount), [1, 1])
+        XCTAssertEqual(try database.cardCollectionCategories(forListID: list.id).map(\.entryCount), [1, 1])
 
-        let renamed = try database.renameCardListCategory(id: removal.id, to: "Interaction")
+        let renamed = try database.renameCardCollectionCategory(id: removal.id, to: "Interaction")
         XCTAssertEqual(renamed.name, "Interaction")
-        XCTAssertThrowsError(try database.renameCardListCategory(id: removal.id, to: "Uncategorized")) { error in
-            XCTAssertEqual(error as? CardListDatabaseError, .duplicateName)
+        XCTAssertThrowsError(try database.renameCardCollectionCategory(id: removal.id, to: "Uncategorized")) { error in
+            XCTAssertEqual(error as? CardCollectionDatabaseError, .duplicateName)
         }
-        try database.moveCardListCategory(id: removal.id, toPosition: 0)
-        XCTAssertEqual(try database.cardListCategories(forListID: list.id).map(\.name), ["Interaction", "Ramp"])
+        try database.moveCardCollectionCategory(id: removal.id, toPosition: 0)
+        XCTAssertEqual(try database.cardCollectionCategories(forListID: list.id).map(\.name), ["Interaction", "Ramp"])
 
-        let moved = try database.moveCardListEntry(id: uncategorized.id, toCategory: ramp.id)
+        let moved = try database.moveCardCollectionEntry(id: uncategorized.id, toCategory: ramp.id)
         XCTAssertEqual(moved.categoryID, ramp.id)
-        XCTAssertEqual(try database.cardListCategories(forListID: list.id).map(\.entryCount), [1, 2])
+        XCTAssertEqual(try database.cardCollectionCategories(forListID: list.id).map(\.entryCount), [1, 2])
 
         let reopened = try CardDatabase(storage: .file(databaseURL))
-        XCTAssertEqual(try reopened.cardListCategories(forListID: list.id).map(\.name), ["Interaction", "Ramp"])
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.categoryID), [
+        XCTAssertEqual(try reopened.cardCollectionCategories(forListID: list.id).map(\.name), ["Interaction", "Ramp"])
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.categoryID), [
             ramp.id, ramp.id, removal.id,
         ])
 
-        try reopened.deleteCardListCategory(id: ramp.id)
-        XCTAssertEqual(try reopened.cardListCategories(forListID: list.id).map(\.name), ["Interaction"])
-        XCTAssertEqual(try reopened.cardListEntries(forListID: list.id).map(\.categoryID), [
+        try reopened.deleteCardCollectionCategory(id: ramp.id)
+        XCTAssertEqual(try reopened.cardCollectionCategories(forListID: list.id).map(\.name), ["Interaction"])
+        XCTAssertEqual(try reopened.cardCollectionEntries(forListID: list.id).map(\.categoryID), [
             nil, nil, removal.id,
         ])
 
-        try reopened.deleteCardList(id: list.id)
-        XCTAssertTrue(try reopened.cardListCategories(forListID: list.id).isEmpty)
-        XCTAssertTrue(try reopened.cardListEntries(forListID: list.id).isEmpty)
+        try reopened.deleteCardCollection(id: list.id)
+        XCTAssertTrue(try reopened.cardCollectionCategories(forListID: list.id).isEmpty)
+        XCTAssertTrue(try reopened.cardCollectionEntries(forListID: list.id).isEmpty)
     }
 
     func testMovingEntryMergesWithMatchingCardInDestinationCategory() throws {
         let database = try CardDatabase(storage: .inMemory)
         let alpha = preferredTestCard(id: "alpha-print", oracleID: "alpha-oracle", name: "Alpha Forest")
         try database.replaceAllCards([alpha])
-        let list = try database.createCardList(named: "Commander")
-        let ramp = try database.createCardListCategory(inList: list.id, named: "Ramp")
+        let list = try database.createCardCollection(named: "Commander")
+        let ramp = try database.createCardCollectionCategory(inList: list.id, named: "Ramp")
 
         let uncategorized = try database.appendCard(alpha.id, toList: list.id, quantity: 2)
         let categorized = try database.appendCard(alpha.id, toList: list.id, categoryID: ramp.id)
 
-        let moved = try database.moveCardListEntry(id: uncategorized.id, toCategory: ramp.id)
-        let entries = try database.cardListEntries(forListID: list.id)
+        let moved = try database.moveCardCollectionEntry(id: uncategorized.id, toCategory: ramp.id)
+        let entries = try database.cardCollectionEntries(forListID: list.id)
 
         XCTAssertEqual(moved.id, categorized.id)
         XCTAssertEqual(entries.map(\.id), [categorized.id])
         XCTAssertEqual(entries.map(\.categoryID), [ramp.id])
         XCTAssertEqual(entries.map(\.quantity), [3])
-        XCTAssertEqual(try database.cardList(id: list.id)?.entryCount, 3)
-        XCTAssertEqual(try database.cardListCategories(forListID: list.id).map(\.entryCount), [3])
+        XCTAssertEqual(try database.cardCollection(id: list.id)?.entryCount, 3)
+        XCTAssertEqual(try database.cardCollectionCategories(forListID: list.id).map(\.entryCount), [3])
     }
 
-    func testCardListRulesetZonesAndExactQuantityPersist() throws {
+    func testCardCollectionRulesetZonesAndExactQuantityPersist() throws {
         let database = try CardDatabase(storage: .inMemory)
         let alpha = preferredTestCard(id: "alpha-print", oracleID: "alpha-oracle", name: "Alpha Forest")
         let beta = preferredTestCard(id: "beta-print", oracleID: "beta-oracle", name: "Beta Mage")
         try database.replaceAllCards([alpha, beta])
 
-        let list = try database.createCardList(named: "Modern")
-        let updatedList = try database.setCardListRuleset(id: list.id, ruleset: .modern)
+        let list = try database.createCardCollection(named: "Modern")
+        let updatedList = try database.setCardCollectionRuleset(id: list.id, ruleset: .modern)
         XCTAssertEqual(updatedList.ruleset, .modern)
 
-        let mainCategory = try database.createCardListCategory(inList: list.id, named: "Core")
-        let sideCategory = try database.createCardListCategory(inList: list.id, zone: .sideboard, named: "Core")
+        let mainCategory = try database.createCardCollectionCategory(inList: list.id, named: "Core")
+        let sideCategory = try database.createCardCollectionCategory(inList: list.id, zone: .sideboard, named: "Core")
         let mainEntry = try database.appendCard(alpha.id, toList: list.id, categoryID: mainCategory.id, quantity: 2)
         _ = try database.appendCard(beta.id, toList: list.id, categoryID: sideCategory.id, quantity: 1)
         let maybeEntry = try database.appendCard(alpha.id, toList: list.id, zone: .maybeboard, quantity: 3)
 
-        let updatedMainEntry = try database.setCardListEntryQuantity(id: mainEntry.id, quantity: 4)
-        let movedMaybeEntry = try database.moveCardListEntry(id: maybeEntry.id, toZone: .sideboard)
-        let categories = try database.cardListCategories(forListID: list.id)
-        let entries = try database.cardListEntries(forListID: list.id)
+        let updatedMainEntry = try database.setCardCollectionEntryQuantity(id: mainEntry.id, quantity: 4)
+        let movedMaybeEntry = try database.moveCardCollectionEntry(id: maybeEntry.id, toZone: .sideboard)
+        let categories = try database.cardCollectionCategories(forListID: list.id)
+        let entries = try database.cardCollectionEntries(forListID: list.id)
 
-        XCTAssertEqual(try database.cardList(id: list.id)?.ruleset, .modern)
+        XCTAssertEqual(try database.cardCollection(id: list.id)?.ruleset, .modern)
         XCTAssertEqual(categories.map(\.name), ["Core", "Core"])
         XCTAssertEqual(categories.map(\.zone), [.mainboard, .sideboard])
         XCTAssertEqual(updatedMainEntry.quantity, 4)
@@ -1921,7 +2031,7 @@ final class CardDatabaseTests: XCTestCase {
         XCTAssertNil(movedMaybeEntry.categoryID)
         XCTAssertEqual(entries.map(\.zone), [.mainboard, .sideboard, .sideboard])
         XCTAssertEqual(entries.map(\.quantity), [4, 1, 3])
-        XCTAssertEqual(try database.cardList(id: list.id)?.entryCount, 8)
+        XCTAssertEqual(try database.cardCollection(id: list.id)?.entryCount, 8)
     }
 
     func testSettingCommanderRulesetNormalizesSideboardIntoMainboardAndValidation() throws {
@@ -1948,18 +2058,18 @@ final class CardDatabaseTests: XCTestCase {
         )
         try database.replaceAllCards([commander, forest, sideboardCard])
 
-        let list = try database.createCardList(named: "Commander")
-        try database.setCardListRuleset(id: list.id, ruleset: .modern)
-        let mainCategory = try database.createCardListCategory(inList: list.id, named: "Core")
-        let sideCategory = try database.createCardListCategory(inList: list.id, zone: .sideboard, named: "Core")
+        let list = try database.createCardCollection(named: "Commander")
+        try database.setCardCollectionRuleset(id: list.id, ruleset: .modern)
+        let mainCategory = try database.createCardCollectionCategory(inList: list.id, named: "Core")
+        let sideCategory = try database.createCardCollectionCategory(inList: list.id, zone: .sideboard, named: "Core")
         try database.appendCard(forest.id, toList: list.id, categoryID: mainCategory.id, quantity: 98)
         try database.appendCard(sideboardCard.id, toList: list.id, categoryID: sideCategory.id)
 
-        let updatedList = try database.setCardListRuleset(id: list.id, ruleset: .commander)
+        let updatedList = try database.setCardCollectionRuleset(id: list.id, ruleset: .commander)
         try database.appendCard(commander.id, toList: list.id, zone: .commander)
-        let categories = try database.cardListCategories(forListID: list.id)
-        let entries = try database.cardListEntries(forListID: list.id)
-        let warningIDs = Set(CardListRulesetValidator.warnings(for: updatedList, entries: entries).map(\.id))
+        let categories = try database.cardCollectionCategories(forListID: list.id)
+        let entries = try database.cardCollectionEntries(forListID: list.id)
+        let warningIDs = Set(CardCollectionRulesetValidator.warnings(for: updatedList, entries: entries).map(\.id))
 
         XCTAssertEqual(updatedList.ruleset, .commander)
         XCTAssertEqual(categories.map(\.name), ["Core"])

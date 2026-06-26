@@ -3,23 +3,10 @@ import SwiftUI
 
 struct SearchToolbarButtons: View {
     @Environment(GrimoraAppModel.self) private var model
-    @State private var createFeedbackTrigger = 0
     @State private var clearFeedbackTrigger = 0
     @State private var updateFeedbackTrigger = 0
 
-    var onCreateListFromSearch: () -> Void
-
     var body: some View {
-        Button {
-            createFeedbackTrigger += 1
-            onCreateListFromSearch()
-        } label: {
-            Text("Create List")
-        }
-        .accessibilityIdentifier("create-list-from-search-button")
-        .disabled(!model.canCreateListFromCurrentSearch)
-        .grimoraSelectionFeedback(trigger: createFeedbackTrigger)
-
         Button {
             clearFeedbackTrigger += 1
             model.clearSearch()
@@ -45,7 +32,6 @@ struct SearchToolbarButtons: View {
 struct SearchRefinementToolbar: ToolbarContent {
     var placement: ToolbarItemPlacement
     var usesCompactActions = false
-    var onCreateListFromSearch: () -> Void
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: placement) {
@@ -53,9 +39,9 @@ struct SearchRefinementToolbar: ToolbarContent {
             SearchPrintingsToggle()
 
             if usesCompactActions {
-                SearchActionsMenu(onCreateListFromSearch: onCreateListFromSearch)
+                SearchActionsMenu()
             } else {
-                SearchToolbarButtons(onCreateListFromSearch: onCreateListFromSearch)
+                SearchToolbarButtons()
             }
         }
     }
@@ -127,11 +113,10 @@ struct SearchPrintingsToggle: View {
 
 struct SearchActionsMenu: View {
     @Environment(GrimoraAppModel.self) private var model
-    var onCreateListFromSearch: () -> Void
 
     var body: some View {
         Menu {
-            SearchToolbarButtons(onCreateListFromSearch: onCreateListFromSearch)
+            SearchToolbarButtons()
         } label: {
             Text("Search Actions")
         }

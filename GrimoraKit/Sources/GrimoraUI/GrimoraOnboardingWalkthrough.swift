@@ -24,7 +24,7 @@ public enum GrimoraOnboardingWalkthroughStep: String, CaseIterable, Identifiable
     case .operators: "Search operators"
     case .search: "Try a search"
     case .quiz: "Quick quiz"
-    case .lists: "Save cards to lists"
+    case .lists: "Save cards to collections"
     case .favourites: "Favourite the best"
     case .finish: "You're all set"
     }
@@ -42,11 +42,11 @@ public enum GrimoraOnboardingWalkthroughStep: String, CaseIterable, Identifiable
     case .quiz:
       "Your turn — pick the operator that answers each question."
     case .lists:
-      "Lists keep cards together — a deck, a wishlist, a binder. Tap a card to file it."
+      "Collections keep cards together — a deck, a wishlist, a binder. Tap a card to file it."
     case .favourites:
       "Favourites are your one-tap shortlist. Tap a star to add a card."
     case .finish:
-      "That's the basics. Search the full library, build lists, and favourite anything you love."
+      "That's the basics. Search the full library, build collections, and favourite anything you love."
     }
   }
 

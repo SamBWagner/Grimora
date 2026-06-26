@@ -72,7 +72,7 @@ public enum CloudSyncEntityCodec {
     for list in snapshot.listSnapshot.lists {
       insert(
         CloudSyncEntityRecord(
-          entityType: .cardList,
+          entityType: .cardCollection,
           recordID: list.id,
           payload: try CardDatabase.syncJSONData(list),
           updatedAt: list.updatedAt,
@@ -83,7 +83,7 @@ public enum CloudSyncEntityCodec {
     for category in snapshot.listSnapshot.categories {
       insert(
         CloudSyncEntityRecord(
-          entityType: .cardListCategory,
+          entityType: .cardCollectionCategory,
           recordID: category.id,
           payload: try CardDatabase.syncJSONData(category),
           updatedAt: category.updatedAt,
@@ -95,7 +95,7 @@ public enum CloudSyncEntityCodec {
       entry.card = nil
       insert(
         CloudSyncEntityRecord(
-          entityType: .cardListEntry,
+          entityType: .cardCollectionEntry,
           recordID: entry.id,
           payload: try CardDatabase.syncJSONData(entry),
           updatedAt: entry.updatedAt,
@@ -107,7 +107,7 @@ public enum CloudSyncEntityCodec {
     let tombstones =
       snapshot.deletedEntities
       + snapshot.deletedLists.map {
-        SyncTombstone(entityType: .cardList, recordID: $0.id, deletedAt: $0.deletedAt)
+        SyncTombstone(entityType: .cardCollection, recordID: $0.id, deletedAt: $0.deletedAt)
       }
     for tombstone in tombstones {
       insert(
@@ -182,20 +182,20 @@ public enum CloudSyncEntityCodec {
     }
 
     let lists = try decodedValues(
-      CardListRecord.self,
-      entityType: .cardList,
+      CardCollectionRecord.self,
+      entityType: .cardCollection,
       records: merged
     )
     let listIDs = Set(lists.map(\.id))
     let categories = try decodedValues(
-      CardListCategoryRecord.self,
-      entityType: .cardListCategory,
+      CardCollectionCategoryRecord.self,
+      entityType: .cardCollectionCategory,
       records: merged
     ).filter { listIDs.contains($0.listID) }
     let categoryIDs = Set(categories.map(\.id))
     let entries = try decodedValues(
-      CardListEntryRecord.self,
-      entityType: .cardListEntry,
+      CardCollectionEntryRecord.self,
+      entityType: .cardCollectionEntry,
       records: merged
     ).filter { entry in
       listIDs.contains(entry.listID)
@@ -208,9 +208,9 @@ public enum CloudSyncEntityCodec {
 
     let tombstones = merged.compactMap { record -> SyncTombstone? in
       guard let deletedAt = record.deletedAt,
-        record.entityType == .cardList
-          || record.entityType == .cardListCategory
-          || record.entityType == .cardListEntry
+        record.entityType == .cardCollection
+          || record.entityType == .cardCollectionCategory
+          || record.entityType == .cardCollectionEntry
       else {
         return nil
       }
@@ -221,7 +221,7 @@ public enum CloudSyncEntityCodec {
       )
     }
     let deletedLists = tombstones
-      .filter { $0.entityType == .cardList }
+      .filter { $0.entityType == .cardCollection }
       .map { SyncListDeletion(id: $0.recordID, deletedAt: $0.deletedAt) }
 
     return DeviceSyncSnapshot(
@@ -233,7 +233,7 @@ public enum CloudSyncEntityCodec {
       ),
       libraryIdentity: identity,
       searchSettings: searchSettings,
-      listSnapshot: CardListLibrarySnapshot(
+      listSnapshot: CardCollectionLibrarySnapshot(
         lists: lists,
         categories: categories,
         entries: entries
@@ -322,7 +322,7 @@ public enum CloudSyncEntityCodec {
         snapshot.deletedLists.append(SyncListDeletion(id: listID, deletedAt: deletedAt))
       }
       snapshot.deletedEntities.append(
-        SyncTombstone(entityType: .cardList, recordID: listID, deletedAt: deletedAt)
+        SyncTombstone(entityType: .cardCollection, recordID: listID, deletedAt: deletedAt)
       )
     }
     return snapshot
@@ -354,7 +354,7 @@ public enum CloudSyncEntityCodec {
     canonicalList.pinnedAt = nil
     canonicalList.position = 0
 
-    var favouriteEntriesByCardID: [CardRecord.ID: CardListEntryRecord] = [:]
+    var favouriteEntriesByCardID: [CardRecord.ID: CardCollectionEntryRecord] = [:]
     for entry in snapshot.listSnapshot.entries where favouriteListIDs.contains(entry.listID) {
       if let current = favouriteEntriesByCardID[entry.cardID],
         current.updatedAt >= entry.updatedAt
@@ -393,7 +393,7 @@ public enum CloudSyncEntityCodec {
       favouriteListIDs.contains($0.id) || $0.id == favouritesListID
     }
     snapshot.deletedEntities.removeAll {
-      $0.entityType == .cardList
+      $0.entityType == .cardCollection
         && (favouriteListIDs.contains($0.recordID) || $0.recordID == favouritesListID)
     }
     return snapshot

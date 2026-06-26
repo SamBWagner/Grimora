@@ -3,18 +3,14 @@ import Foundation
 import GrimoraCore
 import SwiftUI
 
-#if os(iOS)
-import UIKit
-#endif
-
 struct TouchRootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(GrimoraAppModel.self) private var model
     @State private var gridZoom = GridZoomController()
     @State private var libraryMaintenance = GrimoraLibraryMaintenanceController()
     @State private var selectedTab = TouchRootTab.search
-    @State private var listNavigationPath: [CardListsBrowserRoute] = []
-    @State private var listNameAction: ListNameAction?
+    @State private var listNavigationPath: [CardCollectionsBrowserRoute] = []
+    @State private var listNameAction: CollectionNameAction?
     @State private var listNameDraft = ""
     @State private var isSearchSettingsPresented = false
     @State private var previousListSplitSelection: GrimoraSidebarSelection = .search
@@ -35,7 +31,7 @@ struct TouchRootView: View {
             .focusedSceneValue(\.libraryMaintenanceController, libraryMaintenance)
             .environment(libraryMaintenance)
             .libraryMaintenanceConfirmationDialog(controller: libraryMaintenance)
-            .alert(listNameAction?.title ?? "List", isPresented: listNamePromptBinding) {
+            .alert(listNameAction?.title ?? "Collection", isPresented: listNamePromptBinding) {
                 TextField("Name", text: $listNameDraft)
                 Button(listNameAction?.confirmationTitle ?? "Save") {
                     submitListNamePrompt()
@@ -69,24 +65,6 @@ struct TouchRootView: View {
         .adaptiveTouchTabViewStyle()
         .accessibilityIdentifier("touch-root-tab-view")
         .touchChromeBackground(palette: palette, colorScheme: colorScheme)
-        // Park the search-options gear in the very bottom-right corner, on the
-        // tab-bar row (to the trailing side of the floating Search/Lists pill) —
-        // overlaid on the TabView itself, and only while the search tab is active.
-        .overlay(alignment: .bottomTrailing) {
-            if selectedTab == .search {
-                SearchOptionsMenu(
-                    gridZoom: gridZoom,
-                    onCreateListFromSearch: {
-                        presentCreateSearchListPrompt()
-                    },
-                    onOpenSearchSettings: {
-                        isSearchSettingsPresented = true
-                    }
-                )
-                .padding(.trailing, 16)
-                .padding(.bottom, 10)
-            }
-        }
         .onChange(of: selectedTab) { _, newValue in
             if newValue == .search {
                 listNavigationPath = []
@@ -96,11 +74,11 @@ struct TouchRootView: View {
                 model.selectListsOverview()
             }
         }
-        .onChange(of: model.selectedListID) { _, selectedListID in
-            guard selectedTab == .lists, let selectedListID else {
+        .onChange(of: model.selectedCollectionID) { _, selectedCollectionID in
+            guard selectedTab == .lists, let selectedCollectionID else {
                 return
             }
-            let selectedRoute = CardListsBrowserRoute.list(selectedListID)
+            let selectedRoute = CardCollectionsBrowserRoute.list(selectedCollectionID)
             if listNavigationPath.last != selectedRoute {
                 listNavigationPath = [selectedRoute]
             }
@@ -110,22 +88,20 @@ struct TouchRootView: View {
     @ViewBuilder
     private var cardDetailPresentation: some View {
         #if os(iOS)
-        if usesPhoneCardDetailSheet {
-            rootTabs
-                .sheet(isPresented: detailSheetBinding) {
-                    cardDetailSheet
-                        .presentationDetents([.large])
-                        .presentationDragIndicator(.visible)
-                        .presentationBackground(.black)
-                        .presentationCornerRadius(28)
-                }
-        } else {
-            rootTabs
-                .inspector(isPresented: detailSheetBinding) {
-                    cardDetailInspector
-                        .inspectorColumnWidth(min: 420, ideal: 520, max: 680)
-                }
-        }
+        // Card detail always presents as a fly-up sheet on iOS — iPhone and iPad
+        // alike. The side inspector reserved a fixed 420pt column that overflowed
+        // the viewport whenever a Stage Manager / Split View window was dragged
+        // narrower than it could fit, and even a full 13" iPad isn't wide enough
+        // for a comfortable grid-plus-inspector split. A sheet sidesteps the
+        // whole responsiveness problem.
+        rootTabs
+            .sheet(isPresented: detailSheetBinding) {
+                cardDetailSheet
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+                    .presentationBackground(.black)
+                    .presentationCornerRadius(28)
+            }
         #elseif os(visionOS)
         GeometryReader { proxy in
             if shouldUseWideCardDetailLayout(for: proxy.size.width) {
@@ -171,9 +147,6 @@ struct TouchRootView: View {
                     },
                     onCreateListForCards: { cardIDs in
                         presentCreateListPrompt(addingCardIDs: cardIDs, selectAfterCreate: false)
-                    },
-                    onCreateListFromSearch: {
-                        presentCreateSearchListPrompt()
                     }
                 )
             }
@@ -222,6 +195,8 @@ struct TouchRootView: View {
                         }
                     }
 
+                    SearchViewOptionsMenu(gridZoom: gridZoom)
+
                     if advancedSearchEnabled {
                         Button("Advanced Search", systemImage: "slider.horizontal.3") {
                             isAdvancedSearchPresented = true
@@ -238,6 +213,18 @@ struct TouchRootView: View {
                     model.clearSearch()
                 }
             }
+        }
+        // Float the settings cog just above the tab bar, in its natural resting
+        // position — the overlay respects the tab-bar safe-area inset rather
+        // than being pushed down onto the tab-bar row.
+        .overlay(alignment: .bottom) {
+            SearchFloatingControls(
+                onOpenSearchSettings: {
+                    isSearchSettingsPresented = true
+                }
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
         }
         .touchChromeBackground(palette: palette, colorScheme: colorScheme)
     }
@@ -284,7 +271,7 @@ struct TouchRootView: View {
 
     private var listsStackTab: some View {
         NavigationStack(path: $listNavigationPath) {
-            CardListsBrowserView(
+            CardCollectionsBrowserView(
                 gridZoom: gridZoom,
                 onCreateList: {
                     listNavigationPath = [.newList]
@@ -293,8 +280,8 @@ struct TouchRootView: View {
                     listNavigationPath = []
                 },
                 onCompleteCreateList: {
-                    if let selectedListID = model.selectedListID {
-                        listNavigationPath = [.list(selectedListID)]
+                    if let selectedCollectionID = model.selectedCollectionID {
+                        listNavigationPath = [.list(selectedCollectionID)]
                     } else {
                         listNavigationPath = []
                     }
@@ -318,14 +305,14 @@ struct TouchRootView: View {
                     presentRenameCategoryPrompt(category)
                 }
             )
-            .navigationTitle("Lists")
+            .navigationTitle("Collections")
         }
         .accessibilityIdentifier("card-lists-compact-stack")
     }
 
     private var listsSplitTab: some View {
         NavigationSplitView {
-            CardListsBrowserSidebarView(
+            CardCollectionsBrowserSidebarView(
                 onCreateList: {
                     presentCreateListDestinationInSplit()
                 },
@@ -333,7 +320,7 @@ struct TouchRootView: View {
                     presentRenameListPrompt(list)
                 }
             )
-            .navigationTitle("Lists")
+            .navigationTitle("Collections")
             .navigationSplitViewColumnWidth(min: 280, ideal: 320)
         } detail: {
             listsSplitDetail
@@ -345,7 +332,7 @@ struct TouchRootView: View {
     private var listsSplitDetail: some View {
         switch model.sidebarSelection {
         case .listsOverview:
-            CardListsOverviewView(
+            CardCollectionsOverviewView(
                 onCreateList: {
                     presentCreateListDestinationInSplit()
                 },
@@ -353,15 +340,15 @@ struct TouchRootView: View {
                 onRenameList: { presentRenameListPrompt($0) }
             )
         case .newList:
-            CardListCreateDestinationView(
+            CardCollectionCreateDestinationView(
                 onCancel: {
                     model.cancelNewListCreation(returningTo: previousListSplitSelection)
                 },
                 onComplete: {}
             )
-            .navigationTitle("New List")
-        case .list(let listID) where model.selectedList?.id == listID:
-            CardListDetailView(
+            .navigationTitle("New Collection")
+        case .list(let listID) where model.selectedCollection?.id == listID:
+            CardCollectionDetailView(
                 gridZoom: gridZoom,
                 onSelect: { card in
                     model.selectCard(card)
@@ -382,9 +369,9 @@ struct TouchRootView: View {
                     presentRenameCategoryPrompt(category)
                 }
             )
-            .navigationTitle(model.selectedList?.name ?? "List")
+            .navigationTitle(model.selectedCollection?.name ?? "Collection")
         case .list, .search:
-            CardListsOverviewView(
+            CardCollectionsOverviewView(
                 onCreateList: {
                     presentCreateListDestinationInSplit()
                 },
@@ -414,14 +401,6 @@ struct TouchRootView: View {
 
     private func cardDetailInspectorWidth(for width: CGFloat) -> CGFloat {
         min(max(420, width * 0.38), 560)
-    }
-
-    private var usesPhoneCardDetailSheet: Bool {
-        #if os(iOS)
-        UIDevice.current.userInterfaceIdiom == .phone
-        #else
-        false
-        #endif
     }
 
     private var detailSheetBinding: Binding<Bool> {
@@ -455,6 +434,7 @@ struct TouchRootView: View {
         .touchChromeBackground(palette: palette, colorScheme: colorScheme)
     }
 
+    #if os(visionOS)
     private var cardDetailInspector: some View {
         cardDetailContent(
             presentationStyle: .inspector,
@@ -462,6 +442,7 @@ struct TouchRootView: View {
         )
         .touchChromeBackground(palette: palette, colorScheme: colorScheme)
     }
+    #endif
 
     @ViewBuilder
     private func cardDetailContent(
@@ -529,11 +510,6 @@ struct TouchRootView: View {
         listNameAction = .createWithCardIDs(cardIDs, selectAfterCreate: selectAfterCreate)
     }
 
-    private func presentCreateSearchListPrompt() {
-        listNameDraft = ""
-        listNameAction = .createFromSearch
-    }
-
     private func presentCreateListDestinationInSplit() {
         if model.sidebarSelection != .newList {
             previousListSplitSelection = model.sidebarSelection
@@ -542,17 +518,17 @@ struct TouchRootView: View {
         model.selectNewList()
     }
 
-    private func presentRenameListPrompt(_ list: CardListRecord) {
+    private func presentRenameListPrompt(_ list: CardCollectionRecord) {
         listNameDraft = list.name
         listNameAction = .rename(list)
     }
 
-    private func presentCreateCategoryPrompt(in list: CardListRecord) {
+    private func presentCreateCategoryPrompt(in list: CardCollectionRecord) {
         listNameDraft = ""
         listNameAction = .createCategory(listID: list.id)
     }
 
-    private func presentRenameCategoryPrompt(_ category: CardListCategoryRecord) {
+    private func presentRenameCategoryPrompt(_ category: CardCollectionCategoryRecord) {
         listNameDraft = category.name
         listNameAction = .renameCategory(category)
     }
@@ -569,26 +545,26 @@ struct TouchRootView: View {
 
         switch listNameAction {
         case .create(let card, let selectAfterCreate):
-            model.createCardList(named: name, adding: card, selectAfterCreate: selectAfterCreate)
+            model.createCardCollection(named: name, adding: card, selectAfterCreate: selectAfterCreate)
         case .createWithCardIDs(let cardIDs, let selectAfterCreate):
-            model.createCardList(
+            model.createCardCollection(
                 named: name,
                 addingCardIDs: cardIDs,
                 selectAfterCreate: selectAfterCreate
             )
         case .createFromSearch:
             Task {
-                if let list = await model.createCardListFromCurrentSearch(named: name) {
+                if let list = await model.createCardCollectionFromCurrentSearch(named: name) {
                     selectedTab = .lists
                     listNavigationPath = [.list(list.id)]
                 }
             }
         case .rename(let list):
-            model.renameCardList(id: list.id, to: name)
+            model.renameCardCollection(id: list.id, to: name)
         case .createCategory(let listID):
-            model.createCardListCategory(named: name, inListID: listID)
+            model.createCardCollectionCategory(named: name, inListID: listID)
         case .renameCategory(let category):
-            model.renameCardListCategory(id: category.id, to: name)
+            model.renameCardCollectionCategory(id: category.id, to: name)
         }
 
         self.listNameAction = nil

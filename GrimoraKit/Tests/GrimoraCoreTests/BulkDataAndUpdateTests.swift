@@ -626,7 +626,7 @@ final class BulkDataAndUpdateTests: XCTestCase {
         records[0].normalImagePath = "/tmp/alpha-normal.jpg"
         try database.replaceAllCards(records)
         try Fixtures.markLibraryReady(database)
-        let list = try database.createCardList(named: "Favorites")
+        let list = try database.createCardCollection(named: "Favorites")
         try database.appendCard("alpha", toList: list.id, quantity: 2)
         let network = RecordingNetworkClient(dataResponses: [
             MTGJSONPriceHistoryClient.metaURL: Data()
@@ -642,8 +642,8 @@ final class BulkDataAndUpdateTests: XCTestCase {
 
         XCTAssertEqual(status, .failed)
         XCTAssertEqual(try database.cardCount(), records.count)
-        XCTAssertEqual(try database.cardLists().map(\.name), ["Favorites"])
-        XCTAssertEqual(try database.cardListEntries(forListID: list.id).map(\.cardID), ["alpha"])
+        XCTAssertEqual(try database.cardCollections().map(\.name), ["Favorites"])
+        XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.cardID), ["alpha"])
         XCTAssertEqual(
             try database.metadataValue(forKey: MetadataKey.defaultCardsUpdatedAt.rawValue),
             "2026-04-25T09:09:59.477+00:00"

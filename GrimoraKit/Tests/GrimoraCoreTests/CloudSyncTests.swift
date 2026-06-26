@@ -113,14 +113,14 @@ final class CloudSyncTests: XCTestCase {
         let identity = libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00")
         try source.saveLibraryIdentity(identity)
 
-        let list = try source.createCardList(named: "Drafts", now: Date(timeIntervalSince1970: 10))
-        let category = try source.createCardListCategory(
+        let list = try source.createCardCollection(named: "Drafts", now: Date(timeIntervalSince1970: 10))
+        let category = try source.createCardCollectionCategory(
             inList: list.id,
             named: "Ramp",
             now: Date(timeIntervalSince1970: 11)
         )
-        try source.setCardListDisplaySort(id: list.id, mode: .edhrecRank, direction: .descending)
-        try source.setCardListViewMode(id: list.id, viewMode: .list)
+        try source.setCardCollectionDisplaySort(id: list.id, mode: .edhrecRank, direction: .descending)
+        try source.setCardCollectionViewMode(id: list.id, viewMode: .list)
         try source.appendCard("alpha", toList: list.id, categoryID: category.id, quantity: 2)
 
         let snapshot = try source.deviceSyncSnapshot(
@@ -133,18 +133,18 @@ final class CloudSyncTests: XCTestCase {
         try target.applyDeviceSyncSnapshot(snapshot)
 
         XCTAssertEqual(try target.libraryIdentity(), identity)
-        XCTAssertEqual(try target.cardLists().map(\.name), ["Drafts"])
-        XCTAssertEqual(try target.cardList(id: list.id)?.displaySortMode, .edhrecRank)
-        XCTAssertEqual(try target.cardList(id: list.id)?.displaySortDirection, .descending)
-        XCTAssertEqual(try target.cardList(id: list.id)?.viewMode, .list)
-        XCTAssertEqual(try target.cardListCategories(forListID: list.id).map(\.name), ["Ramp"])
-        XCTAssertEqual(try target.cardListEntries(forListID: list.id).map(\.cardID), ["alpha"])
-        XCTAssertEqual(try target.cardListEntries(forListID: list.id).map(\.quantity), [2])
+        XCTAssertEqual(try target.cardCollections().map(\.name), ["Drafts"])
+        XCTAssertEqual(try target.cardCollection(id: list.id)?.displaySortMode, .edhrecRank)
+        XCTAssertEqual(try target.cardCollection(id: list.id)?.displaySortDirection, .descending)
+        XCTAssertEqual(try target.cardCollection(id: list.id)?.viewMode, .list)
+        XCTAssertEqual(try target.cardCollectionCategories(forListID: list.id).map(\.name), ["Ramp"])
+        XCTAssertEqual(try target.cardCollectionEntries(forListID: list.id).map(\.cardID), ["alpha"])
+        XCTAssertEqual(try target.cardCollectionEntries(forListID: list.id).map(\.quantity), [2])
     }
 
     func testOutboxAndTombstonesTrackSyncableLocalChanges() throws {
         let database = try Fixtures.database()
-        let list = try database.createCardList(named: "Keepers")
+        let list = try database.createCardCollection(named: "Keepers")
         let entry = try database.appendCard("alpha", toList: list.id)
 
         try database.recordLocalSyncSnapshotChange(reason: "unit-test")
@@ -152,14 +152,14 @@ final class CloudSyncTests: XCTestCase {
         XCTAssertEqual(pending.map(\.entityType), [.snapshot])
         XCTAssertEqual(pending.map(\.operation), [.snapshot])
 
-        try database.removeCardListEntryCompletely(id: entry.id)
+        try database.removeCardCollectionEntryCompletely(id: entry.id)
         let entryTombstone = try XCTUnwrap(try database.syncTombstones().first)
-        XCTAssertEqual(entryTombstone.entityType, .cardListEntry)
+        XCTAssertEqual(entryTombstone.entityType, .cardCollectionEntry)
         XCTAssertEqual(entryTombstone.recordID, entry.id)
 
-        try database.deleteCardList(id: list.id)
+        try database.deleteCardCollection(id: list.id)
         let tombstones = try database.syncTombstones()
-        XCTAssertTrue(tombstones.contains { $0.entityType == .cardList && $0.recordID == list.id })
+        XCTAssertTrue(tombstones.contains { $0.entityType == .cardCollection && $0.recordID == list.id })
 
         try database.markSyncChangesSent(ids: pending.map(\.id))
         XCTAssertTrue(try database.pendingSyncChanges().isEmpty)
@@ -193,7 +193,7 @@ final class CloudSyncTests: XCTestCase {
         let identity = libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00")
         let remoteDatabase = try Fixtures.database()
         try remoteDatabase.saveLibraryIdentity(identity)
-        let remotePicks = try remoteDatabase.createCardList(named: "Remote Picks")
+        let remotePicks = try remoteDatabase.createCardCollection(named: "Remote Picks")
         try remoteDatabase.appendCard("beta", toList: remotePicks.id)
         let remoteSnapshot = try remoteDatabase.deviceSyncSnapshot(
             deviceID: "ipad",
@@ -204,7 +204,7 @@ final class CloudSyncTests: XCTestCase {
 
         let localDatabase = try Fixtures.database()
         try localDatabase.saveLibraryIdentity(identity)
-        let localPicks = try localDatabase.createCardList(named: "Local Picks")
+        let localPicks = try localDatabase.createCardCollection(named: "Local Picks")
         try localDatabase.appendCard("alpha", toList: localPicks.id)
 
         let transport = MemoryCloudSyncTransport(
@@ -224,7 +224,7 @@ final class CloudSyncTests: XCTestCase {
 
         XCTAssertEqual(appliedSnapshot.deviceName, "Mac")
         XCTAssertEqual(
-            Set(try localDatabase.cardLists().map(\.name)),
+            Set(try localDatabase.cardCollections().map(\.name)),
             ["Remote Picks", "Local Picks"]
         )
         XCTAssertFalse(try localDatabase.cloudSyncRecoverySnapshots().isEmpty)
@@ -234,7 +234,7 @@ final class CloudSyncTests: XCTestCase {
         let identity = libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00")
         let remoteDatabase = try Fixtures.database()
         try remoteDatabase.saveLibraryIdentity(identity)
-        let remotePicks = try remoteDatabase.createCardList(named: "Remote Picks")
+        let remotePicks = try remoteDatabase.createCardCollection(named: "Remote Picks")
         try remoteDatabase.appendCard("beta", toList: remotePicks.id)
         let remoteSnapshot = try remoteDatabase.deviceSyncSnapshot(
             deviceID: "ipad",
@@ -261,7 +261,7 @@ final class CloudSyncTests: XCTestCase {
         }
 
         XCTAssertEqual(appliedSnapshot.id, "mac")
-        XCTAssertEqual(try localDatabase.cardLists().map(\.name), ["Remote Picks"])
+        XCTAssertEqual(try localDatabase.cardCollections().map(\.name), ["Remote Picks"])
 
         let remoteState = await transport.currentState()
         let entitySnapshot = try XCTUnwrap(remoteState.snapshots.first)
@@ -296,7 +296,7 @@ final class CloudSyncTests: XCTestCase {
         guard case .appliedRemoteSnapshot = status else {
             return XCTFail("Expected the retained same-device cloud snapshot, got \(status).")
         }
-        XCTAssertEqual(try replacementDatabase.cardLists().map(\.name), ["Existing User Data"])
+        XCTAssertEqual(try replacementDatabase.cardCollections().map(\.name), ["Existing User Data"])
         let savedState = await transport.currentState()
         XCTAssertEqual(savedState.snapshots.first?.listSnapshot.lists.map(\.name), ["Existing User Data"])
     }
@@ -310,7 +310,7 @@ final class CloudSyncTests: XCTestCase {
         )
         let localDatabase = try Fixtures.database()
         try localDatabase.saveLibraryIdentity(identity)
-        let localCopy = try localDatabase.createCardList(named: "Local Copy")
+        let localCopy = try localDatabase.createCardCollection(named: "Local Copy")
         try localDatabase.appendCard("alpha", toList: localCopy.id)
         let coordinator = CloudSyncCoordinator(
             database: localDatabase,
@@ -332,7 +332,7 @@ final class CloudSyncTests: XCTestCase {
             return XCTFail("Expected unique lists to combine automatically, got \(status).")
         }
         XCTAssertEqual(
-            Set(try localDatabase.cardLists().map(\.name)),
+            Set(try localDatabase.cardCollections().map(\.name)),
             ["Cloud Copy", "Local Copy"]
         )
     }
@@ -348,7 +348,7 @@ final class CloudSyncTests: XCTestCase {
         )
         let localDatabase = try Fixtures.database()
         try localDatabase.saveLibraryIdentity(identity)
-        let localList = try localDatabase.createCardList(named: "Shared Deck")
+        let localList = try localDatabase.createCardCollection(named: "Shared Deck")
         try localDatabase.appendCard("alpha", toList: localList.id)
         let coordinator = CloudSyncCoordinator(
             database: localDatabase,
@@ -370,7 +370,7 @@ final class CloudSyncTests: XCTestCase {
             return XCTFail("Expected an automatic merge without resolution, got \(status).")
         }
         XCTAssertEqual(
-            try localDatabase.cardLists().filter { $0.name == "Shared Deck" }.count,
+            try localDatabase.cardCollections().filter { $0.name == "Shared Deck" }.count,
             2
         )
 
@@ -394,28 +394,28 @@ final class CloudSyncTests: XCTestCase {
             capturedAt: now,
             libraryIdentity: libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00"),
             searchSettings: SyncSearchSettings(updatedAt: now),
-            listSnapshot: CardListLibrarySnapshot(
+            listSnapshot: CardCollectionLibrarySnapshot(
                 lists: [
-                    CardListRecord(id: "empty", name: "Empty Scratch", createdAt: now, updatedAt: now),
-                    CardListRecord(
+                    CardCollectionRecord(id: "empty", name: "Empty Scratch", createdAt: now, updatedAt: now),
+                    CardCollectionRecord(
                         id: "described",
                         name: "Has Notes",
                         descriptionPlainText: "deck idea",
                         createdAt: now,
                         updatedAt: now
                     ),
-                    CardListRecord(
+                    CardCollectionRecord(
                         id: "real",
                         name: "Real Deck",
                         createdAt: now,
                         updatedAt: now,
                         entryCount: 1
                     ),
-                    CardListRecord(id: "fav", name: "Favourites", createdAt: now, updatedAt: now),
+                    CardCollectionRecord(id: "fav", name: "Favourites", createdAt: now, updatedAt: now),
                 ],
                 categories: [],
                 entries: [
-                    CardListEntryRecord(
+                    CardCollectionEntryRecord(
                         id: "real-entry",
                         listID: "real",
                         cardID: "alpha",
@@ -434,7 +434,7 @@ final class CloudSyncTests: XCTestCase {
         )
         XCTAssertTrue(pruned.deletedLists.contains { $0.id == "empty" })
         XCTAssertTrue(
-            pruned.deletedEntities.contains { $0.entityType == .cardList && $0.recordID == "empty" }
+            pruned.deletedEntities.contains { $0.entityType == .cardCollection && $0.recordID == "empty" }
         )
     }
 
@@ -443,9 +443,9 @@ final class CloudSyncTests: XCTestCase {
         let remoteSnapshot = snapshot(deviceID: "ipad", listID: "cloud-list", listName: "Cloud Deck")
         let localDatabase = try Fixtures.database()
         try localDatabase.saveLibraryIdentity(identity)
-        let keeper = try localDatabase.createCardList(named: "Keeper")
+        let keeper = try localDatabase.createCardCollection(named: "Keeper")
         try localDatabase.appendCard("alpha", toList: keeper.id)
-        _ = try localDatabase.createCardList(named: "Empty Scratch")
+        _ = try localDatabase.createCardCollection(named: "Empty Scratch")
         let transport = MemoryCloudSyncTransport(
             state: CloudRemoteState(requiredLibraryIdentity: identity, snapshots: [remoteSnapshot])
         )
@@ -460,7 +460,7 @@ final class CloudSyncTests: XCTestCase {
         }
 
         XCTAssertEqual(
-            Set(try localDatabase.cardLists().map(\.name)),
+            Set(try localDatabase.cardCollections().map(\.name)),
             ["Keeper", "Cloud Deck"]
         )
         let remoteState = await transport.currentState()
@@ -472,7 +472,7 @@ final class CloudSyncTests: XCTestCase {
     func testCoordinatorPushesOutgoingChangesAndPersistsStateSerialization() async throws {
         let database = try Fixtures.database()
         try database.saveLibraryIdentity(libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00"))
-        _ = try database.createCardList(named: "Local Picks")
+        _ = try database.createCardCollection(named: "Local Picks")
         try database.recordLocalSyncSnapshotChange(reason: "unit-test")
 
         let transport = MemoryCloudSyncTransport()
@@ -602,13 +602,13 @@ final class CloudSyncTests: XCTestCase {
             capturedAt: Date(timeIntervalSince1970: 30),
             libraryIdentity: local.libraryIdentity,
             searchSettings: SyncSearchSettings(updatedAt: Date(timeIntervalSince1970: 30)),
-            listSnapshot: CardListLibrarySnapshot(lists: [], categories: [], entries: []),
+            listSnapshot: CardCollectionLibrarySnapshot(lists: [], categories: [], entries: []),
             deletedLists: [
                 SyncListDeletion(id: "shared-list", deletedAt: Date(timeIntervalSince1970: 30))
             ],
             deletedEntities: [
                 SyncTombstone(
-                    entityType: .cardList,
+                    entityType: .cardCollection,
                     recordID: "shared-list",
                     deletedAt: Date(timeIntervalSince1970: 30)
                 )
@@ -792,7 +792,7 @@ final class CloudSyncTests: XCTestCase {
         deletion.listSnapshot.entries = []
         deletion.deletedEntities = [
             SyncTombstone(
-                entityType: .cardListEntry,
+                entityType: .cardCollectionEntry,
                 recordID: CloudSyncEntityCodec.favouriteEntryID(cardID: "beta"),
                 deletedAt: Date(timeIntervalSince1970: 30)
             )
@@ -907,7 +907,7 @@ final class CloudSyncTests: XCTestCase {
             return XCTFail("Expected a replacement install to restore the cloud snapshot.")
         }
 
-        XCTAssertEqual(try replacement.cardLists().map(\.name), ["Cloud Deck"])
+        XCTAssertEqual(try replacement.cardCollections().map(\.name), ["Cloud Deck"])
         XCTAssertTrue(
             try replacement.cloudSyncRecoverySnapshots(limit: 100)
                 .contains { $0.id == "cloud-recovery" }
@@ -932,7 +932,7 @@ final class CloudSyncTests: XCTestCase {
         let database = try Fixtures.database()
         let identity = libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00")
         try database.saveLibraryIdentity(identity)
-        _ = try database.createCardList(
+        _ = try database.createCardCollection(
             named: "Current Local List",
             now: Date(timeIntervalSince1970: 30)
         )
@@ -957,7 +957,7 @@ final class CloudSyncTests: XCTestCase {
             return XCTFail("Expected a backward-compatible merge, got \(status).")
         }
         XCTAssertEqual(
-            Set(try database.cardLists().map(\.name)),
+            Set(try database.cardCollections().map(\.name)),
             ["Current Local List", "Legacy Cloud List"]
         )
     }
@@ -973,9 +973,9 @@ final class CloudSyncTests: XCTestCase {
 
         let database = try Fixtures.database()
         try database.saveLibraryIdentity(identity)
-        _ = try database.createCardList(named: "Keep Local Data")
+        _ = try database.createCardCollection(named: "Keep Local Data")
         try database.markCloudSyncBootstrapResolved(true)
-        let before = try database.cardListLibrarySnapshot()
+        let before = try database.cardCollectionLibrarySnapshot()
         let coordinator = CloudSyncCoordinator(
             database: database,
             transport: MemoryCloudSyncTransport(
@@ -996,7 +996,7 @@ final class CloudSyncTests: XCTestCase {
             status,
             .failed("iCloud sync data could not be validated. Local data was not changed.")
         )
-        XCTAssertEqual(try database.cardListLibrarySnapshot(), before)
+        XCTAssertEqual(try database.cardCollectionLibrarySnapshot(), before)
         XCTAssertTrue(try database.cloudSyncRecoverySnapshots().isEmpty)
     }
 
@@ -1052,7 +1052,7 @@ final class CloudSyncTests: XCTestCase {
             capturedAt: Date(timeIntervalSince1970: 20),
             libraryIdentity: stale.libraryIdentity,
             searchSettings: SyncSearchSettings(updatedAt: Date(timeIntervalSince1970: 1)),
-            listSnapshot: CardListLibrarySnapshot(lists: [], categories: [], entries: []),
+            listSnapshot: CardCollectionLibrarySnapshot(lists: [], categories: [], entries: []),
             deletedLists: [
                 SyncListDeletion(id: "deleted-list", deletedAt: Date(timeIntervalSince1970: 20))
             ]
@@ -1072,7 +1072,7 @@ final class CloudSyncTests: XCTestCase {
     func testCoordinatorRetainsOutboxWhenSaveFails() async throws {
         let database = try Fixtures.database()
         try database.saveLibraryIdentity(libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00"))
-        _ = try database.createCardList(named: "Unsaved")
+        _ = try database.createCardCollection(named: "Unsaved")
         try database.recordLocalSyncSnapshotChange(reason: "unit-test")
         let coordinator = CloudSyncCoordinator(
             database: database,
@@ -1101,8 +1101,8 @@ final class CloudSyncTests: XCTestCase {
         let coordinatorA = CloudSyncCoordinator(database: databaseA, transport: transport)
         let coordinatorB = CloudSyncCoordinator(database: databaseB, transport: transport)
 
-        let list = try databaseA.createCardList(named: "Shared", now: Date(timeIntervalSince1970: 10))
-        let favourites = try databaseA.createCardList(named: "Favourites", now: Date(timeIntervalSince1970: 11))
+        let list = try databaseA.createCardCollection(named: "Shared", now: Date(timeIntervalSince1970: 10))
+        let favourites = try databaseA.createCardCollection(named: "Favourites", now: Date(timeIntervalSince1970: 11))
         let favouriteEntry = try databaseA.appendCard(
             "alpha",
             toList: favourites.id,
@@ -1123,19 +1123,19 @@ final class CloudSyncTests: XCTestCase {
         ) else {
             return XCTFail("Expected Device B to apply Device A's snapshot.")
         }
-        XCTAssertEqual(Set(try databaseB.cardLists().map(\.name)), ["Shared", "Favourites"])
+        XCTAssertEqual(Set(try databaseB.cardCollections().map(\.name)), ["Shared", "Favourites"])
         let syncedFavourites = try XCTUnwrap(
-            try databaseB.cardLists().first {
+            try databaseB.cardCollections().first {
                 CloudSyncEntityCodec.isFavouritesListName($0.name)
             }
         )
         XCTAssertEqual(
-            try databaseB.cardListEntries(forListID: syncedFavourites.id).map(\.cardID),
+            try databaseB.cardCollectionEntries(forListID: syncedFavourites.id).map(\.cardID),
             ["alpha"]
         )
 
-        try databaseA.deleteCardList(id: list.id)
-        try databaseA.removeCardListEntryCompletely(
+        try databaseA.deleteCardCollection(id: list.id)
+        try databaseA.removeCardCollectionEntryCompletely(
             id: favouriteEntry.id,
             now: Date(timeIntervalSince1970: 30)
         )
@@ -1159,8 +1159,8 @@ final class CloudSyncTests: XCTestCase {
             return XCTFail("Expected Device B to apply Device A's deletion.")
         }
 
-        XCTAssertEqual(try databaseB.cardLists().map(\.name), ["Favourites"])
-        XCTAssertTrue(try databaseB.cardListEntries(forListID: syncedFavourites.id).isEmpty)
+        XCTAssertEqual(try databaseB.cardCollections().map(\.name), ["Favourites"])
+        XCTAssertTrue(try databaseB.cardCollectionEntries(forListID: syncedFavourites.id).isEmpty)
         XCTAssertTrue(try databaseB.latestListDeletionTombstones().contains { $0.id == list.id })
     }
 
@@ -1174,7 +1174,7 @@ final class CloudSyncTests: XCTestCase {
         do {
             let database = try CardDatabase(storage: .file(databaseURL))
             try database.replaceAllCards(Fixtures.records())
-            let localList = try database.createCardList(
+            let localList = try database.createCardCollection(
                 named: "Existing Deck",
                 now: Date(timeIntervalSince1970: 10)
             )
@@ -1207,10 +1207,10 @@ final class CloudSyncTests: XCTestCase {
             now: Date(timeIntervalSince1970: 100)
         )
 
-        let restoredList = try XCTUnwrap(try reopened.cardLists().first)
+        let restoredList = try XCTUnwrap(try reopened.cardCollections().first)
         XCTAssertEqual(restoredList.name, "Existing Deck")
         XCTAssertEqual(
-            try reopened.cardListEntries(forListID: restoredList.id).map(\.cardID),
+            try reopened.cardCollectionEntries(forListID: restoredList.id).map(\.cardID),
             ["alpha"]
         )
         XCTAssertFalse(try reopened.pendingSyncChanges().isEmpty)
@@ -1220,7 +1220,7 @@ final class CloudSyncTests: XCTestCase {
         let identity = libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00")
         let database = try Fixtures.database()
         try database.saveLibraryIdentity(identity)
-        let localList = try database.createCardList(
+        let localList = try database.createCardCollection(
             named: "Recoverable Deck",
             now: Date(timeIntervalSince1970: 10)
         )
@@ -1231,7 +1231,7 @@ final class CloudSyncTests: XCTestCase {
             capturedAt: Date(timeIntervalSince1970: 20),
             libraryIdentity: identity,
             searchSettings: SyncSearchSettings(updatedAt: .distantPast),
-            listSnapshot: CardListLibrarySnapshot(lists: [], categories: [], entries: []),
+            listSnapshot: CardCollectionLibrarySnapshot(lists: [], categories: [], entries: []),
             deletedLists: [
                 SyncListDeletion(id: localList.id, deletedAt: Date(timeIntervalSince1970: 20))
             ]
@@ -1253,7 +1253,7 @@ final class CloudSyncTests: XCTestCase {
         )
 
         XCTAssertEqual(status, .failed("Sync failed. Grimora will try again later."))
-        XCTAssertNil(try database.cardList(id: localList.id))
+        XCTAssertNil(try database.cardCollection(id: localList.id))
         let recovery = try XCTUnwrap(try database.cloudSyncRecoverySnapshots().first)
         XCTAssertEqual(recovery.listSnapshot.lists.map(\.name), ["Recoverable Deck"])
 
@@ -1261,7 +1261,7 @@ final class CloudSyncTests: XCTestCase {
             id: recovery.id,
             now: Date(timeIntervalSince1970: 30)
         )
-        XCTAssertEqual(try database.cardList(id: localList.id)?.name, "Recoverable Deck")
+        XCTAssertEqual(try database.cardCollection(id: localList.id)?.name, "Recoverable Deck")
         XCTAssertFalse(try database.pendingSyncChanges().isEmpty)
     }
 
@@ -1273,7 +1273,7 @@ final class CloudSyncTests: XCTestCase {
 
         do {
             let database = try CardDatabase(storage: .file(databaseURL))
-            _ = try database.createCardList(named: "Pre-Upgrade Deck")
+            _ = try database.createCardCollection(named: "Pre-Upgrade Deck")
         }
         do {
             let legacyDatabase = try SQLiteDatabase(storage: .file(databaseURL))
@@ -1282,7 +1282,7 @@ final class CloudSyncTests: XCTestCase {
 
         let migrated = try CardDatabase(storage: .file(databaseURL))
 
-        XCTAssertEqual(try migrated.cardLists().map(\.name), ["Pre-Upgrade Deck"])
+        XCTAssertEqual(try migrated.cardCollections().map(\.name), ["Pre-Upgrade Deck"])
         XCTAssertTrue(try migrated.cloudSyncRecoverySnapshots().isEmpty)
     }
 
@@ -1319,9 +1319,9 @@ final class CloudSyncTests: XCTestCase {
             capturedAt: capturedAt,
             libraryIdentity: libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00"),
             searchSettings: SyncSearchSettings(updatedAt: date),
-            listSnapshot: CardListLibrarySnapshot(
+            listSnapshot: CardCollectionLibrarySnapshot(
                 lists: [
-                    CardListRecord(
+                    CardCollectionRecord(
                         id: listID,
                         name: listName,
                         createdAt: date,
@@ -1331,7 +1331,7 @@ final class CloudSyncTests: XCTestCase {
                 ],
                 categories: [],
                 entries: [
-                    CardListEntryRecord(
+                    CardCollectionEntryRecord(
                         id: "\(deviceID)-entry",
                         listID: listID,
                         cardID: cardID,
@@ -1355,9 +1355,9 @@ final class CloudSyncTests: XCTestCase {
             capturedAt: timestamp,
             libraryIdentity: libraryIdentity(updatedAt: "2026-04-25T09:09:59.477+00:00"),
             searchSettings: SyncSearchSettings(updatedAt: timestamp),
-            listSnapshot: CardListLibrarySnapshot(
+            listSnapshot: CardCollectionLibrarySnapshot(
                 lists: [
-                    CardListRecord(
+                    CardCollectionRecord(
                         id: listID,
                         name: listName,
                         createdAt: timestamp,
@@ -1379,9 +1379,9 @@ final class CloudSyncTests: XCTestCase {
             createdAt: createdAt,
             reason: "Test recovery",
             libraryIdentity: LibraryIdentity(),
-            listSnapshot: CardListLibrarySnapshot(
+            listSnapshot: CardCollectionLibrarySnapshot(
                 lists: [
-                    CardListRecord(
+                    CardCollectionRecord(
                         id: "\(id)-list",
                         name: "Recovered \(id)",
                         createdAt: createdAt,

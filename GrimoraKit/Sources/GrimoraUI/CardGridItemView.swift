@@ -30,8 +30,8 @@ struct CardGridItemView: View {
     var onEditQuantity: (() -> Void)? = nil
     var removeAccessibilityIdentifier: String?
     var quantityAccessibilityIdentifier: String?
-    var categoryEntry: CardListEntryRecord?
-    var categories: [CardListCategoryRecord] = []
+    var categoryEntry: CardCollectionEntryRecord?
+    var categories: [CardCollectionCategoryRecord] = []
     var isSelectionEnabled = false
     var isSelectedInSelection = false
     var isActiveDetail = false
@@ -43,14 +43,14 @@ struct CardGridItemView: View {
     var selectedCardIDsForBulkActionsProvider: (() -> [CardRecord.ID])?
     var onSelectionInteraction: ((CardGridSelectionInteraction) -> Void)?
     var onCreateListForCards: (([CardRecord.ID]) -> Void)?
-    var onAddCardsToList: ((CardListRecord.ID, CardRecord) -> Bool)?
+    var onAddCardsToList: ((CardCollectionRecord.ID, CardRecord) -> Bool)?
     var onPrepareAddMenu: ((CardRecord) -> Void)?
     var isFavourite = false
     var onToggleFavourite: ((CardRecord) -> Void)?
-    var onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)?
+    var onMoveToCategory: ((CardCollectionCategoryRecord.ID?) -> Void)?
     var onCreateCategory: ((String) -> Void)?
-    var onMoveToZone: ((CardListZone) -> Void)?
-    var isMoveDestinationDisabled: ((CardListCategoryRecord.ID?) -> Bool)?
+    var onMoveToZone: ((CardCollectionZone) -> Void)?
+    var isMoveDestinationDisabled: ((CardCollectionCategoryRecord.ID?) -> Bool)?
     var dragPayload: String?
     var dragItemCount: Int?
     var isDragEnabled = true
@@ -253,7 +253,7 @@ struct CardGridItemView: View {
                 accessibilityIdentifier: "more-list-entry-\(categoryEntry?.id ?? card.id)"
             )
         } else {
-            CardListAddMenu(
+            CardCollectionAddMenu(
                 card: card,
                 selectedCardIDs: selectedCardIDsForBulkActions,
                 selectedCardIDsProvider: selectedCardIDsForBulkActionsProvider,
@@ -266,7 +266,7 @@ struct CardGridItemView: View {
     }
 
     private var palette: GrimoraPalette {
-        GrimoraPalette(colorScheme: colorScheme)
+        .cached(for: colorScheme)
     }
 
     private var tileFillColor: Color {
@@ -692,25 +692,25 @@ private struct CardGridDragPreview: View {
     }
 }
 
-enum CardListAddMenuPresentation {
+enum CardCollectionAddMenuPresentation {
     case gridOverlay
     case toolbar
     case floatingAction
     case detailAction
 }
 
-struct CardListAddMenu: View {
+struct CardCollectionAddMenu: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var addFeedbackTrigger = 0
 
     var card: CardRecord
-    var presentation: CardListAddMenuPresentation = .gridOverlay
+    var presentation: CardCollectionAddMenuPresentation = .gridOverlay
     var accessibilityIdentifier: String?
     var selectedCardIDs: [CardRecord.ID] = []
     var selectedCardIDsProvider: (() -> [CardRecord.ID])?
     var onCreateListForCard: (CardRecord) -> Void
     var onCreateListForCards: (([CardRecord.ID]) -> Void)?
-    var onAddCardsToList: ((CardListRecord.ID, CardRecord) -> Bool)?
+    var onAddCardsToList: ((CardCollectionRecord.ID, CardRecord) -> Bool)?
     var onPrepareAddMenu: ((CardRecord) -> Void)?
 
     @ViewBuilder
@@ -718,38 +718,38 @@ struct CardListAddMenu: View {
         switch presentation {
         case .gridOverlay:
             menu
-                .buttonStyle(GrimoraIconButtonStyle())
-                .help("Add to List")
-                .accessibilityLabel("Add to List")
+                .buttonStyle(GrimoraCapsuleSurfaceButtonStyle(palette: palette))
+                .help("Add to Collection")
+                .accessibilityLabel("Add to Collection")
                 .accessibilityIdentifier(resolvedAccessibilityIdentifier)
                 .grimoraSuccessFeedback(trigger: addFeedbackTrigger)
         case .toolbar:
             #if os(iOS) || os(visionOS)
             menu
-                .help("Add to List")
-                .accessibilityLabel("Add to List")
+                .help("Add to Collection")
+                .accessibilityLabel("Add to Collection")
                 .accessibilityIdentifier(resolvedAccessibilityIdentifier)
                 .grimoraSuccessFeedback(trigger: addFeedbackTrigger)
             #else
             menu
                 .buttonStyle(GrimoraIconButtonStyle())
-                .help("Add to List")
-                .accessibilityLabel("Add to List")
+                .help("Add to Collection")
+                .accessibilityLabel("Add to Collection")
                 .accessibilityIdentifier(resolvedAccessibilityIdentifier)
                 .grimoraSuccessFeedback(trigger: addFeedbackTrigger)
             #endif
         case .floatingAction:
             menu
                 .buttonStyle(GrimoraIconButtonStyle())
-                .help("Add to List")
-                .accessibilityLabel("Add to List")
+                .help("Add to Collection")
+                .accessibilityLabel("Add to Collection")
                 .accessibilityIdentifier(resolvedAccessibilityIdentifier)
                 .grimoraSuccessFeedback(trigger: addFeedbackTrigger)
         case .detailAction:
             menu
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
-                .help("Add to List")
+                .help("Add to Collection")
                 .accessibilityIdentifier(resolvedAccessibilityIdentifier)
                 .grimoraSuccessFeedback(trigger: addFeedbackTrigger)
         }
@@ -757,7 +757,7 @@ struct CardListAddMenu: View {
 
     private var menu: some View {
         Menu {
-            CardListAddMenuContent(
+            CardCollectionAddMenuContent(
                 card: card,
                 selectedCardIDs: selectedCardIDs,
                 selectedCardIDsProvider: selectedCardIDsProvider,
@@ -775,32 +775,43 @@ struct CardListAddMenu: View {
     private var menuLabel: some View {
         switch presentation {
         case .gridOverlay:
-            CardGridControlIcon(systemName: "plus", feedbackTrigger: addFeedbackTrigger)
-                .onHover { isHovering in
-                    if isHovering {
-                        prepareTargetCards()
-                    }
+            HStack(spacing: 4) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                Text("Add to Collection")
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(palette.primaryText.color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .contentShape(Capsule(style: .continuous))
+            .onHover { isHovering in
+                if isHovering {
+                    prepareTargetCards()
                 }
+            }
         case .toolbar:
             #if os(iOS) || os(visionOS)
-            Label("Add to List", systemImage: "plus")
+            Label("Add to Collection", systemImage: "plus")
                 .labelStyle(.iconOnly)
                 .imageScale(.large)
-                .accessibilityLabel("Add to List")
+                .accessibilityLabel("Add to Collection")
                 .accessibilityIdentifier(resolvedAccessibilityIdentifier)
             #else
             CardGridControlIcon(systemName: "plus", feedbackTrigger: addFeedbackTrigger)
             #endif
         case .floatingAction:
             GrimoraFloatingActionIcon(
-                title: "Add to List",
+                title: "Add to Collection",
                 systemName: "plus",
                 palette: palette,
                 foregroundColor: palette.accent.color,
                 feedbackTrigger: addFeedbackTrigger
             )
         case .detailAction:
-            Label("Add to List", systemImage: "plus")
+            Label("Add to Collection", systemImage: "plus")
                 .accessibilityIdentifier(resolvedAccessibilityIdentifier)
         }
     }
@@ -810,7 +821,7 @@ struct CardListAddMenu: View {
     }
 
     private var palette: GrimoraPalette {
-        GrimoraPalette(colorScheme: colorScheme)
+        .cached(for: colorScheme)
     }
 
     private func prepareTargetCards() {
@@ -868,7 +879,7 @@ struct CardGridControlIcon: View {
     }
 
     private var palette: GrimoraPalette {
-        GrimoraPalette(colorScheme: colorScheme)
+        .cached(for: colorScheme)
     }
 
     private var foreground: Color {

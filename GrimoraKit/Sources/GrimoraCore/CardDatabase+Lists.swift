@@ -1,32 +1,32 @@
 import Foundation
 
 extension CardDatabase {
-  public func cardLists() throws -> [CardListRecord] {
+  public func cardCollections() throws -> [CardCollectionRecord] {
     try withDatabaseLock {
-      try cardListsUnlocked()
+      try cardCollectionsUnlocked()
     }
   }
 
-  public func cardList(id: String) throws -> CardListRecord? {
+  public func cardCollection(id: String) throws -> CardCollectionRecord? {
     try withDatabaseLock {
-      try cardListUnlocked(id: id)
+      try cardCollectionUnlocked(id: id)
     }
   }
 
-  public func cardListEntries(forListID listID: String) throws -> [CardListEntryRecord] {
+  public func cardCollectionEntries(forListID listID: String) throws -> [CardCollectionEntryRecord] {
     try withDatabaseLock {
-      try cardListEntriesUnlocked(forListID: listID)
+      try cardCollectionEntriesUnlocked(forListID: listID)
     }
   }
 
-  public func searchCardListEntries(
+  public func searchCardCollectionEntries(
     forListID listID: String,
     text: String
-  ) throws -> CardListEntrySearchResponse {
+  ) throws -> CardCollectionEntrySearchResponse {
     try withDatabaseLock {
       let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !query.isEmpty else {
-        return .results(try cardListEntriesUnlocked(forListID: listID))
+        return .results(try cardCollectionEntriesUnlocked(forListID: listID))
       }
 
       let plan: SearchQueryPlan
@@ -37,7 +37,7 @@ extension CardDatabase {
         return .unsupported(reason)
       }
 
-      var entries = try cardListEntriesUnlocked(
+      var entries = try cardCollectionEntriesUnlocked(
         forListID: listID,
         cardWhereSQL: plan.whereSQL,
         cardWhereBindings: plan.bindings
@@ -59,7 +59,7 @@ extension CardDatabase {
   /// Searches every list at once, compiling the Scryfall query a single time and returning the
   /// lists whose cards match together with the matching entries. Returns `.results([])` for an
   /// empty query so callers can treat "no filter" as "no matches surfaced".
-  public func searchAllCardListEntries(text: String) throws -> CrossListSearchResponse {
+  public func searchAllCardCollectionEntries(text: String) throws -> CrossListSearchResponse {
     try withDatabaseLock {
       let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !query.isEmpty else {
@@ -74,7 +74,7 @@ extension CardDatabase {
         return .unsupported(reason)
       }
 
-      var entries = try allMatchingCardListEntriesUnlocked(
+      var entries = try allMatchingCardCollectionEntriesUnlocked(
         cardWhereSQL: plan.whereSQL,
         cardWhereBindings: plan.bindings
       )
@@ -92,12 +92,13 @@ extension CardDatabase {
     }
   }
 
-  /// Fetches the entries across all lists whose card matches the compiled query, hydrating each
-  /// entry's card once per distinct card id to avoid repeated lookups over large libraries.
-  func allMatchingCardListEntriesUnlocked(
+  /// Fetches the entries across all lists whose card matches the compiled query, then batch-hydrates
+  /// every distinct card in a handful of queries (via `cardsByID(forIDs:)`) to avoid per-entry lookups
+  /// over large libraries.
+  func allMatchingCardCollectionEntriesUnlocked(
     cardWhereSQL: String?,
     cardWhereBindings: [SearchQuery.SQLBinding] = []
-  ) throws -> [CardListEntryRecord] {
+  ) throws -> [CardCollectionEntryRecord] {
     let searchClause = cardWhereSQL.map { whereSQL in
       """
       AND card_id IN (
@@ -119,28 +120,27 @@ extension CardDatabase {
       try binding.apply(to: statement, index: Int32(index + 1))
     }
 
-    var entries: [CardListEntryRecord] = []
-    var cardsByID: [String: CardRecord?] = [:]
+    var entries: [CardCollectionEntryRecord] = []
     while try statement.step() {
-      var entry = readCardListEntry(from: statement)
-      if let cached = cardsByID[entry.cardID] {
-        entry.card = cached
-      } else {
-        let card = try card(id: entry.cardID)
-        cardsByID[entry.cardID] = card
-        entry.card = card
-      }
-      entries.append(entry)
+      entries.append(readCardCollectionEntry(from: statement))
+    }
+    guard !entries.isEmpty else {
+      return entries
+    }
+
+    let cardsByID = try cardsByID(forIDs: entries.map(\.cardID))
+    for index in entries.indices {
+      entries[index].card = cardsByID[entries[index].cardID]
     }
     return entries
   }
 
   /// Groups matching entries into per-list matches, preserving first-seen list order.
   static func groupedCrossListMatches(
-    from entries: [CardListEntryRecord]
+    from entries: [CardCollectionEntryRecord]
   ) -> [CrossListSearchMatch] {
     var order: [String] = []
-    var grouped: [String: [CardListEntryRecord]] = [:]
+    var grouped: [String: [CardCollectionEntryRecord]] = [:]
     for entry in entries {
       if grouped[entry.listID] == nil {
         order.append(entry.listID)
@@ -150,11 +150,11 @@ extension CardDatabase {
     return order.map { CrossListSearchMatch(listID: $0, entries: grouped[$0] ?? []) }
   }
 
-  func cardListEntriesUnlocked(
+  func cardCollectionEntriesUnlocked(
     forListID listID: String,
     cardWhereSQL: String? = nil,
     cardWhereBindings: [SearchQuery.SQLBinding] = []
-  ) throws -> [CardListEntryRecord] {
+  ) throws -> [CardCollectionEntryRecord] {
     let searchClause = cardWhereSQL.map { whereSQL in
       """
       AND card_id IN (
@@ -177,44 +177,54 @@ extension CardDatabase {
       try binding.apply(to: statement, index: Int32(index + 2))
     }
 
-    var entries: [CardListEntryRecord] = []
+    var entries: [CardCollectionEntryRecord] = []
     while try statement.step() {
-      var entry = readCardListEntry(from: statement)
-      entry.card = try card(id: entry.cardID)
-      entries.append(entry)
+      entries.append(readCardCollectionEntry(from: statement))
+    }
+    guard !entries.isEmpty else {
+      return entries
+    }
+
+    // Batch-hydrate every card in one set of queries rather than one (plus faces) per entry. The
+    // map is keyed by card id, so duplicate cardIDs (e.g. the same card in different zones) each
+    // receive their card, and a missing card leaves `entry.card == nil` exactly like `card(id:)`.
+    // Entry order is preserved from the ORDER BY above, never from the cards fetch.
+    let cardsByID = try cardsByID(forIDs: entries.map(\.cardID))
+    for index in entries.indices {
+      entries[index].card = cardsByID[entries[index].cardID]
     }
     return entries
   }
 
-  public func cardListCategories(forListID listID: String) throws -> [CardListCategoryRecord] {
+  public func cardCollectionCategories(forListID listID: String) throws -> [CardCollectionCategoryRecord] {
     try withDatabaseLock {
-      try cardListCategoriesUnlocked(forListID: listID)
+      try cardCollectionCategoriesUnlocked(forListID: listID)
     }
   }
 
-  public func cardListLibrarySnapshot() throws -> CardListLibrarySnapshot {
+  public func cardCollectionLibrarySnapshot() throws -> CardCollectionLibrarySnapshot {
     try withDatabaseLock {
-      try cardListLibrarySnapshotUnlocked()
+      try cardCollectionLibrarySnapshotUnlocked()
     }
   }
 
-  public func restoreCardListLibrarySnapshot(_ snapshot: CardListLibrarySnapshot) throws {
+  public func restoreCardCollectionLibrarySnapshot(_ snapshot: CardCollectionLibrarySnapshot) throws {
     try withDatabaseLock {
       try database.transaction {
-        try restoreCardListLibrarySnapshotUnlocked(snapshot)
+        try restoreCardCollectionLibrarySnapshotUnlocked(snapshot)
       }
     }
   }
 
-  func cardListLibrarySnapshotUnlocked() throws -> CardListLibrarySnapshot {
-    try CardListLibrarySnapshot(
-      lists: cardListsUnlocked(),
-      categories: cardListCategoriesUnlocked(),
-      entries: cardListEntriesUnlocked()
+  func cardCollectionLibrarySnapshotUnlocked() throws -> CardCollectionLibrarySnapshot {
+    try CardCollectionLibrarySnapshot(
+      lists: cardCollectionsUnlocked(),
+      categories: cardCollectionCategoriesUnlocked(),
+      entries: cardCollectionEntriesUnlocked()
     )
   }
 
-  func restoreCardListLibrarySnapshotUnlocked(_ snapshot: CardListLibrarySnapshot) throws {
+  func restoreCardCollectionLibrarySnapshotUnlocked(_ snapshot: CardCollectionLibrarySnapshot) throws {
     try database.execute("DELETE FROM card_list_entries")
     try database.execute("DELETE FROM card_list_categories")
     try database.execute("DELETE FROM card_lists")
@@ -286,16 +296,16 @@ extension CardDatabase {
   }
 
   @discardableResult
-  public func createCardList(named name: String, now: Date = Date()) throws -> CardListRecord {
+  public func createCardCollection(named name: String, now: Date = Date()) throws -> CardCollectionRecord {
     let normalizedName = Self.normalizedListName(name)
     guard !normalizedName.isEmpty else {
-      throw CardListDatabaseError.emptyName
+      throw CardCollectionDatabaseError.emptyName
     }
 
     return try withDatabaseLock {
       let id = UUID().uuidString.lowercased()
       let date = Self.formattedListDate(now)
-      let position = try nextCardListPositionUnlocked(isPinned: false)
+      let position = try nextCardCollectionPositionUnlocked(isPinned: false)
       let statement = try database.prepare(
         """
         INSERT INTO card_lists (id, name, created_at, updated_at, position)
@@ -308,18 +318,18 @@ extension CardDatabase {
       try statement.bind(position, at: 5)
       try statement.step()
 
-      guard let list = try cardListUnlocked(id: id) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       return list
     }
   }
 
   @discardableResult
-  public func renameCardList(id: String, to name: String, now: Date = Date()) throws -> CardListRecord {
+  public func renameCardCollection(id: String, to name: String, now: Date = Date()) throws -> CardCollectionRecord {
     let normalizedName = Self.normalizedListName(name)
     guard !normalizedName.isEmpty else {
-      throw CardListDatabaseError.emptyName
+      throw CardCollectionDatabaseError.emptyName
     }
 
     return try withDatabaseLock {
@@ -334,20 +344,20 @@ extension CardDatabase {
       try statement.bind(id, at: 3)
       try statement.step()
 
-      guard let list = try cardListUnlocked(id: id) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       return list
     }
   }
 
   @discardableResult
-  public func updateCardListDescription(
+  public func updateCardCollectionDescription(
     id: String,
     rtfdData: Data?,
     plainText: String,
     now: Date = Date()
-  ) throws -> CardListRecord {
+  ) throws -> CardCollectionRecord {
     try withDatabaseLock {
       let statement = try database.prepare(
         """
@@ -361,19 +371,19 @@ extension CardDatabase {
       try statement.bind(id, at: 4)
       try statement.step()
 
-      guard let list = try cardListUnlocked(id: id) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       return list
     }
   }
 
   @discardableResult
-  public func setCardListDashboardVisibility(
+  public func setCardCollectionDashboardVisibility(
     id: String,
     showsDashboard: Bool,
     now: Date = Date()
-  ) throws -> CardListRecord {
+  ) throws -> CardCollectionRecord {
     try withDatabaseLock {
       let statement = try database.prepare(
         """
@@ -386,19 +396,19 @@ extension CardDatabase {
       try statement.bind(id, at: 3)
       try statement.step()
 
-      guard let list = try cardListUnlocked(id: id) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       return list
     }
   }
 
   @discardableResult
-  public func setCardListDashboardIncludesLands(
+  public func setCardCollectionDashboardIncludesLands(
     id: String,
     includesLands: Bool,
     now: Date = Date()
-  ) throws -> CardListRecord {
+  ) throws -> CardCollectionRecord {
     try withDatabaseLock {
       let statement = try database.prepare(
         """
@@ -411,20 +421,20 @@ extension CardDatabase {
       try statement.bind(id, at: 3)
       try statement.step()
 
-      guard let list = try cardListUnlocked(id: id) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       return list
     }
   }
 
   @discardableResult
-  public func setCardListDisplaySort(
+  public func setCardCollectionDisplaySort(
     id: String,
     mode: SortMode?,
     direction: SearchSortDirection,
     now: Date = Date()
-  ) throws -> CardListRecord {
+  ) throws -> CardCollectionRecord {
     try withDatabaseLock {
       let statement = try database.prepare(
         """
@@ -438,19 +448,19 @@ extension CardDatabase {
       try statement.bind(id, at: 4)
       try statement.step()
 
-      guard let list = try cardListUnlocked(id: id) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       return list
     }
   }
 
   @discardableResult
-  public func setCardListViewMode(
+  public func setCardCollectionViewMode(
     id: String,
-    viewMode: CardListViewMode,
+    viewMode: CardCollectionViewMode,
     now: Date = Date()
-  ) throws -> CardListRecord {
+  ) throws -> CardCollectionRecord {
     try withDatabaseLock {
       let statement = try database.prepare(
         """
@@ -463,19 +473,19 @@ extension CardDatabase {
       try statement.bind(id, at: 3)
       try statement.step()
 
-      guard let list = try cardListUnlocked(id: id) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       return list
     }
   }
 
   @discardableResult
-  public func setCardListRuleset(
+  public func setCardCollectionRuleset(
     id: String,
-    ruleset: CardListRuleset,
+    ruleset: CardCollectionRuleset,
     now: Date = Date()
-  ) throws -> CardListRecord {
+  ) throws -> CardCollectionRecord {
     try withDatabaseLock {
       let date = Self.formattedListDate(now)
       let statement = try database.prepare(
@@ -490,54 +500,54 @@ extension CardDatabase {
         try statement.bind(id, at: 3)
         try statement.step()
 
-        try normalizeCardListZonesUnlocked(listID: id, ruleset: ruleset, date: date)
+        try normalizeCardCollectionZonesUnlocked(listID: id, ruleset: ruleset, date: date)
       }
 
-      guard let list = try cardListUnlocked(id: id) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       return list
     }
   }
 
-  public func deleteCardList(id: String) throws {
+  public func deleteCardCollection(id: String) throws {
     try withDatabaseLock {
       try database.transaction {
         let statement = try database.prepare("DELETE FROM card_lists WHERE id = ?")
         try statement.bind(id, at: 1)
         try statement.step()
-        try insertSyncTombstoneUnlocked(entityType: .cardList, recordID: id)
+        try insertSyncTombstoneUnlocked(entityType: .cardCollection, recordID: id)
       }
     }
   }
 
   @discardableResult
-  public func setCardListPinned(
+  public func setCardCollectionPinned(
     id: String,
     isPinned: Bool,
     now: Date = Date()
-  ) throws -> CardListRecord {
-    try moveCardList(id: id, toPosition: 0, isPinned: isPinned, now: now)
+  ) throws -> CardCollectionRecord {
+    try moveCardCollection(id: id, toPosition: 0, isPinned: isPinned, now: now)
   }
 
   @discardableResult
-  public func moveCardList(
+  public func moveCardCollection(
     id: String,
     toPosition requestedPosition: Int,
     isPinned requestedPinnedState: Bool? = nil,
     now: Date = Date()
-  ) throws -> CardListRecord {
+  ) throws -> CardCollectionRecord {
     try withDatabaseLock {
-      guard let list = try cardListUnlocked(id: id) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
 
       let destinationIsPinned = requestedPinnedState ?? list.isPinned
       let date = Self.formattedListDate(now)
-      var sourceLists = try cardListsUnlocked(isPinned: list.isPinned, ordering: .storedPosition)
+      var sourceLists = try cardCollectionsUnlocked(isPinned: list.isPinned, ordering: .storedPosition)
       var destinationLists = destinationIsPinned == list.isPinned
         ? sourceLists
-        : try cardListsUnlocked(isPinned: destinationIsPinned, ordering: .storedPosition)
+        : try cardCollectionsUnlocked(isPinned: destinationIsPinned, ordering: .storedPosition)
 
       sourceLists.removeAll { $0.id == id }
       destinationLists.removeAll { $0.id == id }
@@ -564,49 +574,49 @@ extension CardDatabase {
           try statement.bind(id, at: 4)
           try statement.step()
         } else {
-          try touchCardListUnlocked(id: id, date: date)
+          try touchCardCollectionUnlocked(id: id, date: date)
         }
 
         if destinationIsPinned != list.isPinned {
-          try updateCardListPositionsUnlocked(sourceLists)
+          try updateCardCollectionPositionsUnlocked(sourceLists)
         }
-        try updateCardListPositionsUnlocked(destinationLists)
+        try updateCardCollectionPositionsUnlocked(destinationLists)
       }
 
-      guard let moved = try cardListUnlocked(id: id) else {
-        throw CardListDatabaseError.listNotFound
+      guard let moved = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       return moved
     }
   }
 
   @discardableResult
-  public func createCardListCategory(
+  public func createCardCollectionCategory(
     inList listID: String,
-    zone: CardListZone = .mainboard,
+    zone: CardCollectionZone = .mainboard,
     named name: String,
     now: Date = Date()
-  ) throws -> CardListCategoryRecord {
+  ) throws -> CardCollectionCategoryRecord {
     let normalizedName = Self.normalizedListName(name)
     guard !normalizedName.isEmpty else {
-      throw CardListDatabaseError.emptyName
+      throw CardCollectionDatabaseError.emptyName
     }
     guard !Self.isImplicitCategoryName(normalizedName) else {
-      throw CardListDatabaseError.duplicateName
+      throw CardCollectionDatabaseError.duplicateName
     }
 
     return try withDatabaseLock {
-      guard let list = try cardListUnlocked(id: listID) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: listID) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       let zone = list.ruleset.normalizedZone(zone)
-      guard try !cardListCategoryNameExistsUnlocked(
+      guard try !cardCollectionCategoryNameExistsUnlocked(
         inList: listID,
         zone: zone,
         named: normalizedName,
         excluding: nil
       ) else {
-        throw CardListDatabaseError.duplicateName
+        throw CardCollectionDatabaseError.duplicateName
       }
 
       let position: Int = try {
@@ -639,41 +649,41 @@ extension CardDatabase {
         try insert.bind(date, at: 7)
         try insert.step()
 
-        try touchCardListUnlocked(id: listID, date: date)
+        try touchCardCollectionUnlocked(id: listID, date: date)
       }
 
-      guard let category = try cardListCategoryUnlocked(id: id) else {
-        throw CardListDatabaseError.categoryNotFound
+      guard let category = try cardCollectionCategoryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.categoryNotFound
       }
       return category
     }
   }
 
   @discardableResult
-  public func renameCardListCategory(
+  public func renameCardCollectionCategory(
     id: String,
     to name: String,
     now: Date = Date()
-  ) throws -> CardListCategoryRecord {
+  ) throws -> CardCollectionCategoryRecord {
     let normalizedName = Self.normalizedListName(name)
     guard !normalizedName.isEmpty else {
-      throw CardListDatabaseError.emptyName
+      throw CardCollectionDatabaseError.emptyName
     }
     guard !Self.isImplicitCategoryName(normalizedName) else {
-      throw CardListDatabaseError.duplicateName
+      throw CardCollectionDatabaseError.duplicateName
     }
 
     return try withDatabaseLock {
-      guard let category = try cardListCategoryUnlocked(id: id) else {
-        throw CardListDatabaseError.categoryNotFound
+      guard let category = try cardCollectionCategoryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.categoryNotFound
       }
-      guard try !cardListCategoryNameExistsUnlocked(
+      guard try !cardCollectionCategoryNameExistsUnlocked(
         inList: category.listID,
         zone: category.zone,
         named: normalizedName,
         excluding: id
       ) else {
-        throw CardListDatabaseError.duplicateName
+        throw CardCollectionDatabaseError.duplicateName
       }
 
       let date = Self.formattedListDate(now)
@@ -689,20 +699,20 @@ extension CardDatabase {
         try statement.bind(id, at: 3)
         try statement.step()
 
-        try touchCardListUnlocked(id: category.listID, date: date)
+        try touchCardCollectionUnlocked(id: category.listID, date: date)
       }
 
-      guard let renamed = try cardListCategoryUnlocked(id: id) else {
-        throw CardListDatabaseError.categoryNotFound
+      guard let renamed = try cardCollectionCategoryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.categoryNotFound
       }
       return renamed
     }
   }
 
-  public func deleteCardListCategory(id: String, now: Date = Date()) throws {
+  public func deleteCardCollectionCategory(id: String, now: Date = Date()) throws {
     try withDatabaseLock {
-      guard let category = try cardListCategoryUnlocked(id: id) else {
-        throw CardListDatabaseError.categoryNotFound
+      guard let category = try cardCollectionCategoryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.categoryNotFound
       }
 
       let date = Self.formattedListDate(now)
@@ -719,30 +729,30 @@ extension CardDatabase {
         let delete = try database.prepare("DELETE FROM card_list_categories WHERE id = ?")
         try delete.bind(id, at: 1)
         try delete.step()
-        try insertSyncTombstoneUnlocked(entityType: .cardListCategory, recordID: id, deletedAt: now)
+        try insertSyncTombstoneUnlocked(entityType: .cardCollectionCategory, recordID: id, deletedAt: now)
 
-        try consolidateDuplicateCardListEntriesUnlocked(listID: category.listID)
-        try normalizeCardListCategoryPositionsUnlocked(listID: category.listID, date: date)
-        try touchCardListUnlocked(id: category.listID, date: date)
+        try consolidateDuplicateCardCollectionEntriesUnlocked(listID: category.listID)
+        try normalizeCardCollectionCategoryPositionsUnlocked(listID: category.listID, date: date)
+        try touchCardCollectionUnlocked(id: category.listID, date: date)
       }
     }
   }
 
   @discardableResult
-  public func moveCardListCategory(
+  public func moveCardCollectionCategory(
     id: String,
     toPosition requestedPosition: Int,
     now: Date = Date()
-  ) throws -> CardListCategoryRecord {
+  ) throws -> CardCollectionCategoryRecord {
     try withDatabaseLock {
-      guard let category = try cardListCategoryUnlocked(id: id) else {
-        throw CardListDatabaseError.categoryNotFound
+      guard let category = try cardCollectionCategoryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.categoryNotFound
       }
 
-      var categories = try cardListCategoriesUnlocked(forListID: category.listID)
+      var categories = try cardCollectionCategoriesUnlocked(forListID: category.listID)
         .filter { $0.zone == category.zone }
       guard let currentIndex = categories.firstIndex(where: { $0.id == id }) else {
-        throw CardListDatabaseError.categoryNotFound
+        throw CardCollectionDatabaseError.categoryNotFound
       }
       let moved = categories.remove(at: currentIndex)
       let newIndex = max(0, min(requestedPosition, categories.count))
@@ -750,37 +760,37 @@ extension CardDatabase {
 
       let date = Self.formattedListDate(now)
       try database.transaction {
-        try updateCardListCategoryPositionsUnlocked(categories, date: date)
-        try touchCardListUnlocked(id: category.listID, date: date)
+        try updateCardCollectionCategoryPositionsUnlocked(categories, date: date)
+        try touchCardCollectionUnlocked(id: category.listID, date: date)
       }
 
-      guard let updated = try cardListCategoryUnlocked(id: id) else {
-        throw CardListDatabaseError.categoryNotFound
+      guard let updated = try cardCollectionCategoryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.categoryNotFound
       }
       return updated
     }
   }
 
   @discardableResult
-  public func moveCardListEntry(
+  public func moveCardCollectionEntry(
     id: String,
     toCategory categoryID: String?,
     now: Date = Date()
-  ) throws -> CardListEntryRecord {
+  ) throws -> CardCollectionEntryRecord {
     try withDatabaseLock {
-      guard let entry = try cardListEntryUnlocked(id: id) else {
-        throw CardListDatabaseError.entryNotFound
+      guard let entry = try cardCollectionEntryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.entryNotFound
       }
-      guard let list = try cardListUnlocked(id: entry.listID) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: entry.listID) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       var categoryID = categoryID
-      let destinationZone: CardListZone
+      let destinationZone: CardCollectionZone
       if let resolvedCategoryID = categoryID {
-        guard let category = try cardListCategoryUnlocked(id: resolvedCategoryID),
+        guard let category = try cardCollectionCategoryUnlocked(id: resolvedCategoryID),
           category.listID == entry.listID
         else {
-          throw CardListDatabaseError.categoryNotFound
+          throw CardCollectionDatabaseError.categoryNotFound
         }
         let categoryZone = list.ruleset.normalizedZone(category.zone)
         if categoryZone == category.zone {
@@ -795,7 +805,7 @@ extension CardDatabase {
 
       let date = Self.formattedListDate(now)
       try database.transaction {
-        if let existingEntry = try matchingCardListEntryUnlocked(
+        if let existingEntry = try matchingCardCollectionEntryUnlocked(
           listID: entry.listID,
           zone: destinationZone,
           categoryID: categoryID,
@@ -828,18 +838,18 @@ extension CardDatabase {
           try statement.step()
         }
 
-        try touchCardListUnlocked(id: entry.listID, date: date)
+        try touchCardCollectionUnlocked(id: entry.listID, date: date)
       }
 
-      let movedID = try matchingCardListEntryUnlocked(
+      let movedID = try matchingCardCollectionEntryUnlocked(
         listID: entry.listID,
         zone: destinationZone,
         categoryID: categoryID,
         cardID: entry.cardID,
         excluding: nil
       )?.id ?? id
-      guard var moved = try cardListEntryUnlocked(id: movedID) else {
-        throw CardListDatabaseError.entryNotFound
+      guard var moved = try cardCollectionEntryUnlocked(id: movedID) else {
+        throw CardCollectionDatabaseError.entryNotFound
       }
       moved.card = try card(id: moved.cardID)
       return moved
@@ -847,23 +857,23 @@ extension CardDatabase {
   }
 
   @discardableResult
-  public func moveCardListEntry(
+  public func moveCardCollectionEntry(
     id: String,
-    toZone zone: CardListZone,
+    toZone zone: CardCollectionZone,
     now: Date = Date()
-  ) throws -> CardListEntryRecord {
+  ) throws -> CardCollectionEntryRecord {
     try withDatabaseLock {
-      guard let entry = try cardListEntryUnlocked(id: id) else {
-        throw CardListDatabaseError.entryNotFound
+      guard let entry = try cardCollectionEntryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.entryNotFound
       }
-      guard let list = try cardListUnlocked(id: entry.listID) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: entry.listID) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       let zone = list.ruleset.normalizedZone(zone)
 
       let date = Self.formattedListDate(now)
       try database.transaction {
-        if let existingEntry = try matchingCardListEntryUnlocked(
+        if let existingEntry = try matchingCardCollectionEntryUnlocked(
           listID: entry.listID,
           zone: zone,
           categoryID: nil,
@@ -895,18 +905,18 @@ extension CardDatabase {
           try update.step()
         }
 
-        try touchCardListUnlocked(id: entry.listID, date: date)
+        try touchCardCollectionUnlocked(id: entry.listID, date: date)
       }
 
-      let movedID = try matchingCardListEntryUnlocked(
+      let movedID = try matchingCardCollectionEntryUnlocked(
         listID: entry.listID,
         zone: zone,
         categoryID: nil,
         cardID: entry.cardID,
         excluding: nil
       )?.id ?? id
-      guard var moved = try cardListEntryUnlocked(id: movedID) else {
-        throw CardListDatabaseError.entryNotFound
+      guard var moved = try cardCollectionEntryUnlocked(id: movedID) else {
+        throw CardCollectionDatabaseError.entryNotFound
       }
       moved.card = try card(id: moved.cardID)
       return moved
@@ -917,25 +927,25 @@ extension CardDatabase {
   public func appendCard(
     _ cardID: String,
     toList listID: String,
-    zone requestedZone: CardListZone = .mainboard,
+    zone requestedZone: CardCollectionZone = .mainboard,
     categoryID: String? = nil,
     quantity requestedQuantity: Int = 1,
     now: Date = Date()
   ) throws
-    -> CardListEntryRecord
+    -> CardCollectionEntryRecord
   {
     let quantity = max(1, requestedQuantity)
     return try withDatabaseLock {
-      guard let list = try cardListUnlocked(id: listID) else {
-        throw CardListDatabaseError.listNotFound
+      guard let list = try cardCollectionUnlocked(id: listID) else {
+        throw CardCollectionDatabaseError.listNotFound
       }
       var zone = list.ruleset.normalizedZone(requestedZone)
       var categoryID = categoryID
       if let resolvedCategoryID = categoryID {
-        guard let category = try cardListCategoryUnlocked(id: resolvedCategoryID),
+        guard let category = try cardCollectionCategoryUnlocked(id: resolvedCategoryID),
           category.listID == listID
         else {
-          throw CardListDatabaseError.categoryNotFound
+          throw CardCollectionDatabaseError.categoryNotFound
         }
         let categoryZone = list.ruleset.normalizedZone(category.zone)
         if categoryZone == category.zone {
@@ -962,7 +972,7 @@ extension CardDatabase {
       let date = Self.formattedListDate(now)
 
       try database.transaction {
-        if let existingEntry = try matchingCardListEntryUnlocked(
+        if let existingEntry = try matchingCardCollectionEntryUnlocked(
           listID: listID,
           zone: zone,
           categoryID: categoryID,
@@ -999,17 +1009,17 @@ extension CardDatabase {
           try insert.step()
         }
 
-        try touchCardListUnlocked(id: listID, date: date)
+        try touchCardCollectionUnlocked(id: listID, date: date)
       }
 
-      guard var entry = try matchingCardListEntryUnlocked(
+      guard var entry = try matchingCardCollectionEntryUnlocked(
         listID: listID,
         zone: zone,
         categoryID: categoryID,
         cardID: cardID,
         excluding: nil
       ) else {
-        throw CardListDatabaseError.entryNotFound
+        throw CardCollectionDatabaseError.entryNotFound
       }
       entry.card = try card(id: cardID)
       return entry
@@ -1017,14 +1027,14 @@ extension CardDatabase {
   }
 
   @discardableResult
-  public func replaceCardListEntryPrint(
+  public func replaceCardCollectionEntryPrint(
     id: String,
     withCardID cardID: String,
     now: Date = Date()
-  ) throws -> CardListEntryRecord {
+  ) throws -> CardCollectionEntryRecord {
     try withDatabaseLock {
-      guard let entry = try cardListEntryUnlocked(id: id) else {
-        throw CardListDatabaseError.entryNotFound
+      guard let entry = try cardCollectionEntryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.entryNotFound
       }
 
       guard entry.cardID != cardID else {
@@ -1037,7 +1047,7 @@ extension CardDatabase {
       var updatedEntryID = id
 
       try database.transaction {
-        if let existingEntry = try matchingCardListEntryUnlocked(
+        if let existingEntry = try matchingCardCollectionEntryUnlocked(
           listID: entry.listID,
           zone: entry.zone,
           categoryID: entry.categoryID,
@@ -1071,20 +1081,20 @@ extension CardDatabase {
           try update.step()
         }
 
-        try touchCardListUnlocked(id: entry.listID, date: date)
+        try touchCardCollectionUnlocked(id: entry.listID, date: date)
       }
 
-      guard var updatedEntry = try cardListEntryUnlocked(id: updatedEntryID) else {
-        throw CardListDatabaseError.entryNotFound
+      guard var updatedEntry = try cardCollectionEntryUnlocked(id: updatedEntryID) else {
+        throw CardCollectionDatabaseError.entryNotFound
       }
       updatedEntry.card = try card(id: updatedEntry.cardID)
       return updatedEntry
     }
   }
 
-  public func removeCardListEntry(id: String, now: Date = Date()) throws {
+  public func removeCardCollectionEntry(id: String, now: Date = Date()) throws {
     try withDatabaseLock {
-      guard let entry = try cardListEntryUnlocked(id: id) else {
+      guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         return
       }
 
@@ -1105,27 +1115,27 @@ extension CardDatabase {
           try delete.step()
           let recordID = try cloudSyncEntryRecordIDUnlocked(for: entry)
           try insertSyncTombstoneUnlocked(
-            entityType: .cardListEntry,
+            entityType: .cardCollectionEntry,
             recordID: recordID,
             deletedAt: now
           )
         }
 
-        try touchCardListUnlocked(id: entry.listID, date: Self.formattedListDate(now))
+        try touchCardCollectionUnlocked(id: entry.listID, date: Self.formattedListDate(now))
       }
     }
   }
 
   @discardableResult
-  public func incrementCardListEntryQuantity(
+  public func incrementCardCollectionEntryQuantity(
     id: String,
     by amount: Int = 1,
     now: Date = Date()
-  ) throws -> CardListEntryRecord {
+  ) throws -> CardCollectionEntryRecord {
     let quantityDelta = max(1, amount)
     return try withDatabaseLock {
-      guard let entry = try cardListEntryUnlocked(id: id) else {
-        throw CardListDatabaseError.entryNotFound
+      guard let entry = try cardCollectionEntryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.entryNotFound
       }
 
       let update = try database.prepare(
@@ -1139,11 +1149,11 @@ extension CardDatabase {
         try update.bind(Self.formattedListDate(now), at: 2)
         try update.bind(id, at: 3)
         try update.step()
-        try touchCardListUnlocked(id: entry.listID, date: Self.formattedListDate(now))
+        try touchCardCollectionUnlocked(id: entry.listID, date: Self.formattedListDate(now))
       }
 
-      guard var updatedEntry = try cardListEntryUnlocked(id: id) else {
-        throw CardListDatabaseError.entryNotFound
+      guard var updatedEntry = try cardCollectionEntryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.entryNotFound
       }
       updatedEntry.card = try card(id: updatedEntry.cardID)
       return updatedEntry
@@ -1151,15 +1161,15 @@ extension CardDatabase {
   }
 
   @discardableResult
-  public func setCardListEntryQuantity(
+  public func setCardCollectionEntryQuantity(
     id: String,
     quantity requestedQuantity: Int,
     now: Date = Date()
-  ) throws -> CardListEntryRecord {
+  ) throws -> CardCollectionEntryRecord {
     let quantity = max(1, requestedQuantity)
     return try withDatabaseLock {
-      guard let entry = try cardListEntryUnlocked(id: id) else {
-        throw CardListDatabaseError.entryNotFound
+      guard let entry = try cardCollectionEntryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.entryNotFound
       }
 
       let update = try database.prepare(
@@ -1173,20 +1183,20 @@ extension CardDatabase {
         try update.bind(Self.formattedListDate(now), at: 2)
         try update.bind(id, at: 3)
         try update.step()
-        try touchCardListUnlocked(id: entry.listID, date: Self.formattedListDate(now))
+        try touchCardCollectionUnlocked(id: entry.listID, date: Self.formattedListDate(now))
       }
 
-      guard var updatedEntry = try cardListEntryUnlocked(id: id) else {
-        throw CardListDatabaseError.entryNotFound
+      guard var updatedEntry = try cardCollectionEntryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.entryNotFound
       }
       updatedEntry.card = try card(id: updatedEntry.cardID)
       return updatedEntry
     }
   }
 
-  public func removeCardListEntryCompletely(id: String, now: Date = Date()) throws {
+  public func removeCardCollectionEntryCompletely(id: String, now: Date = Date()) throws {
     try withDatabaseLock {
-      guard let entry = try cardListEntryUnlocked(id: id) else {
+      guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         return
       }
 
@@ -1196,19 +1206,19 @@ extension CardDatabase {
         try delete.step()
         let recordID = try cloudSyncEntryRecordIDUnlocked(for: entry)
         try insertSyncTombstoneUnlocked(
-          entityType: .cardListEntry,
+          entityType: .cardCollectionEntry,
           recordID: recordID,
           deletedAt: now
         )
-        try touchCardListUnlocked(id: entry.listID, date: Self.formattedListDate(now))
+        try touchCardCollectionUnlocked(id: entry.listID, date: Self.formattedListDate(now))
       }
     }
   }
 
   private func cloudSyncEntryRecordIDUnlocked(
-    for entry: CardListEntryRecord
-  ) throws -> CardListEntryRecord.ID {
-    guard let list = try cardListUnlocked(id: entry.listID),
+    for entry: CardCollectionEntryRecord
+  ) throws -> CardCollectionEntryRecord.ID {
+    guard let list = try cardCollectionUnlocked(id: entry.listID),
       CloudSyncEntityCodec.isFavouritesListName(list.name)
         || list.id == CloudSyncEntityCodec.favouritesListID
     else {
@@ -1217,24 +1227,24 @@ extension CardDatabase {
     return CloudSyncEntityCodec.favouriteEntryID(cardID: entry.cardID)
   }
 
-  func normalizeCardListZonesForRulesetsUnlocked() throws {
-    let lists = try cardListsUnlocked()
+  func normalizeCardCollectionZonesForRulesetsUnlocked() throws {
+    let lists = try cardCollectionsUnlocked()
     let date = Self.formattedListDate(Date())
     try database.transaction {
       for list in lists {
-        try normalizeCardListZonesUnlocked(listID: list.id, ruleset: list.ruleset, date: date)
+        try normalizeCardCollectionZonesUnlocked(listID: list.id, ruleset: list.ruleset, date: date)
       }
     }
   }
 
   @discardableResult
-  func normalizeCardListZonesUnlocked(
+  func normalizeCardCollectionZonesUnlocked(
     listID: String,
-    ruleset: CardListRuleset,
+    ruleset: CardCollectionRuleset,
     date: String
   ) throws -> Bool {
     var changed = false
-    var categories = try cardListCategoriesUnlocked(forListID: listID)
+    var categories = try cardCollectionCategoriesUnlocked(forListID: listID)
 
     for category in categories {
       let destinationZone = ruleset.normalizedZone(category.zone)
@@ -1295,7 +1305,7 @@ extension CardDatabase {
       changed = true
     }
 
-    categories = try cardListCategoriesUnlocked(forListID: listID)
+    categories = try cardCollectionCategoriesUnlocked(forListID: listID)
     for category in categories where ruleset.allowedZones.contains(category.zone) {
       let mismatchCount = try database.prepare(
         """
@@ -1324,7 +1334,7 @@ extension CardDatabase {
       changed = true
     }
 
-    for zone in CardListZone.allCases {
+    for zone in CardCollectionZone.allCases {
       let destinationZone = ruleset.normalizedZone(zone)
       guard destinationZone != zone else {
         continue
@@ -1360,8 +1370,8 @@ extension CardDatabase {
       return false
     }
 
-    try consolidateDuplicateCardListEntriesUnlocked(listID: listID)
-    try normalizeCardListCategoryPositionsUnlocked(listID: listID, date: date)
+    try consolidateDuplicateCardCollectionEntriesUnlocked(listID: listID)
+    try normalizeCardCollectionCategoryPositionsUnlocked(listID: listID, date: date)
     return true
   }
 

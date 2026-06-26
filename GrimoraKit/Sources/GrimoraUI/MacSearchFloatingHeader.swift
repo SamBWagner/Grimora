@@ -8,11 +8,9 @@ struct MacSearchFloatingHeader: View {
     @Environment(GrimoraAppModel.self) private var model
     @State private var showsSearchLoadingIndicator = false
     @State private var searchActivationFeedbackTrigger = 0
-    @State private var createListFeedbackTrigger = 0
     var isExpanded: Bool
     @Binding var isSearchFocused: Bool
     var focusRequestID: Int
-    var onCreateListFromSearch: () -> Void
     var onOpenAdvancedSearch: () -> Void
     var onMouseDown: () -> Void = {}
     var onSearchActivated: () -> Void = {}
@@ -132,7 +130,6 @@ struct MacSearchFloatingHeader: View {
         HStack(spacing: 8) {
             refinementRow
             Spacer(minLength: 12)
-            createListButton
         }
         .controlSize(.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -142,7 +139,6 @@ struct MacSearchFloatingHeader: View {
         HStack(spacing: 8) {
             moreOptionsMenu
             Spacer(minLength: 12)
-            createListButton
         }
         .controlSize(.regular)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -151,7 +147,7 @@ struct MacSearchFloatingHeader: View {
     /// Permanent Advanced Search affordance pinned to the trailing edge of the
     /// search field — the discoverable, always-visible entry point that mirrors
     /// the ⇧⌘F menu command. Icon-only so it reads as a search accessory rather
-    /// than competing with the Sort/Printings/Create List controls below.
+    /// than competing with the Sort/Printings controls below.
     private var advancedSearchButton: some View {
         Button(action: onOpenAdvancedSearch) {
             Image(systemName: "slider.horizontal.3")
@@ -165,19 +161,6 @@ struct MacSearchFloatingHeader: View {
         .help("Advanced Search (⇧⌘F)")
         .accessibilityLabel("Advanced Search")
         .accessibilityIdentifier("advanced-search-launch-button")
-    }
-
-    private var createListButton: some View {
-        Button {
-            createListFeedbackTrigger += 1
-            onCreateListFromSearch()
-        } label: {
-            Text("Create List")
-        }
-        .controlSize(.regular)
-        .accessibilityIdentifier("create-list-from-search-button")
-        .disabled(!model.canCreateListFromCurrentSearch)
-        .grimoraSelectionFeedback(trigger: createListFeedbackTrigger)
     }
 
     private func nativeSearchField(

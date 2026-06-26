@@ -907,16 +907,16 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.cards.count, 250)
     XCTAssertEqual(model.searchResultTotal, 510)
 
-    let createdList = await model.createCardListFromCurrentSearch(named: "Paged Picks")
+    let createdList = await model.createCardCollectionFromCurrentSearch(named: "Paged Picks")
     let list = try XCTUnwrap(createdList)
 
     XCTAssertEqual(list.name, "Paged Picks")
     XCTAssertEqual(model.sidebarSelection, .list(list.id))
-    XCTAssertEqual(model.selectedList?.id, list.id)
-    XCTAssertEqual(model.selectedList?.entryCount, 510)
-    XCTAssertEqual(model.selectedListEntries.count, 510)
-    XCTAssertEqual(model.selectedListEntries.first?.cardID, "paged-1000")
-    XCTAssertEqual(model.selectedListEntries.last?.cardID, "paged-1509")
+    XCTAssertEqual(model.selectedCollection?.id, list.id)
+    XCTAssertEqual(model.selectedCollection?.entryCount, 510)
+    XCTAssertEqual(model.selectedCollectionEntries.count, 510)
+    XCTAssertEqual(model.selectedCollectionEntries.first?.cardID, "paged-1000")
+    XCTAssertEqual(model.selectedCollectionEntries.last?.cardID, "paged-1509")
     XCTAssertEqual(model.statusMessage, "Created Paged Picks with 510 cards.")
   }
 
@@ -927,13 +927,13 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Deck Box", selectAfterCreate: true))
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck Box", selectAfterCreate: true))
 
     model.addCards(["forest", "beta"], toListID: list.id)
 
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest", "beta"])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [1, 1])
-    XCTAssertEqual(model.selectedList?.entryCount, 2)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest", "beta"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [1, 1])
+    XCTAssertEqual(model.selectedCollection?.entryCount, 2)
     XCTAssertEqual(model.statusMessage, "Added 2 cards to Deck Box.")
   }
 
@@ -944,9 +944,9 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let creatures = try XCTUnwrap(model.createCardList(named: "Creatures"))
+    let creatures = try XCTUnwrap(model.createCardCollection(named: "Creatures"))
     model.addCards(["forest", "beta"], toListID: creatures.id)
-    let tokens = try XCTUnwrap(model.createCardList(named: "Tokens"))
+    let tokens = try XCTUnwrap(model.createCardCollection(named: "Tokens"))
     model.addCards(["token"], toListID: tokens.id)
 
     guard case .results(let tokenMatches) = model.searchAllLists(query: "t:token") else {
@@ -973,30 +973,30 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let creatures = try XCTUnwrap(model.createCardList(named: "Creatures"))
+    let creatures = try XCTUnwrap(model.createCardCollection(named: "Creatures"))
     model.addCards(["forest", "beta"], toListID: creatures.id)
-    let tokens = try XCTUnwrap(model.createCardList(named: "Tokens"))
+    let tokens = try XCTUnwrap(model.createCardCollection(named: "Tokens"))
     model.addCards(["token"], toListID: tokens.id)
 
     // The auto-managed Favourites list is present too, so compare against the live total.
-    let totalListCount = model.cardListOverviewItems.count
+    let totalListCount = model.cardCollectionOverviewItems.count
     XCTAssertGreaterThanOrEqual(totalListCount, 2)
     XCTAssertFalse(model.hasActiveDashboardSearch)
     XCTAssertNil(model.dashboardListMatchIDs)
-    XCTAssertEqual(model.filteredCardListOverviewItems.count, totalListCount)
+    XCTAssertEqual(model.filteredCardCollectionOverviewItems.count, totalListCount)
 
     model.setDashboardSearchDraft("t:token")
 
     XCTAssertTrue(model.hasActiveDashboardSearch)
     XCTAssertEqual(model.dashboardListMatchIDs, [tokens.id])
-    XCTAssertEqual(model.filteredCardListOverviewItems.map(\.list.id), [tokens.id])
+    XCTAssertEqual(model.filteredCardCollectionOverviewItems.map(\.list.id), [tokens.id])
     XCTAssertNil(model.dashboardSearchUnsupportedMessage)
 
     model.clearDashboardSearch()
 
     XCTAssertFalse(model.hasActiveDashboardSearch)
     XCTAssertNil(model.dashboardListMatchIDs)
-    XCTAssertEqual(model.filteredCardListOverviewItems.count, totalListCount)
+    XCTAssertEqual(model.filteredCardCollectionOverviewItems.count, totalListCount)
   }
 
   func testDashboardSearchValidQueryWithNoMatchesHidesEveryTile() async throws {
@@ -1006,14 +1006,14 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let creatures = try XCTUnwrap(model.createCardList(named: "Creatures"))
+    let creatures = try XCTUnwrap(model.createCardCollection(named: "Creatures"))
     model.addCards(["forest", "beta"], toListID: creatures.id)
 
     model.setDashboardSearchDraft("t:planeswalker")
 
     XCTAssertTrue(model.hasActiveDashboardSearch)
     XCTAssertEqual(model.dashboardListMatchIDs, [])
-    XCTAssertTrue(model.filteredCardListOverviewItems.isEmpty)
+    XCTAssertTrue(model.filteredCardCollectionOverviewItems.isEmpty)
     XCTAssertNil(model.dashboardSearchUnsupportedMessage)
   }
 
@@ -1024,15 +1024,15 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let creatures = try XCTUnwrap(model.createCardList(named: "Creatures"))
+    let creatures = try XCTUnwrap(model.createCardCollection(named: "Creatures"))
     model.addCards(["forest", "beta"], toListID: creatures.id)
 
-    let totalListCount = model.cardListOverviewItems.count
+    let totalListCount = model.cardCollectionOverviewItems.count
     model.setDashboardSearchDraft("cube:vintage")
 
     XCTAssertTrue(model.hasActiveDashboardSearch)
     XCTAssertNil(model.dashboardListMatchIDs)
-    XCTAssertEqual(model.filteredCardListOverviewItems.count, totalListCount)
+    XCTAssertEqual(model.filteredCardCollectionOverviewItems.count, totalListCount)
     XCTAssertNotNil(model.dashboardSearchUnsupportedMessage)
   }
 
@@ -1043,21 +1043,21 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let firstTokens = try XCTUnwrap(model.createCardList(named: "First Tokens"))
+    let firstTokens = try XCTUnwrap(model.createCardCollection(named: "First Tokens"))
     model.addCards(["token"], toListID: firstTokens.id)
-    let creatures = try XCTUnwrap(model.createCardList(named: "Creatures"))
+    let creatures = try XCTUnwrap(model.createCardCollection(named: "Creatures"))
     model.addCards(["forest"], toListID: creatures.id)
 
     model.setDashboardSearchDraft("t:token")
     XCTAssertEqual(model.dashboardListMatchIDs, [firstTokens.id])
 
     // Adding a second token list must re-run the filter so the new match appears.
-    let secondTokens = try XCTUnwrap(model.createCardList(named: "Second Tokens"))
+    let secondTokens = try XCTUnwrap(model.createCardCollection(named: "Second Tokens"))
     model.addCards(["token"], toListID: secondTokens.id)
 
     XCTAssertEqual(model.dashboardListMatchIDs, [firstTokens.id, secondTokens.id])
     XCTAssertEqual(
-      Set(model.filteredCardListOverviewItems.map(\.list.id)),
+      Set(model.filteredCardCollectionOverviewItems.map(\.list.id)),
       [firstTokens.id, secondTokens.id]
     )
   }
@@ -1069,19 +1069,19 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let currentList = try XCTUnwrap(model.createCardList(named: "Current", selectAfterCreate: true))
+    let currentList = try XCTUnwrap(model.createCardCollection(named: "Current", selectAfterCreate: true))
     let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
 
     model.addCardToFavourites(forest)
     model.addCardToFavourites(forest)
     model.addCardsToFavourites(["forest", "beta", "forest"], primaryCard: forest)
 
-    let favourites = try XCTUnwrap(model.cardLists.first { $0.name == "Favourites" })
-    XCTAssertEqual(model.selectedListID, currentList.id)
+    let favourites = try XCTUnwrap(model.cardCollections.first { $0.name == "Favourites" })
+    XCTAssertEqual(model.selectedCollectionID, currentList.id)
     XCTAssertEqual(model.sidebarSelection, .list(currentList.id))
     XCTAssertEqual(favourites.entryCount, 2)
 
-    let entries = try database.cardListEntries(forListID: favourites.id)
+    let entries = try database.cardCollectionEntries(forListID: favourites.id)
     XCTAssertEqual(entries.map(\.cardID), ["forest", "beta"])
     XCTAssertEqual(entries.map(\.quantity), [1, 1])
     XCTAssertEqual(model.statusMessage, "Added 1 card to Favourites.")
@@ -1107,7 +1107,7 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertTrue(model.isFavourite(forest))
     XCTAssertTrue(model.favouriteCardIDs.contains(forest.id))
     XCTAssertEqual(
-      try database.cardListEntries(forListID: favourites.id).map(\.cardID),
+      try database.cardCollectionEntries(forListID: favourites.id).map(\.cardID),
       ["forest"]
     )
     XCTAssertEqual(model.statusMessage, "Added \(forest.name) to Favourites.")
@@ -1117,11 +1117,11 @@ final class GrimoraAppModelTests: XCTestCase {
 
     XCTAssertFalse(model.isFavourite(forest))
     XCTAssertFalse(model.favouriteCardIDs.contains(forest.id))
-    XCTAssertTrue(try database.cardListEntries(forListID: favourites.id).isEmpty)
+    XCTAssertTrue(try database.cardCollectionEntries(forListID: favourites.id).isEmpty)
     XCTAssertEqual(model.statusMessage, "Removed \(forest.name) from Favourites.")
 
     // The protected Favourites list itself survives the round trip.
-    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites"])
+    XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites"])
   }
 
   func testModelReusesFavoritesAliasForFavourites() async throws {
@@ -1131,14 +1131,14 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let aliasList = try XCTUnwrap(model.createCardList(named: "Favorites"))
+    let aliasList = try XCTUnwrap(model.createCardCollection(named: "Favorites"))
     XCTAssertEqual(aliasList.name, "Favourites")
 
     model.addCardsToFavourites(["forest", "beta"])
 
-    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites"])
-    XCTAssertEqual(model.cardLists.first?.entryCount, 2)
-    let entries = try database.cardListEntries(forListID: aliasList.id)
+    XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites"])
+    XCTAssertEqual(model.cardCollections.first?.entryCount, 2)
+    let entries = try database.cardCollectionEntries(forListID: aliasList.id)
     XCTAssertEqual(entries.map(\.cardID), ["forest", "beta"])
     XCTAssertEqual(entries.map(\.quantity), [1, 1])
   }
@@ -1151,21 +1151,21 @@ final class GrimoraAppModelTests: XCTestCase {
     await model.drainSearchForTesting()
 
     let favourites = try XCTUnwrap(model.favouritesList)
-    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites"])
+    XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites"])
     XCTAssertTrue(model.isProtectedFavouritesList(favourites))
-    XCTAssertTrue(model.pinnedCardLists.isEmpty)
-    XCTAssertTrue(model.unpinnedCardLists.isEmpty)
+    XCTAssertTrue(model.pinnedCardCollections.isEmpty)
+    XCTAssertTrue(model.unpinnedCardCollections.isEmpty)
 
-    model.renameCardList(id: favourites.id, to: "Deck Box")
-    model.setCardListPinned(id: favourites.id, isPinned: true)
-    model.moveCardList(id: favourites.id, toPosition: 3, isPinned: true)
-    model.deleteCardList(id: favourites.id)
+    model.renameCardCollection(id: favourites.id, to: "Deck Box")
+    model.setCardCollectionPinned(id: favourites.id, isPinned: true)
+    model.moveCardCollection(id: favourites.id, toPosition: 3, isPinned: true)
+    model.deleteCardCollection(id: favourites.id)
 
     let protectedList = try XCTUnwrap(model.favouritesList)
     XCTAssertEqual(protectedList.id, favourites.id)
     XCTAssertEqual(protectedList.name, "Favourites")
     XCTAssertFalse(protectedList.isPinned)
-    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites"])
+    XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites"])
   }
 
   func testListOverviewUsesVisibleTopCardOrderingAndHandlesMissingImages() async throws {
@@ -1176,27 +1176,27 @@ final class GrimoraAppModelTests: XCTestCase {
     records[1].normalImagePath = "/tmp/beta-normal.jpg"
     try database.replaceAllCards(records)
     try markLibraryReady(database)
-    let list = try database.createCardList(named: "Drafts")
-    let category = try database.createCardListCategory(inList: list.id, named: "Main")
+    let list = try database.createCardCollection(named: "Drafts")
+    let category = try database.createCardCollectionCategory(inList: list.id, named: "Main")
     try database.appendCard("forest", toList: list.id, categoryID: category.id)
     try database.appendCard("beta", toList: list.id, categoryID: category.id)
 
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let favouritesItem = try XCTUnwrap(model.cardListOverviewItems.first)
+    let favouritesItem = try XCTUnwrap(model.cardCollectionOverviewItems.first)
     XCTAssertEqual(favouritesItem.list.name, "Favourites")
     XCTAssertNil(favouritesItem.topEntry)
     XCTAssertNil(favouritesItem.topCard?.listOverviewImagePath)
 
-    let initialItem = try XCTUnwrap(model.cardListOverviewItems.first { $0.list.id == list.id })
+    let initialItem = try XCTUnwrap(model.cardCollectionOverviewItems.first { $0.list.id == list.id })
     XCTAssertEqual(initialItem.topEntry?.cardID, "forest")
     XCTAssertEqual(initialItem.topCard?.id, "forest")
     XCTAssertEqual(initialItem.topCard?.listOverviewImagePath, "/tmp/forest-art-crop.jpg")
 
-    model.setCardListDisplaySort(id: list.id, mode: .name, direction: .descending)
+    model.setCardCollectionDisplaySort(id: list.id, mode: .name, direction: .descending)
 
-    let sortedItem = try XCTUnwrap(model.cardListOverviewItems.first { $0.list.id == list.id })
+    let sortedItem = try XCTUnwrap(model.cardCollectionOverviewItems.first { $0.list.id == list.id })
     XCTAssertEqual(sortedItem.topEntry?.cardID, "beta")
     XCTAssertEqual(sortedItem.topCard?.id, "beta")
     XCTAssertEqual(sortedItem.topCard?.listOverviewImagePath, "/tmp/beta-normal.jpg")
@@ -1210,7 +1210,7 @@ final class GrimoraAppModelTests: XCTestCase {
     await model.drainSearchForTesting()
 
     let list = try XCTUnwrap(
-      model.createCardList(
+      model.createCardCollection(
         named: "Selected Picks",
         addingCardIDs: ["forest", "beta", "forest"],
         selectAfterCreate: true
@@ -1218,9 +1218,9 @@ final class GrimoraAppModelTests: XCTestCase {
     )
 
     XCTAssertEqual(model.sidebarSelection, .list(list.id))
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest", "beta"])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [2, 1])
-    XCTAssertEqual(model.selectedList?.entryCount, 3)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest", "beta"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [2, 1])
+    XCTAssertEqual(model.selectedCollection?.entryCount, 3)
     XCTAssertEqual(model.statusMessage, "Created Selected Picks with 3 cards.")
   }
 
@@ -1276,13 +1276,13 @@ final class GrimoraAppModelTests: XCTestCase {
     await model.drainSearchForTesting()
     let currentResultOrder = model.cards.map(\.id)
 
-    let createdList = await model.createCardListFromCurrentSearch(named: "All Forests")
+    let createdList = await model.createCardCollectionFromCurrentSearch(named: "All Forests")
     let list = try XCTUnwrap(createdList)
 
     XCTAssertEqual(model.sidebarSelection, .list(list.id))
-    XCTAssertEqual(model.selectedList?.id, list.id)
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), currentResultOrder)
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [1, 1])
+    XCTAssertEqual(model.selectedCollection?.id, list.id)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), currentResultOrder)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [1, 1])
   }
 
   func testModelDoesNotCreateSearchListForEmptyOrUnsupportedSearch() async throws {
@@ -1295,17 +1295,17 @@ final class GrimoraAppModelTests: XCTestCase {
     model.searchText = "no-card-has-this-name"
     await model.submitSearch()
     await model.drainSearchForTesting()
-    let emptyList = await model.createCardListFromCurrentSearch(named: "Nothing")
+    let emptyList = await model.createCardCollectionFromCurrentSearch(named: "Nothing")
     XCTAssertNil(emptyList)
-    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites"])
+    XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites"])
     XCTAssertEqual(model.statusMessage, "No search results to add.")
 
     model.searchText = "cube:vintage"
     await model.submitSearch()
     await model.drainSearchForTesting()
-    let unsupportedList = await model.createCardListFromCurrentSearch(named: "Unsupported")
+    let unsupportedList = await model.createCardCollectionFromCurrentSearch(named: "Unsupported")
     XCTAssertNil(unsupportedList)
-    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites"])
+    XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites"])
     XCTAssertEqual(model.statusMessage, "No search results to add.")
   }
 
@@ -1749,8 +1749,8 @@ final class GrimoraAppModelTests: XCTestCase {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
     try markLibraryReady(database)
-    let list = try database.createCardList(named: "Favorites")
-    let category = try database.createCardListCategory(inList: list.id, named: "Ramp")
+    let list = try database.createCardCollection(named: "Favorites")
+    let category = try database.createCardCollectionCategory(inList: list.id, named: "Ramp")
     try database.appendCard("forest", toList: list.id, categoryID: category.id, quantity: 3)
     let downloadURL = URL(string: "https://example.test/default.json")!
     let network = ModelTestNetworkClient(dataResponses: [
@@ -1779,9 +1779,9 @@ final class GrimoraAppModelTests: XCTestCase {
 
     XCTAssertEqual(try database.cardCount(), 1)
     XCTAssertEqual(model.cards.map(\.id), ["setup-forest"])
-    XCTAssertEqual(try database.cardLists().map(\.name), ["Favourites"])
-    XCTAssertEqual(try database.cardListCategories(forListID: list.id).map(\.name), ["Ramp"])
-    let entries = try database.cardListEntries(forListID: list.id)
+    XCTAssertEqual(try database.cardCollections().map(\.name), ["Favourites"])
+    XCTAssertEqual(try database.cardCollectionCategories(forListID: list.id).map(\.name), ["Ramp"])
+    let entries = try database.cardCollectionEntries(forListID: list.id)
     XCTAssertEqual(entries.map(\.cardID), ["forest"])
     XCTAssertEqual(entries.map(\.quantity), [3])
     XCTAssertNil(entries.first?.card)
@@ -2107,7 +2107,7 @@ final class GrimoraAppModelTests: XCTestCase {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
     try markLibraryReady(database)
-    let list = try database.createCardList(named: "Favorites")
+    let list = try database.createCardCollection(named: "Favorites")
     try database.appendCard("forest", toList: list.id, quantity: 2)
     let network = ModelTestNetworkClient(dataResponses: valueHistoryNetworkResponses(cardID: "forest"))
     let model = GrimoraAppModel(
@@ -2134,8 +2134,8 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.libraryActivity?.state, .succeeded)
     XCTAssertEqual(model.cards.map(\.id), ["forest"])
     XCTAssertEqual(try database.cardCount(), uiRecords().count)
-    XCTAssertEqual(try database.cardLists().map(\.name), ["Favourites"])
-    XCTAssertEqual(try database.cardListEntries(forListID: list.id).map(\.cardID), ["forest"])
+    XCTAssertEqual(try database.cardCollections().map(\.name), ["Favourites"])
+    XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.cardID), ["forest"])
     XCTAssertEqual(model.selectedCard?.id, "forest")
     XCTAssertEqual(model.selectedCardValueGuide?.entries.first?.currentPrice, 3.25)
     XCTAssertEqual(
@@ -2234,7 +2234,7 @@ final class GrimoraAppModelTests: XCTestCase {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
     try markLibraryReady(database)
-    let list = try database.createCardList(named: "Favorites")
+    let list = try database.createCardCollection(named: "Favorites")
     try database.appendCard("forest", toList: list.id, quantity: 2)
     let network = ModelTestNetworkClient(dataResponses: [
       MTGJSONPriceHistoryClient.metaURL: Data()
@@ -2258,8 +2258,8 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.libraryActivity?.state, .failed)
     XCTAssertTrue(model.hasLibrary)
     XCTAssertEqual(model.cards.map(\.id), ["forest"])
-    XCTAssertEqual(try database.cardLists().map(\.name), ["Favourites"])
-    XCTAssertEqual(try database.cardListEntries(forListID: list.id).map(\.cardID), ["forest"])
+    XCTAssertEqual(try database.cardCollections().map(\.name), ["Favourites"])
+    XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.cardID), ["forest"])
     let requests = await network.requests()
     XCTAssertEqual(requests.map(\.purpose), [.priceHistoryDownload])
     XCTAssertFalse(requests.contains { $0.purpose == .bulkDownload })
@@ -2361,7 +2361,7 @@ final class GrimoraAppModelTests: XCTestCase {
     records[0].normalImagePath = cachedImage.path
     try database.replaceAllCards(records)
     try markLibraryReady(database)
-    let list = try database.createCardList(named: "Favorites")
+    let list = try database.createCardCollection(named: "Favorites")
     try database.appendCard("forest", toList: list.id, quantity: 2)
     let model = GrimoraAppModel(
       environment: environment(
@@ -2375,8 +2375,8 @@ final class GrimoraAppModelTests: XCTestCase {
 
     XCTAssertFalse(FileManager.default.fileExists(atPath: cachedImage.path))
     XCTAssertEqual(try database.cardCount(), records.count)
-    XCTAssertEqual(try database.cardLists().map(\.name), ["Favourites"])
-    XCTAssertEqual(try database.cardListEntries(forListID: list.id).map(\.cardID), ["forest"])
+    XCTAssertEqual(try database.cardCollections().map(\.name), ["Favourites"])
+    XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.cardID), ["forest"])
     let cards = try cards(in: database, matching: "forest")
     XCTAssertNil(cards.first?.normalImagePath)
     XCTAssertEqual(try database.metadataValue(forKey: MetadataKey.requiredImagesCached.rawValue), "false")
@@ -2386,7 +2386,7 @@ final class GrimoraAppModelTests: XCTestCase {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
     try markLibraryReady(database)
-    let list = try database.createCardList(named: "Favorites")
+    let list = try database.createCardCollection(named: "Favorites")
     try database.appendCard("forest", toList: list.id, quantity: 2)
     let downloadURL = URL(string: "https://example.test/default.json")!
     let network = ModelTestNetworkClient(dataResponses: [
@@ -2422,8 +2422,8 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertFalse(FileManager.default.fileExists(atPath: cachedImage.path))
     XCTAssertEqual(try database.cardCount(), 1)
     XCTAssertEqual(model.cards.map(\.id), ["setup-forest"])
-    XCTAssertEqual(try database.cardLists().map(\.name), ["Favourites"])
-    let entries = try database.cardListEntries(forListID: list.id)
+    XCTAssertEqual(try database.cardCollections().map(\.name), ["Favourites"])
+    let entries = try database.cardCollectionEntries(forListID: list.id)
     XCTAssertEqual(entries.map(\.cardID), ["forest"])
     XCTAssertEqual(entries.map(\.quantity), [2])
     XCTAssertNil(entries.first?.card)
@@ -3538,8 +3538,8 @@ final class GrimoraAppModelTests: XCTestCase {
     withObservationTracking {
       _ = model.cards
       _ = model.selectedCardPrintings
-      _ = model.selectedListEntries
-      _ = model.cardListOverviewItems
+      _ = model.selectedCollectionEntries
+      _ = model.cardCollectionOverviewItems
       _ = model.selectedCard
     } onChange: {
       noPublish.fulfill()
@@ -3803,7 +3803,7 @@ final class GrimoraAppModelTests: XCTestCase {
         smallImageURL: smallURL.absoluteString
       )
     ])
-    let list = try database.createCardList(named: "Retry List")
+    let list = try database.createCardCollection(named: "Retry List")
     try database.appendCard("list-card", toList: list.id)
     try markLibraryReady(database)
     let resolver = FlakyModelImageResolver(
@@ -3823,14 +3823,14 @@ final class GrimoraAppModelTests: XCTestCase {
         )
       ))
     await model.drainSearchForTesting()
-    model.selectCardList(id: list.id)
+    model.selectCardCollection(id: list.id)
 
-    let entry = try XCTUnwrap(model.selectedListEntries.first)
+    let entry = try XCTUnwrap(model.selectedCollectionEntries.first)
     await model.cacheVisibleListEntryImages(around: entry.id)
     await resolver.waitForCallCount(2)
     await model.drainImageDownloadsForTesting()
 
-    let updatedEntry = try XCTUnwrap(model.selectedListEntries.first)
+    let updatedEntry = try XCTUnwrap(model.selectedCollectionEntries.first)
     let updatedCard = try XCTUnwrap(updatedEntry.card)
     XCTAssertNotNil(updatedCard.smallImagePath)
     XCTAssertFalse(model.isLoadingVisiblePreview(for: updatedCard, quality: .small))
@@ -4031,7 +4031,7 @@ final class GrimoraAppModelTests: XCTestCase {
           smallImageURL: "https://example.test/list-window-\(index)-small.jpg"
         )
       })
-    let list = try database.createCardList(named: "Scroll List")
+    let list = try database.createCardCollection(named: "Scroll List")
     for index in 0..<24 {
       try database.appendCard("list-window-\(index)", toList: list.id)
     }
@@ -4050,19 +4050,19 @@ final class GrimoraAppModelTests: XCTestCase {
         )
       ))
     await model.drainSearchForTesting()
-    model.selectCardList(id: list.id)
+    model.selectCardCollection(id: list.id)
 
-    await model.cacheVisibleListEntryImages(around: model.selectedListEntries[0].id)
+    await model.cacheVisibleListEntryImages(around: model.selectedCollectionEntries[0].id)
     await resolver.waitForStartedCount(1)
-    await model.cacheVisibleListEntryImages(around: model.selectedListEntries[13].id)
+    await model.cacheVisibleListEntryImages(around: model.selectedCollectionEntries[13].id)
 
     await resolver.releaseAll()
     await model.drainImageDownloadsForTesting()
 
     let startedIDs = await resolver.startedIDs()
-    let jumpedWindowIDs = model.selectedListEntries[12..<16].map(\.cardID)
-    let retainedWindowIDs = model.selectedListEntries[1..<4].map(\.cardID)
-    XCTAssertEqual(startedIDs, [model.selectedListEntries[0].cardID] + jumpedWindowIDs + retainedWindowIDs)
+    let jumpedWindowIDs = model.selectedCollectionEntries[12..<16].map(\.cardID)
+    let retainedWindowIDs = model.selectedCollectionEntries[1..<4].map(\.cardID)
+    XCTAssertEqual(startedIDs, [model.selectedCollectionEntries[0].cardID] + jumpedWindowIDs + retainedWindowIDs)
   }
 
   func testListVisibleImageCachingSkipsEntriesFromCollapsedCategories() async throws {
@@ -4091,9 +4091,9 @@ final class GrimoraAppModelTests: XCTestCase {
           smallImageURL: "https://example.test/collapsed-window-\(index)-small.jpg"
         )
       })
-    let list = try database.createCardList(named: "Collapsed Categories")
-    let visibleCategory = try database.createCardListCategory(inList: list.id, named: "Visible")
-    let collapsedCategory = try database.createCardListCategory(inList: list.id, named: "Collapsed")
+    let list = try database.createCardCollection(named: "Collapsed Categories")
+    let visibleCategory = try database.createCardCollectionCategory(inList: list.id, named: "Visible")
+    let collapsedCategory = try database.createCardCollectionCategory(inList: list.id, named: "Collapsed")
     for index in 0..<8 {
       try database.appendCard(
         "collapsed-window-\(index)",
@@ -4119,9 +4119,9 @@ final class GrimoraAppModelTests: XCTestCase {
         )
       ))
     await model.drainSearchForTesting()
-    model.selectCardList(id: list.id)
+    model.selectCardCollection(id: list.id)
 
-    let displayedEntries = model.selectedListEntries.filter {
+    let displayedEntries = model.selectedCollectionEntries.filter {
       $0.categoryID == visibleCategory.id
     }
     let firstDisplayedEntry = try XCTUnwrap(displayedEntries.first)
@@ -4163,7 +4163,7 @@ final class GrimoraAppModelTests: XCTestCase {
           smallImageURL: "https://example.test/list-reset-window-\(index)-small.jpg"
         )
       })
-    let list = try database.createCardList(named: "Reset Scroll List")
+    let list = try database.createCardCollection(named: "Reset Scroll List")
     for index in 0..<24 {
       try database.appendCard("list-reset-window-\(index)", toList: list.id)
     }
@@ -4182,13 +4182,13 @@ final class GrimoraAppModelTests: XCTestCase {
         )
       ))
     await model.drainSearchForTesting()
-    model.selectCardList(id: list.id)
+    model.selectCardCollection(id: list.id)
 
-    await model.cacheVisibleListEntryImages(around: model.selectedListEntries[0].id)
+    await model.cacheVisibleListEntryImages(around: model.selectedCollectionEntries[0].id)
     await resolver.waitForStartedCount(1)
     model.resetListVisibleImageRequests()
     await model.cacheVisibleListEntryImages(
-      around: model.selectedListEntries[13].id,
+      around: model.selectedCollectionEntries[13].id,
       forceRefresh: true
     )
 
@@ -4196,8 +4196,8 @@ final class GrimoraAppModelTests: XCTestCase {
     await model.drainImageDownloadsForTesting()
 
     let startedIDs = await resolver.startedIDs()
-    let jumpedWindowIDs = model.selectedListEntries[12..<16].map(\.cardID)
-    XCTAssertEqual(startedIDs, [model.selectedListEntries[0].cardID] + jumpedWindowIDs)
+    let jumpedWindowIDs = model.selectedCollectionEntries[12..<16].map(\.cardID)
+    XCTAssertEqual(startedIDs, [model.selectedCollectionEntries[0].cardID] + jumpedWindowIDs)
   }
 
   func testVisibleImageCachingKeepsTextOnlyWhenSmallDownloadFails() async throws {
@@ -4694,35 +4694,35 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "  Deck Box  ", selectAfterCreate: true))
+    let list = try XCTUnwrap(model.createCardCollection(named: "  Deck Box  ", selectAfterCreate: true))
     XCTAssertEqual(list.name, "Deck Box")
     XCTAssertEqual(model.sidebarSelection, .list(list.id))
-    XCTAssertEqual(model.selectedListID, list.id)
-    XCTAssertEqual(model.selectedList?.entryCount, 0)
+    XCTAssertEqual(model.selectedCollectionID, list.id)
+    XCTAssertEqual(model.selectedCollection?.entryCount, 0)
 
     let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
     model.addCard(forest, toListID: list.id)
     model.addCard(forest, toListID: list.id)
 
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest"])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [2])
-    XCTAssertEqual(model.selectedListEntries.compactMap(\.card?.name), ["Alpha Forest"])
-    XCTAssertEqual(model.selectedList?.entryCount, 2)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [2])
+    XCTAssertEqual(model.selectedCollectionEntries.compactMap(\.card?.name), ["Alpha Forest"])
+    XCTAssertEqual(model.selectedCollection?.entryCount, 2)
 
-    let firstEntryID = model.selectedListEntries[0].id
-    model.removeCardListEntry(id: firstEntryID)
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest"])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [1])
-    XCTAssertEqual(model.selectedList?.entryCount, 1)
+    let firstEntryID = model.selectedCollectionEntries[0].id
+    model.removeCardCollectionEntry(id: firstEntryID)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [1])
+    XCTAssertEqual(model.selectedCollection?.entryCount, 1)
 
-    model.renameCardList(id: list.id, to: "Deck Box")
-    XCTAssertEqual(model.selectedList?.name, "Deck Box")
+    model.renameCardCollection(id: list.id, to: "Deck Box")
+    XCTAssertEqual(model.selectedCollection?.name, "Deck Box")
 
-    model.deleteCardList(id: list.id)
-    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites"])
+    model.deleteCardCollection(id: list.id)
+    XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites"])
     XCTAssertEqual(model.sidebarSelection, .listsOverview)
-    XCTAssertNil(model.selectedListID)
-    XCTAssertTrue(model.selectedListEntries.isEmpty)
+    XCTAssertNil(model.selectedCollectionID)
+    XCTAssertTrue(model.selectedCollectionEntries.isEmpty)
   }
 
   func testModelUndoRestoresListQuantityAndBulkActions() async throws {
@@ -4732,59 +4732,59 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Undo Deck", selectAfterCreate: true))
-    let category = try XCTUnwrap(model.createCardListCategory(named: "Ramp", inListID: list.id))
+    let list = try XCTUnwrap(model.createCardCollection(named: "Undo Deck", selectAfterCreate: true))
+    let category = try XCTUnwrap(model.createCardCollectionCategory(named: "Ramp", inListID: list.id))
     let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
     let beta = try XCTUnwrap(model.cards.first { $0.id == "beta" })
     model.addCard(forest, toListID: list.id)
     model.addCard(beta, toListID: list.id)
-    let entryIDs = model.selectedListEntries.map(\.id)
+    let entryIDs = model.selectedCollectionEntries.map(\.id)
 
-    model.incrementCardListEntryQuantity(id: entryIDs[0])
-    XCTAssertEqual(model.selectedListEntries.first?.quantity, 2)
+    model.incrementCardCollectionEntryQuantity(id: entryIDs[0])
+    XCTAssertEqual(model.selectedCollectionEntries.first?.quantity, 2)
     XCTAssertTrue(model.canUndoListAction)
 
-    model.moveCardListEntries(ids: entryIDs, toCategoryID: category.id)
-    XCTAssertEqual(Set(model.selectedListEntries.map(\.categoryID)), Set<String?>([category.id]))
+    model.moveCardCollectionEntries(ids: entryIDs, toCategoryID: category.id)
+    XCTAssertEqual(Set(model.selectedCollectionEntries.map(\.categoryID)), Set<String?>([category.id]))
 
-    model.removeCardListEntriesCompletely(ids: entryIDs)
-    XCTAssertTrue(model.selectedListEntries.isEmpty)
-
-    model.undoLastListAction()
-    XCTAssertEqual(model.selectedListEntries.map(\.id), entryIDs)
-    XCTAssertEqual(Set(model.selectedListEntries.map(\.categoryID)), Set<String?>([category.id]))
+    model.removeCardCollectionEntriesCompletely(ids: entryIDs)
+    XCTAssertTrue(model.selectedCollectionEntries.isEmpty)
 
     model.undoLastListAction()
-    XCTAssertEqual(Set(model.selectedListEntries.map(\.categoryID)), Set<String?>([nil]))
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.id), entryIDs)
+    XCTAssertEqual(Set(model.selectedCollectionEntries.map(\.categoryID)), Set<String?>([category.id]))
 
     model.undoLastListAction()
-    XCTAssertEqual(model.selectedListEntries.first?.quantity, 1)
+    XCTAssertEqual(Set(model.selectedCollectionEntries.map(\.categoryID)), Set<String?>([nil]))
+
+    model.undoLastListAction()
+    XCTAssertEqual(model.selectedCollectionEntries.first?.quantity, 1)
   }
 
-  func testModelUpdatesCardListDashboardPreferences() async throws {
+  func testModelUpdatesCardCollectionDashboardPreferences() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
     try markLibraryReady(database)
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Dashboard", selectAfterCreate: true))
-    XCTAssertFalse(model.selectedList?.showsDashboard ?? true)
-    XCTAssertFalse(model.selectedList?.dashboardIncludesLands ?? true)
+    let list = try XCTUnwrap(model.createCardCollection(named: "Dashboard", selectAfterCreate: true))
+    XCTAssertFalse(model.selectedCollection?.showsDashboard ?? true)
+    XCTAssertFalse(model.selectedCollection?.dashboardIncludesLands ?? true)
 
-    model.setCardListDashboardVisibility(id: list.id, showsDashboard: true)
-    XCTAssertTrue(model.selectedList?.showsDashboard ?? false)
-    XCTAssertEqual(model.statusMessage, "Showing list stats.")
+    model.setCardCollectionDashboardVisibility(id: list.id, showsDashboard: true)
+    XCTAssertTrue(model.selectedCollection?.showsDashboard ?? false)
+    XCTAssertEqual(model.statusMessage, "Showing collection stats.")
 
-    model.setCardListDashboardVisibility(id: list.id, showsDashboard: false)
-    XCTAssertFalse(model.selectedList?.showsDashboard ?? true)
-    XCTAssertEqual(model.statusMessage, "Hid list stats.")
+    model.setCardCollectionDashboardVisibility(id: list.id, showsDashboard: false)
+    XCTAssertFalse(model.selectedCollection?.showsDashboard ?? true)
+    XCTAssertEqual(model.statusMessage, "Hid collection stats.")
 
-    model.setCardListDashboardIncludesLands(id: list.id, includesLands: true)
-    XCTAssertTrue(model.selectedList?.dashboardIncludesLands ?? false)
+    model.setCardCollectionDashboardIncludesLands(id: list.id, includesLands: true)
+    XCTAssertTrue(model.selectedCollection?.dashboardIncludesLands ?? false)
     XCTAssertEqual(model.statusMessage, "Type stats include lands.")
 
-    let persisted = try XCTUnwrap(database.cardList(id: list.id))
+    let persisted = try XCTUnwrap(database.cardCollection(id: list.id))
     XCTAssertFalse(persisted.showsDashboard)
     XCTAssertTrue(persisted.dashboardIncludesLands)
   }
@@ -4796,37 +4796,37 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let first = try database.createCardList(named: "First")
+    let first = try database.createCardCollection(named: "First")
     try database.appendCard("forest", toList: first.id)
     try database.appendCard("beta", toList: first.id)
-    let second = try database.createCardList(named: "Second")
+    let second = try database.createCardCollection(named: "Second")
     try database.appendCard("beta", toList: second.id)
-    model.reloadCardLists(selecting: first.id, activatingSelection: true)
+    model.reloadCardCollections(selecting: first.id, activatingSelection: true)
     XCTAssertFalse(model.canUndoListAction)
 
-    let positionsBefore = try database.cardListEntries(forListID: first.id).map(\.position)
-    model.setCardListDisplaySort(id: first.id, mode: .releaseDate, direction: .ascending)
+    let positionsBefore = try database.cardCollectionEntries(forListID: first.id).map(\.position)
+    model.setCardCollectionDisplaySort(id: first.id, mode: .releaseDate, direction: .ascending)
 
-    XCTAssertEqual(model.selectedList?.displaySortMode, .releaseDate)
-    XCTAssertEqual(model.selectedList?.displaySortDirection, .ascending)
+    XCTAssertEqual(model.selectedCollection?.displaySortMode, .releaseDate)
+    XCTAssertEqual(model.selectedCollection?.displaySortDirection, .ascending)
     XCTAssertEqual(
       model.statusMessage,
       "Sorted First by Release Date, Newest First."
     )
     XCTAssertFalse(model.canUndoListAction)
-    XCTAssertEqual(try database.cardListEntries(forListID: first.id).map(\.position), positionsBefore)
+    XCTAssertEqual(try database.cardCollectionEntries(forListID: first.id).map(\.position), positionsBefore)
 
-    model.selectCardList(id: second.id)
-    XCTAssertNil(model.selectedList?.displaySortMode)
-    XCTAssertEqual(model.selectedList?.displaySortDirection, .ascending)
+    model.selectCardCollection(id: second.id)
+    XCTAssertNil(model.selectedCollection?.displaySortMode)
+    XCTAssertEqual(model.selectedCollection?.displaySortDirection, .ascending)
 
-    model.setCardListDisplaySort(id: second.id, mode: .edhrecRank, direction: .descending)
-    XCTAssertEqual(model.selectedList?.displaySortMode, .edhrecRank)
-    XCTAssertEqual(model.selectedList?.displaySortDirection, .descending)
+    model.setCardCollectionDisplaySort(id: second.id, mode: .edhrecRank, direction: .descending)
+    XCTAssertEqual(model.selectedCollection?.displaySortMode, .edhrecRank)
+    XCTAssertEqual(model.selectedCollection?.displaySortDirection, .descending)
 
-    model.selectCardList(id: first.id)
-    XCTAssertEqual(model.selectedList?.displaySortMode, .releaseDate)
-    XCTAssertEqual(model.selectedList?.displaySortDirection, .ascending)
+    model.selectCardCollection(id: first.id)
+    XCTAssertEqual(model.selectedCollection?.displaySortMode, .releaseDate)
+    XCTAssertEqual(model.selectedCollection?.displaySortDirection, .ascending)
   }
 
   func testModelPersistsPrintingSelectionOnlyForListEntries() async throws {
@@ -4904,30 +4904,30 @@ final class GrimoraAppModelTests: XCTestCase {
       ))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Tempo Picks", selectAfterCreate: true))
+    let list = try XCTUnwrap(model.createCardCollection(named: "Tempo Picks", selectAfterCreate: true))
     model.addCard(olderPrinting, toListID: list.id)
-    let listEntry = try XCTUnwrap(model.selectedListEntries.first)
+    let listEntry = try XCTUnwrap(model.selectedCollectionEntries.first)
     let listEntryCard = try XCTUnwrap(listEntry.card)
 
     model.selectCard(listEntryCard, fromListEntryID: listEntry.id)
     await model.loadPrintings(for: listEntryCard)
     await model.cacheDetailImages(for: listEntryCard)
     await model.drainImageDownloadsForTesting()
-    XCTAssertEqual(model.selectedCardListEntryID, listEntry.id)
+    XCTAssertEqual(model.selectedCardCollectionEntryID, listEntry.id)
 
     model.selectPrinting(promoPrinting)
 
     XCTAssertEqual(model.selectedCard?.id, promoPrinting.id)
-    XCTAssertEqual(model.selectedCardListEntryID, model.selectedListEntries.first?.id)
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), [promoPrinting.id])
-    XCTAssertEqual(model.selectedListEntries.compactMap(\.card?.id), [promoPrinting.id])
+    XCTAssertEqual(model.selectedCardCollectionEntryID, model.selectedCollectionEntries.first?.id)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), [promoPrinting.id])
+    XCTAssertEqual(model.selectedCollectionEntries.compactMap(\.card?.id), [promoPrinting.id])
 
     model.selectCard(currentPrinting)
     model.selectPrinting(olderPrinting)
 
-    XCTAssertNil(model.selectedCardListEntryID)
+    XCTAssertNil(model.selectedCardCollectionEntryID)
     XCTAssertEqual(model.selectedCard?.id, olderPrinting.id)
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), [promoPrinting.id])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), [promoPrinting.id])
   }
 
   func testModelPinsListsAndKeepsSidebarSelectionStable() async throws {
@@ -4937,32 +4937,32 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let first = try XCTUnwrap(model.createCardList(named: "First"))
-    let second = try XCTUnwrap(model.createCardList(named: "Second"))
-    _ = try XCTUnwrap(model.createCardList(named: "Third"))
+    let first = try XCTUnwrap(model.createCardCollection(named: "First"))
+    let second = try XCTUnwrap(model.createCardCollection(named: "Second"))
+    _ = try XCTUnwrap(model.createCardCollection(named: "Third"))
 
-    model.setCardListPinned(id: first.id, isPinned: true, now: Date(timeIntervalSince1970: 10))
-    model.setCardListPinned(id: second.id, isPinned: true, now: Date(timeIntervalSince1970: 20))
+    model.setCardCollectionPinned(id: first.id, isPinned: true, now: Date(timeIntervalSince1970: 10))
+    model.setCardCollectionPinned(id: second.id, isPinned: true, now: Date(timeIntervalSince1970: 20))
 
-    XCTAssertEqual(model.pinnedCardLists.map(\.name), ["Second", "First"])
-    XCTAssertEqual(model.unpinnedCardLists.map(\.name), ["Third"])
+    XCTAssertEqual(model.pinnedCardCollections.map(\.name), ["Second", "First"])
+    XCTAssertEqual(model.unpinnedCardCollections.map(\.name), ["Third"])
 
-    model.selectCardList(id: first.id)
+    model.selectCardCollection(id: first.id)
     XCTAssertEqual(model.sidebarSelection, .list(first.id))
     model.selectSearch()
     XCTAssertEqual(model.sidebarSelection, .search)
-    XCTAssertEqual(model.selectedListID, first.id)
+    XCTAssertEqual(model.selectedCollectionID, first.id)
 
-    model.setCardListPinned(id: second.id, isPinned: false, now: Date(timeIntervalSince1970: 30))
-    XCTAssertEqual(model.pinnedCardLists.map(\.name), ["First"])
-    XCTAssertEqual(model.unpinnedCardLists.map(\.name), ["Second", "Third"])
+    model.setCardCollectionPinned(id: second.id, isPinned: false, now: Date(timeIntervalSince1970: 30))
+    XCTAssertEqual(model.pinnedCardCollections.map(\.name), ["First"])
+    XCTAssertEqual(model.unpinnedCardCollections.map(\.name), ["Second", "Third"])
     XCTAssertEqual(model.sidebarSelection, .search)
-    XCTAssertEqual(model.selectedListID, first.id)
+    XCTAssertEqual(model.selectedCollectionID, first.id)
 
-    model.selectCardList(id: first.id)
-    model.deleteCardList(id: first.id)
+    model.selectCardCollection(id: first.id)
+    model.deleteCardCollection(id: first.id)
     XCTAssertEqual(model.sidebarSelection, .listsOverview)
-    XCTAssertNil(model.selectedListID)
+    XCTAssertNil(model.selectedCollectionID)
   }
 
   func testModelMovesListsWithinAndAcrossSidebarSections() async throws {
@@ -4972,53 +4972,53 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let first = try XCTUnwrap(model.createCardList(named: "First"))
-    let second = try XCTUnwrap(model.createCardList(named: "Second"))
-    let third = try XCTUnwrap(model.createCardList(named: "Third"))
+    let first = try XCTUnwrap(model.createCardCollection(named: "First"))
+    let second = try XCTUnwrap(model.createCardCollection(named: "Second"))
+    let third = try XCTUnwrap(model.createCardCollection(named: "Third"))
 
-    model.setCardListPinned(id: first.id, isPinned: true, now: Date(timeIntervalSince1970: 10))
-    model.setCardListPinned(id: second.id, isPinned: true, now: Date(timeIntervalSince1970: 20))
-    XCTAssertEqual(model.pinnedCardLists.map(\.name), ["Second", "First"])
-    XCTAssertEqual(model.unpinnedCardLists.map(\.name), ["Third"])
+    model.setCardCollectionPinned(id: first.id, isPinned: true, now: Date(timeIntervalSince1970: 10))
+    model.setCardCollectionPinned(id: second.id, isPinned: true, now: Date(timeIntervalSince1970: 20))
+    XCTAssertEqual(model.pinnedCardCollections.map(\.name), ["Second", "First"])
+    XCTAssertEqual(model.unpinnedCardCollections.map(\.name), ["Third"])
 
-    model.selectCardList(id: first.id)
-    model.moveCardList(id: first.id, toPosition: 0, isPinned: true)
-    XCTAssertEqual(model.pinnedCardLists.map(\.name), ["First", "Second"])
+    model.selectCardCollection(id: first.id)
+    model.moveCardCollection(id: first.id, toPosition: 0, isPinned: true)
+    XCTAssertEqual(model.pinnedCardCollections.map(\.name), ["First", "Second"])
     XCTAssertEqual(model.sidebarSelection, .list(first.id))
-    XCTAssertEqual(model.selectedListID, first.id)
+    XCTAssertEqual(model.selectedCollectionID, first.id)
 
-    model.moveCardList(id: third.id, toPosition: 1, isPinned: true)
-    XCTAssertEqual(model.pinnedCardLists.map(\.name), ["First", "Third", "Second"])
-    XCTAssertTrue(model.unpinnedCardLists.isEmpty)
+    model.moveCardCollection(id: third.id, toPosition: 1, isPinned: true)
+    XCTAssertEqual(model.pinnedCardCollections.map(\.name), ["First", "Third", "Second"])
+    XCTAssertTrue(model.unpinnedCardCollections.isEmpty)
 
-    model.moveCardList(id: third.id, by: 1)
-    XCTAssertEqual(model.pinnedCardLists.map(\.name), ["First", "Second", "Third"])
+    model.moveCardCollection(id: third.id, by: 1)
+    XCTAssertEqual(model.pinnedCardCollections.map(\.name), ["First", "Second", "Third"])
 
-    model.moveCardList(id: first.id, toPosition: 0, isPinned: false)
-    XCTAssertEqual(model.pinnedCardLists.map(\.name), ["Second", "Third"])
-    XCTAssertEqual(model.unpinnedCardLists.map(\.name), ["First"])
+    model.moveCardCollection(id: first.id, toPosition: 0, isPinned: false)
+    XCTAssertEqual(model.pinnedCardCollections.map(\.name), ["Second", "Third"])
+    XCTAssertEqual(model.unpinnedCardCollections.map(\.name), ["First"])
     XCTAssertEqual(model.sidebarSelection, .list(first.id))
-    XCTAssertEqual(model.selectedListID, first.id)
+    XCTAssertEqual(model.selectedCollectionID, first.id)
   }
 
   func testModelLoadsMissingListEntriesAndRejectsMissingCardAdds() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards([uiRecords()[0]])
     try markLibraryReady(database)
-    let list = try database.createCardList(named: "Archive")
+    let list = try database.createCardCollection(named: "Archive")
     try database.appendCard("missing-print", toList: list.id)
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites", "Archive"])
-    model.selectCardList(id: list.id)
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["missing-print"])
-    XCTAssertNil(model.selectedListEntries.first?.card)
+    XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites", "Archive"])
+    model.selectCardCollection(id: list.id)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["missing-print"])
+    XCTAssertNil(model.selectedCollectionEntries.first?.card)
 
     model.addCardID("another-missing-print", toListID: list.id)
 
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["missing-print"])
-    XCTAssertEqual(model.selectedList?.entryCount, 1)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["missing-print"])
+    XCTAssertEqual(model.selectedCollection?.entryCount, 1)
     XCTAssertEqual(model.statusMessage, "That card is no longer in the local library.")
   }
 
@@ -5029,57 +5029,57 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Deck", selectAfterCreate: true))
-    let ramp = try XCTUnwrap(model.createCardListCategory(named: "Ramp"))
-    let removal = try XCTUnwrap(model.createCardListCategory(named: "Removal"))
-    let utility = try XCTUnwrap(model.createCardListCategory(named: "Utility"))
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp", "Removal", "Utility"])
-    XCTAssertEqual(model.selectedListCategories.map(\.entryCount), [0, 0, 0])
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck", selectAfterCreate: true))
+    let ramp = try XCTUnwrap(model.createCardCollectionCategory(named: "Ramp"))
+    let removal = try XCTUnwrap(model.createCardCollectionCategory(named: "Removal"))
+    let utility = try XCTUnwrap(model.createCardCollectionCategory(named: "Utility"))
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Ramp", "Removal", "Utility"])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.entryCount), [0, 0, 0])
 
-    XCTAssertNil(model.createCardListCategory(named: "ramp"))
+    XCTAssertNil(model.createCardCollectionCategory(named: "ramp"))
     XCTAssertEqual(model.statusMessage, "Category already exists.")
 
     let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
     model.addCard(forest, toListID: list.id)
-    XCTAssertEqual(model.selectedListEntries.map(\.categoryID), [nil])
-    XCTAssertEqual(model.selectedList?.entryCount, 1)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.categoryID), [nil])
+    XCTAssertEqual(model.selectedCollection?.entryCount, 1)
 
-    let entryID = try XCTUnwrap(model.selectedListEntries.first?.id)
-    model.moveCardListEntry(id: entryID, toCategoryID: ramp.id)
-    XCTAssertEqual(model.selectedListEntries.map(\.categoryID), [ramp.id])
-    XCTAssertEqual(model.selectedListCategories.map(\.entryCount), [1, 0, 0])
+    let entryID = try XCTUnwrap(model.selectedCollectionEntries.first?.id)
+    model.moveCardCollectionEntry(id: entryID, toCategoryID: ramp.id)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.categoryID), [ramp.id])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.entryCount), [1, 0, 0])
 
     model.addCard(forest, toListID: list.id)
-    XCTAssertEqual(model.selectedListEntries.map(\.categoryID), [ramp.id, nil])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [1, 1])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.categoryID), [ramp.id, nil])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [1, 1])
 
-    let uncategorizedEntryID = try XCTUnwrap(model.selectedListEntries.first { $0.categoryID == nil }?.id)
-    model.moveCardListEntry(id: uncategorizedEntryID, toCategoryID: ramp.id)
-    XCTAssertEqual(model.selectedListEntries.map(\.categoryID), [ramp.id])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [2])
-    XCTAssertEqual(model.selectedListCategories.map(\.entryCount), [2, 0, 0])
+    let uncategorizedEntryID = try XCTUnwrap(model.selectedCollectionEntries.first { $0.categoryID == nil }?.id)
+    model.moveCardCollectionEntry(id: uncategorizedEntryID, toCategoryID: ramp.id)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.categoryID), [ramp.id])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [2])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.entryCount), [2, 0, 0])
 
-    model.renameCardListCategory(id: removal.id, to: "Interaction")
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp", "Interaction", "Utility"])
+    model.renameCardCollectionCategory(id: removal.id, to: "Interaction")
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Ramp", "Interaction", "Utility"])
 
-    model.moveCardListCategory(id: utility.id, toPosition: 0)
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Utility", "Ramp", "Interaction"])
+    model.moveCardCollectionCategory(id: utility.id, toPosition: 0)
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Utility", "Ramp", "Interaction"])
 
-    model.moveCardListCategory(id: utility.id, toPosition: model.selectedListCategories.count - 1)
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp", "Interaction", "Utility"])
+    model.moveCardCollectionCategory(id: utility.id, toPosition: model.selectedCollectionCategories.count - 1)
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Ramp", "Interaction", "Utility"])
 
-    model.moveCardListCategory(id: removal.id, by: -1)
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Interaction", "Ramp", "Utility"])
+    model.moveCardCollectionCategory(id: removal.id, by: -1)
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Interaction", "Ramp", "Utility"])
 
-    model.deleteCardListCategory(id: ramp.id)
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Interaction", "Utility"])
-    XCTAssertEqual(model.selectedListEntries.map(\.categoryID), [nil])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [2])
+    model.deleteCardCollectionCategory(id: ramp.id)
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Interaction", "Utility"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.categoryID), [nil])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [2])
   }
 
   func testReorderOverlayMovesMatchNativeReorderAndPersist() async throws {
     // Exercises the touch reorder overlay end to end: SwiftUI `.onMove` offsets are mapped through
-    // CardListCategoryReorder.destinationPosition into moveCardListCategory, and the resulting order
+    // CardCollectionCategoryReorder.destinationPosition into moveCardCollectionCategory, and the resulting order
     // must match a native Array.move (what List.onMove performs) and survive in the database.
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
@@ -5087,33 +5087,33 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Deck", selectAfterCreate: true))
-    _ = try XCTUnwrap(model.createCardListCategory(named: "Aggro"))
-    _ = try XCTUnwrap(model.createCardListCategory(named: "Bounce"))
-    _ = try XCTUnwrap(model.createCardListCategory(named: "Combo"))
-    _ = try XCTUnwrap(model.createCardListCategory(named: "Defense"))
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck", selectAfterCreate: true))
+    _ = try XCTUnwrap(model.createCardCollectionCategory(named: "Aggro"))
+    _ = try XCTUnwrap(model.createCardCollectionCategory(named: "Bounce"))
+    _ = try XCTUnwrap(model.createCardCollectionCategory(named: "Combo"))
+    _ = try XCTUnwrap(model.createCardCollectionCategory(named: "Defense"))
 
     var expected = ["Aggro", "Bounce", "Combo", "Defense"]
-    XCTAssertEqual(model.selectedListCategories.map(\.name), expected)
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), expected)
 
     // Drag the last category to the top.
     try applyReorderOverlayMove(in: model, expected: &expected, from: IndexSet(integer: 3), to: 0)
-    XCTAssertEqual(model.selectedListCategories.map(\.name), expected)
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), expected)
 
     // Drag the new second category to the very end.
     try applyReorderOverlayMove(in: model, expected: &expected, from: IndexSet(integer: 1), to: 4)
-    XCTAssertEqual(model.selectedListCategories.map(\.name), expected)
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), expected)
 
     // Drag a middle category up by one.
     try applyReorderOverlayMove(in: model, expected: &expected, from: IndexSet(integer: 2), to: 1)
-    XCTAssertEqual(model.selectedListCategories.map(\.name), expected)
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), expected)
 
     // The reordered sequence is persisted, not just reflected in the published snapshot.
-    let persisted = try database.cardListCategories(forListID: list.id).map(\.name)
+    let persisted = try database.cardCollectionCategories(forListID: list.id).map(\.name)
     XCTAssertEqual(persisted, expected)
   }
 
-  /// Reproduces `CardListCategoryReorderSheet.move(from:to:)`: maps the SwiftUI offset, drives the
+  /// Reproduces `CardCollectionCategoryReorderSheet.move(from:to:)`: maps the SwiftUI offset, drives the
   /// model, and applies the same `Array.move` to the expected names so the two stay verified in lockstep.
   private func applyReorderOverlayMove(
     in model: GrimoraAppModel,
@@ -5123,11 +5123,11 @@ final class GrimoraAppModelTests: XCTestCase {
   ) throws {
     let sourceIndex = try XCTUnwrap(source.first)
     let destination = try XCTUnwrap(
-      CardListCategoryReorder.destinationPosition(forMoveFrom: source, to: offset)
+      CardCollectionCategoryReorder.destinationPosition(forMoveFrom: source, to: offset)
     )
-    let movedID = model.selectedListCategories[sourceIndex].id
+    let movedID = model.selectedCollectionCategories[sourceIndex].id
     expected.move(fromOffsets: source, toOffset: offset)
-    model.moveCardListCategory(id: movedID, toPosition: destination)
+    model.moveCardCollectionCategory(id: movedID, toPosition: destination)
   }
 
   func testModelBulkMovesAndRemovesListEntries() async throws {
@@ -5137,46 +5137,46 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Deck", selectAfterCreate: true))
-    let ramp = try XCTUnwrap(model.createCardListCategory(named: "Ramp"))
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck", selectAfterCreate: true))
+    let ramp = try XCTUnwrap(model.createCardCollectionCategory(named: "Ramp"))
     let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
     let beta = try XCTUnwrap(model.cards.first { $0.id == "beta" })
 
     model.addCard(forest, toListID: list.id)
     model.addCard(forest, toListID: list.id)
-    let rampForestID = try XCTUnwrap(model.selectedListEntries.first { $0.cardID == forest.id }?.id)
-    model.moveCardListEntry(id: rampForestID, toCategoryID: ramp.id)
+    let rampForestID = try XCTUnwrap(model.selectedCollectionEntries.first { $0.cardID == forest.id }?.id)
+    model.moveCardCollectionEntry(id: rampForestID, toCategoryID: ramp.id)
 
     model.addCard(forest, toListID: list.id)
     model.addCard(beta, toListID: list.id)
     let uncategorizedForestID = try XCTUnwrap(
-      model.selectedListEntries.first { $0.cardID == forest.id && $0.categoryID == nil }?.id)
+      model.selectedCollectionEntries.first { $0.cardID == forest.id && $0.categoryID == nil }?.id)
     let uncategorizedBetaID = try XCTUnwrap(
-      model.selectedListEntries.first { $0.cardID == beta.id && $0.categoryID == nil }?.id)
+      model.selectedCollectionEntries.first { $0.cardID == beta.id && $0.categoryID == nil }?.id)
 
-    model.moveCardListEntries(ids: [uncategorizedForestID, uncategorizedBetaID], toCategoryID: ramp.id)
+    model.moveCardCollectionEntries(ids: [uncategorizedForestID, uncategorizedBetaID], toCategoryID: ramp.id)
 
     let rampForestEntry = try XCTUnwrap(
-      model.selectedListEntries.first { $0.cardID == forest.id && $0.categoryID == ramp.id })
+      model.selectedCollectionEntries.first { $0.cardID == forest.id && $0.categoryID == ramp.id })
     let rampBetaEntry = try XCTUnwrap(
-      model.selectedListEntries.first { $0.cardID == beta.id && $0.categoryID == ramp.id })
-    XCTAssertEqual(model.selectedListEntries.count, 2)
+      model.selectedCollectionEntries.first { $0.cardID == beta.id && $0.categoryID == ramp.id })
+    XCTAssertEqual(model.selectedCollectionEntries.count, 2)
     XCTAssertEqual(rampForestEntry.quantity, 3)
     XCTAssertEqual(rampBetaEntry.quantity, 1)
-    XCTAssertEqual(model.selectedListCategories.map(\.entryCount), [4])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.entryCount), [4])
     XCTAssertEqual(model.statusMessage, "Moved 2 cards to Ramp.")
 
-    model.removeCardListEntries(ids: [rampForestEntry.id, rampBetaEntry.id])
+    model.removeCardCollectionEntries(ids: [rampForestEntry.id, rampBetaEntry.id])
 
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), [forest.id])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [2])
-    XCTAssertEqual(model.selectedList?.entryCount, 2)
-    XCTAssertEqual(model.selectedListCategories.map(\.entryCount), [2])
-    XCTAssertEqual(model.statusMessage, "Removed 2 cards from list.")
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), [forest.id])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [2])
+    XCTAssertEqual(model.selectedCollection?.entryCount, 2)
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.entryCount), [2])
+    XCTAssertEqual(model.statusMessage, "Removed 2 cards from collection.")
   }
 
   func testOnCardCreateCategoryFilesEntryIntoNewCategory() async throws {
-    // Mirrors the on-card "New Category…" action (CardListDetailView.createCategory):
+    // Mirrors the on-card "New Category…" action (CardCollectionDetailView.createCategory):
     // create a brand-new category from a card's own context and move it straight in.
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
@@ -5184,28 +5184,28 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Deck", selectAfterCreate: true))
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck", selectAfterCreate: true))
     let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
     model.addCard(forest, toListID: list.id)
 
     // No categories exist yet — the card should still be able to seed the first one.
-    XCTAssertTrue(model.selectedListCategories.isEmpty)
-    let entryID = try XCTUnwrap(model.selectedListEntries.first?.id)
+    XCTAssertTrue(model.selectedCollectionCategories.isEmpty)
+    let entryID = try XCTUnwrap(model.selectedCollectionEntries.first?.id)
 
-    let ramp = try XCTUnwrap(model.createCardListCategory(named: "Ramp", inListID: list.id))
-    model.moveCardListEntry(id: entryID, toCategoryID: ramp.id)
+    let ramp = try XCTUnwrap(model.createCardCollectionCategory(named: "Ramp", inListID: list.id))
+    model.moveCardCollectionEntry(id: entryID, toCategoryID: ramp.id)
 
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp"])
-    XCTAssertEqual(model.selectedListCategories.map(\.entryCount), [1])
-    XCTAssertEqual(model.selectedListEntries.map(\.categoryID), [ramp.id])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Ramp"])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.entryCount), [1])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.categoryID), [ramp.id])
     XCTAssertEqual(model.statusMessage, "Moved card to Ramp.")
 
     // Filing into a second new category moves the card out of the first.
-    let removal = try XCTUnwrap(model.createCardListCategory(named: "Removal", inListID: list.id))
-    model.moveCardListEntry(id: entryID, toCategoryID: removal.id)
+    let removal = try XCTUnwrap(model.createCardCollectionCategory(named: "Removal", inListID: list.id))
+    model.moveCardCollectionEntry(id: entryID, toCategoryID: removal.id)
 
-    XCTAssertEqual(model.selectedListEntries.map(\.categoryID), [removal.id])
-    XCTAssertEqual(model.selectedListCategories.map(\.entryCount), [0, 1])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.categoryID), [removal.id])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.entryCount), [0, 1])
   }
 
   func testModelRulesetWarningsZonesAndExactQuantityActions() async throws {
@@ -5254,8 +5254,8 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Modern Deck", selectAfterCreate: true))
-    model.setCardListRuleset(id: list.id, ruleset: .modern)
+    let list = try XCTUnwrap(model.createCardCollection(named: "Modern Deck", selectAfterCreate: true))
+    model.setCardCollectionRuleset(id: list.id, ruleset: .modern)
     XCTAssertEqual(model.statusMessage, "Set Modern Deck ruleset to Modern.")
 
     let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
@@ -5263,17 +5263,17 @@ final class GrimoraAppModelTests: XCTestCase {
     model.addCard(forest, toListID: list.id)
     model.addCard(beta, toListID: list.id)
 
-    let forestEntryID = try XCTUnwrap(model.selectedListEntries.first { $0.cardID == forest.id }?.id)
-    let betaEntryID = try XCTUnwrap(model.selectedListEntries.first { $0.cardID == beta.id }?.id)
-    model.moveCardListEntry(id: betaEntryID, toZone: .sideboard)
-    model.setCardListEntryQuantities(ids: [forestEntryID, betaEntryID], quantity: 5)
+    let forestEntryID = try XCTUnwrap(model.selectedCollectionEntries.first { $0.cardID == forest.id }?.id)
+    let betaEntryID = try XCTUnwrap(model.selectedCollectionEntries.first { $0.cardID == beta.id }?.id)
+    model.moveCardCollectionEntry(id: betaEntryID, toZone: .sideboard)
+    model.setCardCollectionEntryQuantities(ids: [forestEntryID, betaEntryID], quantity: 5)
 
-    XCTAssertEqual(model.selectedList?.ruleset, .modern)
-    XCTAssertEqual(model.selectedListEntries.map(\.zone), [.mainboard, .sideboard])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [5, 5])
-    XCTAssertEqual(model.selectedList?.entryCount, 10)
+    XCTAssertEqual(model.selectedCollection?.ruleset, .modern)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.zone), [.mainboard, .sideboard])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [5, 5])
+    XCTAssertEqual(model.selectedCollection?.entryCount, 10)
 
-    let warningIDs = Set(model.selectedListRulesetWarnings.map(\.id))
+    let warningIDs = Set(model.selectedCollectionRulesetWarnings.map(\.id))
     XCTAssertTrue(warningIDs.contains("modern-mainboard-size"))
     XCTAssertTrue(warningIDs.contains("modern-copy-limit-forest-oracle"))
     XCTAssertTrue(warningIDs.contains("modern-copy-limit-beta-oracle"))
@@ -5286,50 +5286,50 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Archive Source", selectAfterCreate: true))
-    let category = try XCTUnwrap(model.createCardListCategory(named: "Ramp"))
+    let list = try XCTUnwrap(model.createCardCollection(named: "Archive Source", selectAfterCreate: true))
+    let category = try XCTUnwrap(model.createCardCollectionCategory(named: "Ramp"))
     let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
     model.addCard(forest, toListID: list.id)
     model.addCard(forest, toListID: list.id)
     try database.appendCard("missing-print", toList: list.id, categoryID: category.id)
-    model.saveCardListDescription(
+    model.saveCardCollectionDescription(
       forListID: list.id,
       rtfdData: Data([0x10, 0x20, 0x30]),
       plainText: "Mulligan notes"
     )
-    model.setCardListDashboardVisibility(id: list.id, showsDashboard: false)
-    model.setCardListDashboardIncludesLands(id: list.id, includesLands: true)
-    model.setCardListDisplaySort(id: list.id, mode: .edhrecRank, direction: .descending)
-    model.setCardListViewMode(id: list.id, mode: .list)
-    model.selectCardList(id: list.id)
+    model.setCardCollectionDashboardVisibility(id: list.id, showsDashboard: false)
+    model.setCardCollectionDashboardIncludesLands(id: list.id, includesLands: true)
+    model.setCardCollectionDisplaySort(id: list.id, mode: .edhrecRank, direction: .descending)
+    model.setCardCollectionViewMode(id: list.id, mode: .list)
+    model.selectCardCollection(id: list.id)
 
-    let sourceList = try XCTUnwrap(model.selectedList)
-    let export = CardListExporter.export(
+    let sourceList = try XCTUnwrap(model.selectedCollection)
+    let export = CardCollectionExporter.export(
       list: sourceList,
-      entries: model.selectedListEntries,
-      categories: model.selectedListCategories,
-      configuration: CardListExportConfiguration(format: .grimoraArchive)
+      entries: model.selectedCollectionEntries,
+      categories: model.selectedCollectionCategories,
+      configuration: CardCollectionExportConfiguration(format: .grimoraArchive)
     )
     let archiveData = try XCTUnwrap(export.data)
 
-    let summary = try XCTUnwrap(model.importCardListArchive(data: archiveData))
+    let summary = try XCTUnwrap(model.importCardCollectionArchive(data: archiveData))
     XCTAssertEqual(summary.listName, "Archive Source")
     XCTAssertEqual(summary.cardCount, 3)
     XCTAssertEqual(summary.categoryCount, 1)
     XCTAssertEqual(summary.missingCardIDs, ["missing-print"])
 
-    XCTAssertEqual(model.cardLists.map(\.name), ["Favourites", "Archive Source", "Archive Source"])
-    XCTAssertEqual(model.selectedList?.descriptionRTFDData, Data([0x10, 0x20, 0x30]))
-    XCTAssertEqual(model.selectedList?.descriptionPlainText, "Mulligan notes")
-    XCTAssertEqual(model.selectedList?.showsDashboard, false)
-    XCTAssertEqual(model.selectedList?.dashboardIncludesLands, true)
-    XCTAssertEqual(model.selectedList?.displaySortMode, .edhrecRank)
-    XCTAssertEqual(model.selectedList?.displaySortDirection, .descending)
-    XCTAssertEqual(model.selectedList?.viewMode, .list)
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp"])
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest", "missing-print"])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [2, 1])
-    XCTAssertNil(model.selectedListEntries.last?.card)
+    XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites", "Archive Source", "Archive Source"])
+    XCTAssertEqual(model.selectedCollection?.descriptionRTFDData, Data([0x10, 0x20, 0x30]))
+    XCTAssertEqual(model.selectedCollection?.descriptionPlainText, "Mulligan notes")
+    XCTAssertEqual(model.selectedCollection?.showsDashboard, false)
+    XCTAssertEqual(model.selectedCollection?.dashboardIncludesLands, true)
+    XCTAssertEqual(model.selectedCollection?.displaySortMode, .edhrecRank)
+    XCTAssertEqual(model.selectedCollection?.displaySortDirection, .descending)
+    XCTAssertEqual(model.selectedCollection?.viewMode, .list)
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Ramp"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest", "missing-print"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [2, 1])
+    XCTAssertNil(model.selectedCollectionEntries.last?.card)
   }
 
   func testModelCreatesListFromArchidektTextAndReportsSkippedLines() async throws {
@@ -5339,7 +5339,7 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let importResult = await model.createCardListFromArchidektSource(
+    let importResult = await model.createCardCollectionFromArchidektSource(
       """
       2x Alpha Forest (abc) 1 [Ramp] ^Have,#37d67a^
       1x Beta Mage (abc) 2 *F* [Removal] ^Have,#37d67a^
@@ -5354,11 +5354,11 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(summary.cardCount, 3)
     XCTAssertEqual(summary.categoryCount, 2)
     XCTAssertEqual(summary.skippedLines.count, 2)
-    XCTAssertEqual(model.selectedList?.name, "Imported Deck")
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest", "beta"])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [2, 1])
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp", "Removal"])
-    XCTAssertEqual(model.selectedListCategories.map(\.entryCount), [2, 1])
+    XCTAssertEqual(model.selectedCollection?.name, "Imported Deck")
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest", "beta"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [2, 1])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Ramp", "Removal"])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.entryCount), [2, 1])
     XCTAssertEqual(model.statusMessage, "Imported 3 cards into Imported Deck. 2 skipped.")
   }
 
@@ -5369,8 +5369,8 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Deck", selectAfterCreate: true))
-    let ramp = try XCTUnwrap(model.createCardListCategory(named: "Ramp", inListID: list.id))
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck", selectAfterCreate: true))
+    let ramp = try XCTUnwrap(model.createCardCollectionCategory(named: "Ramp", inListID: list.id))
 
     let text = """
       1x Alpha Forest (abc) 1 [ramp] ^Have,#37d67a^
@@ -5383,11 +5383,11 @@ final class GrimoraAppModelTests: XCTestCase {
 
     XCTAssertEqual(firstImport.cardCount, 2)
     XCTAssertEqual(secondImport.cardCount, 2)
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest", "beta"])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [2, 2])
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp"])
-    XCTAssertEqual(model.selectedListCategories.first?.id, ramp.id)
-    XCTAssertEqual(model.selectedListCategories.first?.entryCount, 4)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest", "beta"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [2, 2])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Ramp"])
+    XCTAssertEqual(model.selectedCollectionCategories.first?.id, ramp.id)
+    XCTAssertEqual(model.selectedCollectionCategories.first?.entryCount, 4)
   }
 
   func testRepeatedArchidektImportPreservesCategoryAndSectionIdentifiers() async throws {
@@ -5397,7 +5397,7 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Stable Import", selectAfterCreate: true))
+    let list = try XCTUnwrap(model.createCardCollection(named: "Stable Import", selectAfterCreate: true))
     let source = """
       1x Alpha Forest (abc) 1 [Ramp] ^Have,#37d67a^
       1x Beta Mage (abc) 2 [Removal] ^Have,#37d67a^
@@ -5405,21 +5405,21 @@ final class GrimoraAppModelTests: XCTestCase {
 
     let firstImport = await model.importArchidektCards(from: source, intoListID: list.id)
     _ = try XCTUnwrap(firstImport)
-    let firstCategoryIDs = model.selectedListCategories.map(\.id)
-    let firstSectionIDs = CardListEntrySectionBuilder.sections(
-      entries: model.selectedListEntries,
-      categories: model.selectedListCategories
+    let firstCategoryIDs = model.selectedCollectionCategories.map(\.id)
+    let firstSectionIDs = CardCollectionEntrySectionBuilder.sections(
+      entries: model.selectedCollectionEntries,
+      categories: model.selectedCollectionCategories
     ).map(\.id)
 
     let secondImport = await model.importArchidektCards(from: source, intoListID: list.id)
     _ = try XCTUnwrap(secondImport)
-    let secondCategoryIDs = model.selectedListCategories.map(\.id)
-    let secondSectionIDs = CardListEntrySectionBuilder.sections(
-      entries: model.selectedListEntries,
-      categories: model.selectedListCategories
+    let secondCategoryIDs = model.selectedCollectionCategories.map(\.id)
+    let secondSectionIDs = CardCollectionEntrySectionBuilder.sections(
+      entries: model.selectedCollectionEntries,
+      categories: model.selectedCollectionCategories
     ).map(\.id)
 
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp", "Removal"])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Ramp", "Removal"])
     XCTAssertEqual(secondCategoryIDs, firstCategoryIDs)
     XCTAssertEqual(secondSectionIDs, firstSectionIDs)
     XCTAssertEqual(secondSectionIDs, secondCategoryIDs)
@@ -5432,8 +5432,8 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Commander Deck", selectAfterCreate: true))
-    model.setCardListRuleset(id: list.id, ruleset: .commander)
+    let list = try XCTUnwrap(model.createCardCollection(named: "Commander Deck", selectAfterCreate: true))
+    model.setCardCollectionRuleset(id: list.id, ruleset: .commander)
 
     let importResult = await model.importArchidektCards(
       from: """
@@ -5447,11 +5447,11 @@ final class GrimoraAppModelTests: XCTestCase {
 
     XCTAssertEqual(summary.cardCount, 3)
     XCTAssertEqual(summary.categoryCount, 1)
-    XCTAssertEqual(model.selectedList?.ruleset, .commander)
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest", "beta", "token"])
-    XCTAssertEqual(model.selectedListEntries.map(\.zone), [.commander, .mainboard, .maybeboard])
-    XCTAssertEqual(model.selectedListCategories.map(\.name), ["Ramp"])
-    XCTAssertEqual(model.selectedListCategories.map(\.zone), [.mainboard])
+    XCTAssertEqual(model.selectedCollection?.ruleset, .commander)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest", "beta", "token"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.zone), [.commander, .mainboard, .maybeboard])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.name), ["Ramp"])
+    XCTAssertEqual(model.selectedCollectionCategories.map(\.zone), [.mainboard])
   }
 
   func testModelImportsArchidektDeckURLUsingMockedDeckResponse() async throws {
@@ -5482,7 +5482,7 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database, network: network))
     await model.drainSearchForTesting()
 
-    let importResult = await model.createCardListFromArchidektSource(
+    let importResult = await model.createCardCollectionFromArchidektSource(
       "https://archidekt.com/decks/21928855/knives_and_forks"
     )
     let summary = try XCTUnwrap(importResult)
@@ -5491,10 +5491,10 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(summary.sourceName, "Knives and Forks")
     XCTAssertEqual(summary.cardCount, 2)
     XCTAssertEqual(summary.categoryCount, 0)
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest"])
-    XCTAssertEqual(model.selectedListEntries.map(\.quantity), [2])
-    XCTAssertEqual(model.selectedListEntries.map(\.zone), [.mainboard])
-    XCTAssertTrue(model.selectedListCategories.isEmpty)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest"])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [2])
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.zone), [.mainboard])
+    XCTAssertTrue(model.selectedCollectionCategories.isEmpty)
   }
 
   func testLoadValueGuideReadsLocalMTGJSONSummaryForSelectedCard() async throws {
@@ -5890,22 +5890,22 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardList(named: "Deck Box", selectAfterCreate: true))
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck Box", selectAfterCreate: true))
     _ = try database.appendCard("forest", toList: list.id, quantity: 3)
     _ = try database.appendCard("beta", toList: list.id, quantity: 2)
-    model.selectCardList(id: list.id)
+    model.selectCardCollection(id: list.id)
 
     // The detail-header total reads the summed quantities of the loaded entries (3 + 2),
     // matching the sum of the on-screen section counts rather than a cached value.
-    XCTAssertEqual(model.selectedListEntryTotal, 5)
+    XCTAssertEqual(model.selectedCollectionEntryTotal, 5)
 
     // A list search narrows the visible rows but the header total stays the full-list total.
     model.setSelectedListSearchDraft("forest")
     XCTAssertEqual(model.searchedSelectedListEntries?.map(\.cardID), ["forest"])
-    XCTAssertEqual(model.selectedListEntryTotal, 5)
+    XCTAssertEqual(model.selectedCollectionEntryTotal, 5)
   }
 
-  func testRefreshCardListCountsHealsStaleCountsWithoutDisturbingSelection() async throws {
+  func testRefreshCardCollectionCountsHealsStaleCountsWithoutDisturbingSelection() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
     try markLibraryReady(database)
@@ -5914,31 +5914,31 @@ final class GrimoraAppModelTests: XCTestCase {
 
     // A regular list (selected) plus the Favourites list, each seeded with one card through
     // the model so their cached `entryCount` starts correct.
-    let deck = try XCTUnwrap(model.createCardList(named: "Deck Box", selectAfterCreate: true))
+    let deck = try XCTUnwrap(model.createCardCollection(named: "Deck Box", selectAfterCreate: true))
     model.addCards(["forest"], toListID: deck.id)
     let forest = try XCTUnwrap(database.card(id: "forest"))
     model.addCardToFavourites(forest)
     let favouritesID = try XCTUnwrap(model.favouritesList?.id)
 
-    XCTAssertEqual(model.cardLists.first { $0.id == deck.id }?.entryCount, 1)
+    XCTAssertEqual(model.cardCollections.first { $0.id == deck.id }?.entryCount, 1)
     XCTAssertEqual(model.favouritesList?.entryCount, 1)
-    XCTAssertEqual(model.selectedListID, deck.id)
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest"])
+    XCTAssertEqual(model.selectedCollectionID, deck.id)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest"])
 
     // Simulate an out-of-band write (e.g. a cloud-sync apply whose follow-up reload was
     // skipped): mutate the entries table directly so the cached counts go stale.
     _ = try database.appendCard("beta", toList: deck.id)
     _ = try database.appendCard("beta", toList: favouritesID)
 
-    model.refreshCardListCounts()
+    model.refreshCardCollectionCounts()
 
     // Cached per-list counts and favourite card IDs re-sync with the database...
-    XCTAssertEqual(model.cardLists.first { $0.id == deck.id }?.entryCount, 2)
+    XCTAssertEqual(model.cardCollections.first { $0.id == deck.id }?.entryCount, 2)
     XCTAssertEqual(model.favouritesList?.entryCount, 2)
     XCTAssertTrue(model.favouriteCardIDs.contains("beta"))
     // ...without changing the current selection or reloading the open list's entries.
-    XCTAssertEqual(model.selectedListID, deck.id)
-    XCTAssertEqual(model.selectedListEntries.map(\.cardID), ["forest"])
+    XCTAssertEqual(model.selectedCollectionID, deck.id)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest"])
   }
 
   private func activityStep(_ id: String, in model: GrimoraAppModel) throws -> GrimoraLibraryActivityStep {

@@ -15,8 +15,8 @@ enum CardDragToken {
     static func cardIDs(from value: String) -> [CardRecord.ID] {
         let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedValue.isEmpty,
-              !CardListDragToken.isListDragToken(trimmedValue),
-              !CardListEntryDragToken.isEntryDragToken(trimmedValue)
+              !CardCollectionDragToken.isListDragToken(trimmedValue),
+              !CardCollectionEntryDragToken.isEntryDragToken(trimmedValue)
         else {
             return []
         }
@@ -43,10 +43,10 @@ enum CardDragToken {
     }
 }
 
-enum CardListDragToken {
+enum CardCollectionDragToken {
     static let prefix = "grimora-list:"
 
-    static func token(for listID: CardListRecord.ID) -> String {
+    static func token(for listID: CardCollectionRecord.ID) -> String {
         prefix + listID
     }
 
@@ -54,7 +54,7 @@ enum CardListDragToken {
         value.hasPrefix(prefix)
     }
 
-    static func listID(from value: String) -> CardListRecord.ID? {
+    static func listID(from value: String) -> CardCollectionRecord.ID? {
         guard isListDragToken(value) else {
             return nil
         }
@@ -64,10 +64,10 @@ enum CardListDragToken {
     }
 }
 
-enum CardListEntryDragToken {
+enum CardCollectionEntryDragToken {
     static let prefix = "grimora-list-entry:"
 
-    static func token(for entryIDs: [CardListEntryRecord.ID]) -> String {
+    static func token(for entryIDs: [CardCollectionEntryRecord.ID]) -> String {
         prefix + unique(entryIDs).joined(separator: ",")
     }
 
@@ -75,11 +75,11 @@ enum CardListEntryDragToken {
         value.hasPrefix(prefix)
     }
 
-    static func entryIDs(from values: [String]) -> [CardListEntryRecord.ID] {
+    static func entryIDs(from values: [String]) -> [CardCollectionEntryRecord.ID] {
         unique(values.flatMap(entryIDs(from:)))
     }
 
-    static func entryIDs(from value: String) -> [CardListEntryRecord.ID] {
+    static func entryIDs(from value: String) -> [CardCollectionEntryRecord.ID] {
         guard isEntryDragToken(value) else {
             return []
         }
@@ -93,8 +93,8 @@ enum CardListEntryDragToken {
         )
     }
 
-    private static func unique(_ ids: [CardListEntryRecord.ID]) -> [CardListEntryRecord.ID] {
-        var seenIDs: Set<CardListEntryRecord.ID> = []
+    private static func unique(_ ids: [CardCollectionEntryRecord.ID]) -> [CardCollectionEntryRecord.ID] {
+        var seenIDs: Set<CardCollectionEntryRecord.ID> = []
         return ids.filter { seenIDs.insert($0).inserted }
     }
 }

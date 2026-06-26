@@ -292,7 +292,7 @@ extension GrimoraAppModel {
 
   static func normalizedImportListName(_ name: String) -> String {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    return trimmed.isEmpty ? "Imported List" : trimmed
+    return trimmed.isEmpty ? "Imported Collection" : trimmed
   }
 
   static func normalizedDefaultSearchConfiguration(

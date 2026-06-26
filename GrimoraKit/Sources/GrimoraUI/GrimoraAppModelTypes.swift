@@ -5,7 +5,7 @@ public enum GrimoraSidebarSelection: Equatable, Sendable {
   case search
   case listsOverview
   case newList
-  case list(CardListRecord.ID)
+  case list(CardCollectionRecord.ID)
 }
 
 public enum LibraryReadinessState: Equatable, Sendable {
@@ -114,13 +114,13 @@ public enum GrimoraCloudSyncMode: String, Equatable, Sendable {
   case disabled
 }
 
-public struct CardListImportSummary: Equatable, Sendable {
+public struct CardCollectionImportSummary: Equatable, Sendable {
   public var listName: String
   public var cardCount: Int
   public var categoryCount: Int
   public var missingCardIDs: [String]
   public var sourceName: String?
-  public var skippedLines: [CardListImportSkippedLine]
+  public var skippedLines: [CardCollectionImportSkippedLine]
 
   public var importedEntryCount: Int {
     cardCount
@@ -132,7 +132,7 @@ public struct CardListImportSummary: Equatable, Sendable {
     categoryCount: Int,
     missingCardIDs: [String],
     sourceName: String? = nil,
-    skippedLines: [CardListImportSkippedLine] = []
+    skippedLines: [CardCollectionImportSkippedLine] = []
   ) {
     self.listName = listName
     self.cardCount = cardCount
@@ -143,18 +143,18 @@ public struct CardListImportSummary: Equatable, Sendable {
   }
 }
 
-public struct CardListOverviewItem: Identifiable, Equatable, Sendable {
-  public var list: CardListRecord
-  public var topEntry: CardListEntryRecord?
+public struct CardCollectionOverviewItem: Identifiable, Equatable, Sendable {
+  public var list: CardCollectionRecord
+  public var topEntry: CardCollectionEntryRecord?
   public var topCard: CardRecord?
 
-  public var id: CardListRecord.ID {
+  public var id: CardCollectionRecord.ID {
     list.id
   }
 
   public init(
-    list: CardListRecord,
-    topEntry: CardListEntryRecord?,
+    list: CardCollectionRecord,
+    topEntry: CardCollectionEntryRecord?,
     topCard: CardRecord?
   ) {
     self.list = list
@@ -163,7 +163,7 @@ public struct CardListOverviewItem: Identifiable, Equatable, Sendable {
   }
 }
 
-public struct CardListImportSkippedLine: Equatable, Sendable {
+public struct CardCollectionImportSkippedLine: Equatable, Sendable {
   public var lineNumber: Int?
   public var text: String
   public var reason: String
@@ -175,8 +175,8 @@ public struct CardListImportSkippedLine: Equatable, Sendable {
   }
 }
 
-struct CardListUndoState: Sendable {
-  var snapshot: CardListLibrarySnapshot
+struct CardCollectionUndoState: Sendable {
+  var snapshot: CardCollectionLibrarySnapshot
   var sidebarSelection: GrimoraSidebarSelection
-  var selectedListID: CardListRecord.ID?
+  var selectedCollectionID: CardCollectionRecord.ID?
 }

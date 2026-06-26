@@ -141,22 +141,19 @@ final class SearchRefineWorkflowUITests: XCTestCase {
         return oracle
     }
 
-    /// Dismiss the card detail and return to the results grid. The close button is
-    /// used when hittable; otherwise the sheet is dragged down.
+    /// Dismiss the card detail and return to the results grid. A dedicated close
+    /// button is used when one is present and hittable (visionOS); otherwise the
+    /// fly-up sheet is dragged down, which is how iPhone and iPad both dismiss it.
     @MainActor
     private func dismissDetail(app: XCUIApplication, detail: XCUIElement) {
         let closeButton = firstElement(app, identifier: "card-detail-close-button")
-        guard closeButton.waitForExistence(timeout: 2) else {
-            return
-        }
-        if closeButton.isHittable {
+        if closeButton.waitForExistence(timeout: 2), closeButton.isHittable {
             activate(closeButton)
         } else {
             let start = detail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
             let end = detail.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92))
             start.press(forDuration: 0.05, thenDragTo: end)
         }
-        _ = waitForNonExistence(of: closeButton, timeout: 3)
         _ = waitForNonExistence(of: detail, timeout: 3)
     }
     #endif

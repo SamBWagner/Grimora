@@ -48,7 +48,7 @@ extension CardDatabase {
       let revision = try listRevisionUnlocked()
       let deletedEntities = try syncTombstones()
       let deletedLists = Self.listDeletions(from: deletedEntities)
-      var listSnapshot = try cardListLibrarySnapshotUnlocked()
+      var listSnapshot = try cardCollectionLibrarySnapshotUnlocked()
       listSnapshot.entries = listSnapshot.entries.map { entry in
         var entry = entry
         entry.card = nil
@@ -101,12 +101,12 @@ extension CardDatabase {
             payload: recoveryPayload
           )
         }
-        try restoreCardListLibrarySnapshotUnlocked(snapshot.listSnapshot)
+        try restoreCardCollectionLibrarySnapshotUnlocked(snapshot.listSnapshot)
         try mergeSyncTombstonesUnlocked(
           snapshot.deletedEntities
             + snapshot.deletedLists.map {
               SyncTombstone(
-                entityType: .cardList,
+                entityType: .cardCollection,
                 recordID: $0.id,
                 deletedAt: $0.deletedAt
               )
@@ -427,13 +427,13 @@ extension CardDatabase {
 
       try database.transaction {
         try insertCloudSyncRecoverySnapshotUnlocked(currentSnapshot, payload: currentPayload)
-        try restoreCardListLibrarySnapshotUnlocked(recoverySnapshot.listSnapshot)
+        try restoreCardCollectionLibrarySnapshotUnlocked(recoverySnapshot.listSnapshot)
 
         let deleteTombstone = try database.prepare(
           "DELETE FROM sync_tombstones WHERE entity_type = ? AND record_id = ?"
         )
         for list in recoverySnapshot.listSnapshot.lists {
-          try deleteTombstone.bind(SyncEntityType.cardList.rawValue, at: 1)
+          try deleteTombstone.bind(SyncEntityType.cardCollection.rawValue, at: 1)
           try deleteTombstone.bind(list.id, at: 2)
           try deleteTombstone.step()
           try deleteTombstone.reset()
@@ -527,7 +527,7 @@ extension CardDatabase {
   private func mergeListDeletionTombstonesUnlocked(_ deletions: [SyncListDeletion]) throws {
     try mergeSyncTombstonesUnlocked(
       deletions.map {
-        SyncTombstone(entityType: .cardList, recordID: $0.id, deletedAt: $0.deletedAt)
+        SyncTombstone(entityType: .cardCollection, recordID: $0.id, deletedAt: $0.deletedAt)
       }
     )
   }
@@ -550,8 +550,8 @@ extension CardDatabase {
   }
 
   private static func listDeletions(from tombstones: [SyncTombstone]) -> [SyncListDeletion] {
-    var latestByListID: [CardListRecord.ID: Date] = [:]
-    for tombstone in tombstones where tombstone.entityType == .cardList {
+    var latestByListID: [CardCollectionRecord.ID: Date] = [:]
+    for tombstone in tombstones where tombstone.entityType == .cardCollection {
       latestByListID[tombstone.recordID] = max(
         latestByListID[tombstone.recordID] ?? .distantPast,
         tombstone.deletedAt
@@ -573,7 +573,7 @@ extension CardDatabase {
     CloudSyncRecoverySnapshot(
       reason: reason,
       libraryIdentity: try libraryIdentityUnlocked(),
-      listSnapshot: try cardListLibrarySnapshotUnlocked(),
+      listSnapshot: try cardCollectionLibrarySnapshotUnlocked(),
       deletedLists: try latestListDeletionTombstonesUnlocked()
     )
   }
@@ -587,7 +587,7 @@ extension CardDatabase {
       GROUP BY record_id
       ORDER BY MAX(deleted_at) ASC, record_id ASC
       """)
-    try statement.bind(SyncEntityType.cardList.rawValue, at: 1)
+    try statement.bind(SyncEntityType.cardCollection.rawValue, at: 1)
 
     var deletions: [SyncListDeletion] = []
     while try statement.step() {

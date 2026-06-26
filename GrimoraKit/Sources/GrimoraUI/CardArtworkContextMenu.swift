@@ -15,12 +15,12 @@ extension View {
         selectedCardIDsProvider: (() -> [CardRecord.ID])? = nil,
         onCreateListForCard: @escaping (CardRecord) -> Void,
         onCreateListForCards: (([CardRecord.ID]) -> Void)? = nil,
-        onAddCardsToList: ((CardListRecord.ID, CardRecord) -> Bool)? = nil,
-        categoryEntry: CardListEntryRecord? = nil,
-        categories: [CardListCategoryRecord] = [],
-        onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)? = nil,
+        onAddCardsToList: ((CardCollectionRecord.ID, CardRecord) -> Bool)? = nil,
+        categoryEntry: CardCollectionEntryRecord? = nil,
+        categories: [CardCollectionCategoryRecord] = [],
+        onMoveToCategory: ((CardCollectionCategoryRecord.ID?) -> Void)? = nil,
         onCreateCategory: ((String) -> Void)? = nil,
-        isMoveDestinationDisabled: ((CardListCategoryRecord.ID?) -> Bool)? = nil,
+        isMoveDestinationDisabled: ((CardCollectionCategoryRecord.ID?) -> Bool)? = nil,
         openAction: CardArtworkContextMenuAction? = nil
     ) -> some View {
         modifier(
@@ -54,12 +54,12 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
     var selectedCardIDsProvider: (() -> [CardRecord.ID])?
     var onCreateListForCard: (CardRecord) -> Void
     var onCreateListForCards: (([CardRecord.ID]) -> Void)?
-    var onAddCardsToList: ((CardListRecord.ID, CardRecord) -> Bool)?
-    var categoryEntry: CardListEntryRecord?
-    var categories: [CardListCategoryRecord]
-    var onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)?
+    var onAddCardsToList: ((CardCollectionRecord.ID, CardRecord) -> Bool)?
+    var categoryEntry: CardCollectionEntryRecord?
+    var categories: [CardCollectionCategoryRecord]
+    var onMoveToCategory: ((CardCollectionCategoryRecord.ID?) -> Void)?
     var onCreateCategory: ((String) -> Void)?
-    var isMoveDestinationDisabled: ((CardListCategoryRecord.ID?) -> Bool)?
+    var isMoveDestinationDisabled: ((CardCollectionCategoryRecord.ID?) -> Bool)?
     var openAction: CardArtworkContextMenuAction?
 
     func body(content: Content) -> some View {
@@ -83,7 +83,7 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
                 )
                 .environment(model)
             }
-            .cardListNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
+            .cardCollectionNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
                 onCreateCategory?(name)
             }
             .popover(isPresented: $isRefinementPresented, arrowEdge: .bottom) {
@@ -147,12 +147,12 @@ private struct CardArtworkContextMenuContent: View {
     var selectedCardIDsProvider: (() -> [CardRecord.ID])?
     var onCreateListForCard: (CardRecord) -> Void
     var onCreateListForCards: (([CardRecord.ID]) -> Void)?
-    var onAddCardsToList: ((CardListRecord.ID, CardRecord) -> Bool)?
-    var categoryEntry: CardListEntryRecord?
-    var categories: [CardListCategoryRecord] = []
-    var onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)?
+    var onAddCardsToList: ((CardCollectionRecord.ID, CardRecord) -> Bool)?
+    var categoryEntry: CardCollectionEntryRecord?
+    var categories: [CardCollectionCategoryRecord] = []
+    var onMoveToCategory: ((CardCollectionCategoryRecord.ID?) -> Void)?
     var onCreateCategory: (() -> Void)?
-    var isMoveDestinationDisabled: ((CardListCategoryRecord.ID?) -> Bool)?
+    var isMoveDestinationDisabled: ((CardCollectionCategoryRecord.ID?) -> Bool)?
     var openAction: CardArtworkContextMenuAction?
     var onRefineSearch: () -> Void
     var onAlwaysHide: (SearchRefinement) -> Void
@@ -180,7 +180,7 @@ private struct CardArtworkContextMenuContent: View {
         Button {
             createListForTargetCards()
         } label: {
-            Label("Create New List", systemImage: "plus.rectangle.on.folder")
+            Label("Create New Collection", systemImage: "plus.rectangle.on.folder")
         }
         .accessibilityIdentifier("card-artwork-create-list-\(card.id)")
 
@@ -243,7 +243,7 @@ private struct CardArtworkContextMenuContent: View {
             Divider()
 
             Menu {
-                CardListMoveCategoryMenuContent(
+                CardCollectionMoveCategoryMenuContent(
                     entry: categoryEntry,
                     categories: categories,
                     onMoveToCategory: onMoveToCategory,
@@ -268,7 +268,7 @@ private struct CardArtworkContextMenuContent: View {
                 .accessibilityIdentifier("card-artwork-add-\(card.id)-to-list-\(list.name)")
             }
         } label: {
-            Label("Add to List", systemImage: "text.badge.plus")
+            Label("Add to Collection", systemImage: "text.badge.plus")
         }
         .accessibilityIdentifier("card-artwork-add-to-list-menu-\(card.id)")
     }
@@ -290,8 +290,8 @@ private struct CardArtworkContextMenuContent: View {
         .accessibilityIdentifier("card-artwork-always-hide-\(card.id)")
     }
 
-    private var availableLists: [CardListRecord] {
-        model.cardLists.filter { !model.isProtectedFavouritesList($0) }
+    private var availableLists: [CardCollectionRecord] {
+        model.cardCollections.filter { !model.isProtectedFavouritesList($0) }
     }
 
     private var shareContent: CardShareContent {
@@ -307,7 +307,7 @@ private struct CardArtworkContextMenuContent: View {
         return ids.filter { seenIDs.insert($0).inserted }
     }
 
-    private func addTargetCards(to listID: CardListRecord.ID) {
+    private func addTargetCards(to listID: CardCollectionRecord.ID) {
         if onAddCardsToList?(listID, card) == true {
             return
         }

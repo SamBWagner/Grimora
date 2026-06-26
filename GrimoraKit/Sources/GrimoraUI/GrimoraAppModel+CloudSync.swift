@@ -109,7 +109,7 @@ extension GrimoraAppModel {
         // is the source of truth and it has changed, so re-derive the in-memory list counts
         // to reflect it — without republishing a sync status or surfacing a merge notice.
         if didApplyRemote {
-          self.refreshCardListCounts()
+          self.refreshCardCollectionCounts()
         }
         return
       }
@@ -193,9 +193,9 @@ extension GrimoraAppModel {
   public func restoreCloudSyncRecoverySnapshot(id: CloudSyncRecoverySnapshot.ID) {
     do {
       try database.restoreCloudSyncRecoverySnapshot(id: id)
-      reloadCardLists()
+      reloadCardCollections()
       reloadCloudSyncRecoverySnapshots()
-      statusMessage = "Restored lists from before iCloud sync."
+      statusMessage = "Restored collections from before iCloud sync."
       pushCloudSyncChangesIfNeeded()
     } catch {
       reloadCloudSyncRecoverySnapshots()
@@ -260,15 +260,15 @@ extension GrimoraAppModel {
     }
 
     if let listName = environment["GRIMORA_SYNC_TEST_CREATE_LIST"],
-      !cardLists.contains(where: { $0.name == listName })
+      !cardCollections.contains(where: { $0.name == listName })
     {
-      createCardList(named: listName)
+      createCardCollection(named: listName)
     }
 
     if let listName = environment["GRIMORA_SYNC_TEST_DELETE_LIST"],
-      let list = cardLists.first(where: { $0.name == listName })
+      let list = cardCollections.first(where: { $0.name == listName })
     {
-      deleteCardList(id: list.id)
+      deleteCardCollection(id: list.id)
     }
   }
 
@@ -420,7 +420,7 @@ extension GrimoraAppModel {
       // list counts, so a count left stale by an earlier skipped reload self-heals on the
       // next settle. Cheap and idempotent; never touches the current selection.
       if case .ready = status {
-        refreshCardListCounts()
+        refreshCardCollectionCounts()
       }
       return
     }
@@ -436,7 +436,7 @@ extension GrimoraAppModel {
     }
 
     applySyncedSearchSettings(snapshot.searchSettings)
-    reloadCardLists()
+    reloadCardCollections()
     if hasLibrary {
       reloadSearch()
     }

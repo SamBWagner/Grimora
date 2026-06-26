@@ -66,17 +66,17 @@ extension CardDatabase {
     legacyURL: URL,
     userDatabaseURL: URL
   ) throws -> UserDataMigrationReport {
-    let sourceSnapshot: CardListLibrarySnapshot
+    let sourceSnapshot: CardCollectionLibrarySnapshot
     let sourceCounts: [String: Int]
     do {
       let source = try CardDatabase(storage: .file(legacyURL))
-      sourceSnapshot = try source.cardListLibrarySnapshot()
+      sourceSnapshot = try source.cardCollectionLibrarySnapshot()
       sourceCounts = try source.userOwnedTableCounts()
     }
 
     let destination = try CardDatabase(storage: .file(userDatabaseURL))
     try destination.copyUserOwnedTables(from: legacyURL)
-    let destinationSnapshot = try destination.cardListLibrarySnapshot()
+    let destinationSnapshot = try destination.cardCollectionLibrarySnapshot()
     let destinationCounts = try destination.userOwnedTableCounts()
     let report = UserDataMigrationReport(
       sourceCounts: sourceCounts,

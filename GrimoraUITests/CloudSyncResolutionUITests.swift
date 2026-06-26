@@ -2,24 +2,17 @@ import XCTest
 
 @MainActor
 final class CloudSyncResolutionUITests: XCTestCase {
-  func testConflictFixtureShowsCombinedCloudAndCurrentMac() {
-    let app = XCUIApplication()
-    app.launchEnvironment["GRIMORA_SYNC_TEST_CONFLICT_FIXTURE"] = "1"
-    app.launchEnvironment["GRIMORA_DISABLE_AUTO_UPDATE"] = "1"
-    app.launch()
-
-    XCTAssertTrue(app.staticTexts["Review iCloud Data"].waitForExistence(timeout: 15))
-    XCTAssertTrue(element(containing: "iCloud (combined)", in: app).exists)
-    XCTAssertTrue(app.buttons["Combine and Continue"].exists)
-    XCTAssertTrue(app.staticTexts["All lists included"].exists)
-    XCTAssertTrue(element(containing: "Weekend Commander", in: app).exists)
-    XCTAssertFalse(app.staticTexts["Trade Binder"].exists)
-    XCTAssertFalse(app.staticTexts["Draft Ideas"].exists)
-  }
-
-  private func element(containing label: String, in app: XCUIApplication) -> XCUIElement {
-    app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS[c] %@", label))
-      .firstMatch
+  // The interactive iCloud conflict-resolution screen this exercised ("Review iCloud Data",
+  // "Combine and Continue") was removed when CloudKit became the single source of truth
+  // (commits 236b2bc and 2bc52fa). The app no longer reads GRIMORA_SYNC_TEST_CONFLICT_FIXTURE,
+  // so the fixture launch can never reach that UI. Convergence is now covered by the
+  // deterministic LWW unit-test harness in GrimoraKit, not by this UI flow.
+  //
+  // This test is obsolete; delete CloudSyncResolutionUITests.swift via Xcode (so the project
+  // file reference is removed too) when convenient.
+  func testConflictFixtureShowsCombinedCloudAndCurrentMac() throws {
+    throw XCTSkip(
+      "Interactive iCloud conflict-resolution UI was removed (CloudKit is now the single source "
+        + "of truth). Covered by the LWW convergence unit tests instead.")
   }
 }

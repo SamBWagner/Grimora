@@ -15,8 +15,8 @@ final class CardDragTokenTests: XCTestCase {
 
   func testParsesMultiplePayloadsAndSkipsNonCardDragTokens() {
     let cardToken = CardDragToken.token(for: ["alpha", "beta"])
-    let listToken = CardListDragToken.token(for: "drafts")
-    let entryToken = CardListEntryDragToken.token(for: ["entry-1", "entry-2"])
+    let listToken = CardCollectionDragToken.token(for: "drafts")
+    let entryToken = CardCollectionEntryDragToken.token(for: ["entry-1", "entry-2"])
 
     XCTAssertEqual(
       CardDragToken.cardIDs(from: [cardToken, "gamma", listToken, entryToken]),
@@ -32,8 +32,8 @@ final class CardDragTokenTests: XCTestCase {
   }
 
   func testListEntryDragTokenParsesBulkEntriesAndDeduplicatesInOrder() {
-    let token = CardListEntryDragToken.token(for: ["entry-1", "entry-2", "entry-1"])
+    let token = CardCollectionEntryDragToken.token(for: ["entry-1", "entry-2", "entry-1"])
 
-    XCTAssertEqual(CardListEntryDragToken.entryIDs(from: token), ["entry-1", "entry-2"])
+    XCTAssertEqual(CardCollectionEntryDragToken.entryIDs(from: token), ["entry-1", "entry-2"])
   }
 }

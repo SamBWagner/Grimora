@@ -36,6 +36,9 @@ AppStoreBuilds/
 AppStoreScreenshots/
 *.ipa
 
+# fastlane deliver metadata, regenerated from AppStoreMetadata/listing-copy.md
+/fastlane/
+
 # Local browser/test logs
 .playwright-cli/
 *.log

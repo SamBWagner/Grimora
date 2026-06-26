@@ -193,7 +193,7 @@ enum SearchLoadResult: Sendable {
 }
 
 enum SearchListCreationResult: Sendable {
-  case success(listID: CardListRecord.ID, cardCount: Int)
+  case success(listID: CardCollectionRecord.ID, cardCount: Int)
   case empty
   case unsupported
   case emptyName

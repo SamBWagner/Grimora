@@ -93,7 +93,7 @@ struct EmptyListDestinationView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ContentUnavailableView("Select a List", systemImage: "list.bullet.rectangle")
+        ContentUnavailableView("Select a Collection", systemImage: "list.bullet.rectangle")
             .tint(palette.accent.color)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background {

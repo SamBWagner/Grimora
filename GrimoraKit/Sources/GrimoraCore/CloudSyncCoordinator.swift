@@ -501,7 +501,7 @@ public actor CloudSyncCoordinator {
       deviceName: deviceName,
       libraryIdentity: libraryIdentity,
       searchSettings: SyncSearchSettings(updatedAt: .distantPast),
-      listSnapshot: CardListLibrarySnapshot(lists: [], categories: [], entries: [])
+      listSnapshot: CardCollectionLibrarySnapshot(lists: [], categories: [], entries: [])
     )
     merged.id = deviceID
     merged.deviceName = deviceName
@@ -523,9 +523,9 @@ public actor CloudSyncCoordinator {
   }
 
   private func canonicalListSnapshot(
-    _ snapshot: CardListLibrarySnapshot
-  ) -> CardListLibrarySnapshot {
-    CardListLibrarySnapshot(
+    _ snapshot: CardCollectionLibrarySnapshot
+  ) -> CardCollectionLibrarySnapshot {
+    CardCollectionLibrarySnapshot(
       lists: snapshot.lists.sorted { $0.id < $1.id },
       categories: snapshot.categories.sorted { $0.id < $1.id },
       entries: snapshot.entries.map { entry in

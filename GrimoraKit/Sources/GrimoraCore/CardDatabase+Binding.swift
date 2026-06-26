@@ -215,6 +215,48 @@ extension CardDatabase {
     return facesByCardID
   }
 
+  /// Batch sibling of `card(id:)`. Hydrates many cards in a handful of queries instead of one
+  /// statement (plus a faces query) per id: a chunked `WHERE id IN (...)` fetch followed by a
+  /// single batched faces hydration per chunk. Callers must already hold `withDatabaseLock`.
+  func cardsByID(forIDs ids: [String]) throws -> [String: CardRecord] {
+    let uniqueIDs = Array(Set(ids))
+    guard !uniqueIDs.isEmpty else {
+      return [:]
+    }
+
+    var result: [String: CardRecord] = [:]
+    result.reserveCapacity(uniqueIDs.count)
+
+    // Stay safely under SQLite's default SQLITE_MAX_VARIABLE_NUMBER (~999) so very large lists
+    // bind their IN-clause across multiple statements. The faces helper is bounded by the same
+    // chunk, so it never exceeds the variable limit either.
+    let chunkSize = 900
+    for start in stride(from: 0, to: uniqueIDs.count, by: chunkSize) {
+      let chunk = Array(uniqueIDs[start..<min(start + chunkSize, uniqueIDs.count)])
+      let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+      let statement = try database.prepare(
+        """
+        SELECT \(Self.cardColumns)
+        FROM cards
+        WHERE id IN (\(placeholders))
+        """)
+      for (index, id) in chunk.enumerated() {
+        try statement.bind(id, at: Int32(index + 1))
+      }
+
+      var cards: [CardRecord] = []
+      while try statement.step() {
+        cards.append(readCard(from: statement))
+      }
+      try hydrateFaces(for: &cards)
+      for card in cards {
+        result[card.id] = card
+      }
+    }
+
+    return result
+  }
+
   func readCard(from statement: SQLiteStatement) -> CardRecord {
     var index: Int32 = 0
 

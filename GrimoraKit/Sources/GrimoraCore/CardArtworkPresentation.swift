@@ -15,7 +15,7 @@ public enum CardArtworkRotation: Int, Equatable, Sendable {
   }
 }
 
-public struct CardArtworkImageSource: Equatable, Sendable {
+public struct CardArtworkImageSource: Equatable, Hashable, Sendable {
   public var reference: CardArtworkSourceReference
   public var title: String
   public var typeLine: String
@@ -279,12 +279,46 @@ public struct CardArtworkMotionPlan: Equatable, Sendable {
 }
 
 public enum CardArtworkPresentationResolver {
+  // The variant list is a pure function of the card's image sources, its normalised layout, the
+  // requested quality, and the landscape flag — `imageSources(for:)` already extracts every image
+  // field that matters (including the paths that get backfilled at runtime), so a key built from it
+  // is complete and never goes stale: once `patchImageUpdate` swaps in new paths, the sources change,
+  // the key changes, and the entry is recomputed. CardArtworkView resolves variants several times per
+  // render (selected variant, next variant, ids, layout), so this memo turns the per-cell string
+  // folding/normalisation into a dictionary lookup.
+  private struct VariantsCacheKey: Hashable {
+    let sources: [CardArtworkImageSource]
+    let normalizedLayout: String
+    let quality: CardImageQuality
+    let includesLandscapeRotation: Bool
+  }
+
+  private static let variantsCacheLock = NSLock()
+  // Safe: every access is serialised through `variantsCacheLock`.
+  private nonisolated(unsafe) static var variantsCache: [VariantsCacheKey: [CardArtworkVariant]] = [:]
+  private static let variantsCacheLimit = 1_024
+
   public static func variants(
     for card: CardRecord,
     preferredQuality: CardImageQuality = .normal,
     includesLandscapeRotation: Bool = false
   ) -> [CardArtworkVariant] {
-    imageSources(for: card).flatMap { source in
+    let sources = imageSources(for: card)
+    let key = VariantsCacheKey(
+      sources: sources,
+      normalizedLayout: card.layout.normalizedArtworkKey,
+      quality: preferredQuality,
+      includesLandscapeRotation: includesLandscapeRotation
+    )
+
+    variantsCacheLock.lock()
+    if let cached = variantsCache[key] {
+      variantsCacheLock.unlock()
+      return cached
+    }
+    variantsCacheLock.unlock()
+
+    let computed = sources.flatMap { source in
       variants(
         for: source,
         card: card,
@@ -292,6 +326,14 @@ public enum CardArtworkPresentationResolver {
         includesLandscapeRotation: includesLandscapeRotation
       )
     }
+
+    variantsCacheLock.lock()
+    if variantsCache.count >= variantsCacheLimit {
+      variantsCache.removeAll(keepingCapacity: true)
+    }
+    variantsCache[key] = computed
+    variantsCacheLock.unlock()
+    return computed
   }
 
   public static func imageSources(for card: CardRecord) -> [CardArtworkImageSource] {

@@ -33,9 +33,9 @@ private struct SplitRootView: View {
     @Environment(GrimoraAppModel.self) private var model
     @State private var gridZoom = GridZoomController()
     @State private var searchFocus = GrimoraSearchFocusController.shared
-    @State private var listCommands = GrimoraListCommandController()
+    @State private var listCommands = GrimoraCollectionCommandController()
     @State private var libraryMaintenance = GrimoraLibraryMaintenanceController()
-    @State private var listNameAction: ListNameAction?
+    @State private var listNameAction: CollectionNameAction?
     @State private var previousSidebarSelection: GrimoraSidebarSelection = .search
     @State private var listNameDraft = ""
 
@@ -66,7 +66,7 @@ private struct SplitRootView: View {
             }
             presentRenameListPrompt(list)
         }
-        .alert(listNameAction?.title ?? "List", isPresented: listNamePromptBinding) {
+        .alert(listNameAction?.title ?? "Collection", isPresented: listNamePromptBinding) {
             TextField("Name", text: $listNameDraft)
             Button(listNameAction?.confirmationTitle ?? "Save") {
                 submitListNamePrompt()
@@ -157,7 +157,7 @@ private struct SplitRootView: View {
     private var detailContent: some View {
         switch model.sidebarSelection {
         case .listsOverview:
-            CardListsOverviewView(
+            CardCollectionsOverviewView(
                 onCreateList: {
                     presentCreateListDestination()
                 },
@@ -165,7 +165,7 @@ private struct SplitRootView: View {
                 onRenameList: { presentRenameListPrompt($0) }
             )
         case .newList:
-            CardListCreateDestinationView(
+            CardCollectionCreateDestinationView(
                 onCancel: {
                     model.cancelNewListCreation(returningTo: previousSidebarSelection)
                 },
@@ -173,9 +173,9 @@ private struct SplitRootView: View {
                     previousSidebarSelection = model.sidebarSelection
                 }
             )
-            .navigationTitle("New List")
-        case .list(let listID) where model.selectedList?.id == listID:
-            CardListDetailView(
+            .navigationTitle("New Collection")
+        case .list(let listID) where model.selectedCollection?.id == listID:
+            CardCollectionDetailView(
                 gridZoom: gridZoom,
                 onSelect: { card in
                     model.selectCard(card)
@@ -196,7 +196,7 @@ private struct SplitRootView: View {
                     presentRenameCategoryPrompt(category)
                 }
             )
-            .navigationTitle(model.selectedList?.name ?? "List")
+            .navigationTitle(model.selectedCollection?.name ?? "Collection")
             .toolbar {
                 ToolbarItemGroup(placement: .primaryAction) {
                     Button {
@@ -206,13 +206,13 @@ private struct SplitRootView: View {
                             .labelStyle(.iconOnly)
                     }
                     .disabled(!model.canUndoListAction)
-                    .help("Undo List Action")
+                    .help("Undo Collection Action")
                     .accessibilityIdentifier("undo-list-action-button")
 
                 }
             }
         case .list:
-            CardListsOverviewView(
+            CardCollectionsOverviewView(
                 onCreateList: {
                     presentCreateListDestination()
                 },
@@ -237,12 +237,9 @@ private struct SplitRootView: View {
             },
             onCreateListForCards: { cardIDs in
                 presentCreateListPrompt(addingCardIDs: cardIDs, selectAfterCreate: false)
-            },
-            onCreateListFromSearch: {
-                presentCreateSearchListPrompt()
             }
         )
-        .navigationTitle("Search")
+        .navigationTitle("Cards")
         .toolbarBackground(.hidden, for: .windowToolbar)
 
         if #available(macOS 15.0, *) {
@@ -293,22 +290,17 @@ private struct SplitRootView: View {
         model.selectNewList()
     }
 
-    private func presentCreateSearchListPrompt() {
-        listNameDraft = ""
-        listNameAction = .createFromSearch
-    }
-
-    private func presentRenameListPrompt(_ list: CardListRecord) {
+    private func presentRenameListPrompt(_ list: CardCollectionRecord) {
         listNameDraft = list.name
         listNameAction = .rename(list)
     }
 
-    private func presentCreateCategoryPrompt(in list: CardListRecord) {
+    private func presentCreateCategoryPrompt(in list: CardCollectionRecord) {
         listNameDraft = ""
         listNameAction = .createCategory(listID: list.id)
     }
 
-    private func presentRenameCategoryPrompt(_ category: CardListCategoryRecord) {
+    private func presentRenameCategoryPrompt(_ category: CardCollectionCategoryRecord) {
         listNameDraft = category.name
         listNameAction = .renameCategory(category)
     }
@@ -325,23 +317,23 @@ private struct SplitRootView: View {
 
         switch listNameAction {
         case .create(let card, let selectAfterCreate):
-            model.createCardList(named: name, adding: card, selectAfterCreate: selectAfterCreate)
+            model.createCardCollection(named: name, adding: card, selectAfterCreate: selectAfterCreate)
         case .createWithCardIDs(let cardIDs, let selectAfterCreate):
-            model.createCardList(
+            model.createCardCollection(
                 named: name,
                 addingCardIDs: cardIDs,
                 selectAfterCreate: selectAfterCreate
             )
         case .createFromSearch:
             Task {
-                await model.createCardListFromCurrentSearch(named: name)
+                await model.createCardCollectionFromCurrentSearch(named: name)
             }
         case .rename(let list):
-            model.renameCardList(id: list.id, to: name)
+            model.renameCardCollection(id: list.id, to: name)
         case .createCategory(let listID):
-            model.createCardListCategory(named: name, inListID: listID)
+            model.createCardCollectionCategory(named: name, inListID: listID)
         case .renameCategory(let category):
-            model.renameCardListCategory(id: category.id, to: name)
+            model.renameCardCollectionCategory(id: category.id, to: name)
         }
 
         self.listNameAction = nil

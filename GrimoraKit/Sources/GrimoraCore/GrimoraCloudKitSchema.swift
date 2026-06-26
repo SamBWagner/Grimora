@@ -9,9 +9,9 @@ public enum GrimoraCloudKitSchema {
     public static let legacyDeviceSnapshot = "DeviceSnapshot"
     public static let metadata = "GrimoraSyncMetadata"
     public static let preferences = "GrimoraUserPreferences"
-    public static let cardList = "GrimoraCardList"
-    public static let cardListCategory = "GrimoraCardListCategory"
-    public static let cardListEntry = "GrimoraCardListEntry"
+    public static let cardCollection = "GrimoraCardList"
+    public static let cardCollectionCategory = "GrimoraCardListCategory"
+    public static let cardCollectionEntry = "GrimoraCardListEntry"
     public static let recoveryRevision = "GrimoraRecoveryRevision"
   }
 
@@ -40,9 +40,9 @@ public enum GrimoraCloudKitSchema {
   public static let entityRecordTypes = [
     RecordType.metadata,
     RecordType.preferences,
-    RecordType.cardList,
-    RecordType.cardListCategory,
-    RecordType.cardListEntry,
+    RecordType.cardCollection,
+    RecordType.cardCollectionCategory,
+    RecordType.cardCollectionEntry,
   ]
 
   public static let legacyRecordTypes = [

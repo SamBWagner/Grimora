@@ -616,12 +616,12 @@ public struct CardDetailView: View {
 
     private var addToListMenu: some View {
         #if os(iOS) || os(visionOS)
-        let presentation: CardListAddMenuPresentation = usesInspectorPresentation ? .floatingAction : .toolbar
+        let presentation: CardCollectionAddMenuPresentation = usesInspectorPresentation ? .floatingAction : .toolbar
         #else
-        let presentation: CardListAddMenuPresentation = .toolbar
+        let presentation: CardCollectionAddMenuPresentation = .toolbar
         #endif
 
-        return CardListAddMenu(
+        return CardCollectionAddMenu(
             card: card,
             presentation: presentation,
             accessibilityIdentifier: "card-detail-add-to-list-button",

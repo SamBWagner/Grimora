@@ -14,19 +14,19 @@ extension GrimoraAppModel {
     return normalizedName == "favourites" || normalizedName == "favorites"
   }
 
-  public func isFavouritesList(_ list: CardListRecord) -> Bool {
+  public func isFavouritesList(_ list: CardCollectionRecord) -> Bool {
     Self.isFavouritesListName(list.name)
   }
 
-  public func isProtectedFavouritesList(_ list: CardListRecord) -> Bool {
+  public func isProtectedFavouritesList(_ list: CardCollectionRecord) -> Bool {
     Self.isFavouritesListName(list.name)
   }
 
   public func selectListsOverview() {
-    selectedListID = nil
-    selectedListCategories = []
-    selectedListEntries = []
-    selectedListRulesetWarnings = []
+    selectedCollectionID = nil
+    selectedCollectionCategories = []
+    selectedCollectionEntries = []
+    selectedCollectionRulesetWarnings = []
     resetSelectedListSearchResults()
     sidebarSelection = .listsOverview
     closeSelectedCard()
@@ -44,8 +44,8 @@ extension GrimoraAppModel {
 
   public func cancelNewListCreation(returningTo previousSelection: GrimoraSidebarSelection?) {
     switch previousSelection {
-    case .list(let id) where cardLists.contains(where: { $0.id == id }):
-      selectCardList(id: id)
+    case .list(let id) where cardCollections.contains(where: { $0.id == id }):
+      selectCardCollection(id: id)
     case .listsOverview:
       selectListsOverview()
     case .list, .search, .newList, nil:
@@ -53,13 +53,13 @@ extension GrimoraAppModel {
     }
   }
 
-  public func selectCardList(id: CardListRecord.ID) {
-    guard cardLists.contains(where: { $0.id == id }) else {
-      if selectedListID == id {
-        selectedListID = nil
-        selectedListCategories = []
-        selectedListEntries = []
-        selectedListRulesetWarnings = []
+  public func selectCardCollection(id: CardCollectionRecord.ID) {
+    guard cardCollections.contains(where: { $0.id == id }) else {
+      if selectedCollectionID == id {
+        selectedCollectionID = nil
+        selectedCollectionCategories = []
+        selectedCollectionEntries = []
+        selectedCollectionRulesetWarnings = []
         resetSelectedListSearchResults()
       }
       if sidebarSelection == .list(id) {
@@ -68,28 +68,28 @@ extension GrimoraAppModel {
       return
     }
 
-    selectedListID = id
+    selectedCollectionID = id
     sidebarSelection = .list(id)
     closeSelectedCard()
     loadSelectedListState()
   }
 
   public func closeSelectedList() {
-    selectedListID = nil
-    selectedListCategories = []
-    selectedListEntries = []
-    selectedListRulesetWarnings = []
+    selectedCollectionID = nil
+    selectedCollectionCategories = []
+    selectedCollectionEntries = []
+    selectedCollectionRulesetWarnings = []
     resetSelectedListSearchResults()
     sidebarSelection = .listsOverview
     closeSelectedCard()
   }
 
   public func setSelectedListSearchDraft(_ text: String) {
-    guard selectedListSearchText != text else {
+    guard selectedCollectionSearchText != text else {
       return
     }
 
-    selectedListSearchText = text
+    selectedCollectionSearchText = text
     reloadSelectedListSearch()
   }
 
@@ -98,30 +98,30 @@ extension GrimoraAppModel {
   }
 
   func reloadSelectedListSearch() {
-    let query = GrimoraSearchHistoryStore.normalizedQuery(selectedListSearchText)
-    selectedListSearchUnsupportedMessage = nil
-    guard let selectedListID, !query.isEmpty else {
+    let query = GrimoraSearchHistoryStore.normalizedQuery(selectedCollectionSearchText)
+    selectedCollectionSearchUnsupportedMessage = nil
+    guard let selectedCollectionID, !query.isEmpty else {
       searchedSelectedListEntries = nil
       return
     }
 
     do {
-      switch try database.searchCardListEntries(forListID: selectedListID, text: query) {
+      switch try database.searchCardCollectionEntries(forListID: selectedCollectionID, text: query) {
       case .results(let entries):
         searchedSelectedListEntries = entries
       case .unsupported(let reason):
         searchedSelectedListEntries = []
-        selectedListSearchUnsupportedMessage = reason.message
+        selectedCollectionSearchUnsupportedMessage = reason.message
       }
     } catch {
       searchedSelectedListEntries = []
-      statusMessage = "List search failed."
+      statusMessage = "Collection search failed."
     }
   }
 
   func resetSelectedListSearchResults() {
     searchedSelectedListEntries = nil
-    selectedListSearchUnsupportedMessage = nil
+    selectedCollectionSearchUnsupportedMessage = nil
   }
 
   /// Runs a Scryfall query across every list, returning the lists whose cards match together with
@@ -134,9 +134,9 @@ extension GrimoraAppModel {
     }
 
     do {
-      return try database.searchAllCardListEntries(text: normalizedQuery)
+      return try database.searchAllCardCollectionEntries(text: normalizedQuery)
     } catch {
-      statusMessage = "List search failed."
+      statusMessage = "Collection search failed."
       return .results([])
     }
   }
@@ -148,11 +148,11 @@ extension GrimoraAppModel {
 
   /// The dashboard overview items narrowed to the lists matching the active cross-list search.
   /// Returns every item when no filter is active (or when the query can't be compiled).
-  public var filteredCardListOverviewItems: [CardListOverviewItem] {
+  public var filteredCardCollectionOverviewItems: [CardCollectionOverviewItem] {
     guard let dashboardListMatchIDs else {
-      return cardListOverviewItems
+      return cardCollectionOverviewItems
     }
-    return cardListOverviewItems.filter { dashboardListMatchIDs.contains($0.list.id) }
+    return cardCollectionOverviewItems.filter { dashboardListMatchIDs.contains($0.list.id) }
   }
 
   public func setDashboardSearchDraft(_ text: String) {
@@ -197,26 +197,26 @@ extension GrimoraAppModel {
     }
 
     do {
-      try database.restoreCardListLibrarySnapshot(undoState.snapshot)
+      try database.restoreCardCollectionLibrarySnapshot(undoState.snapshot)
       try? database.recordLocalSyncSnapshotChange(reason: "undo-list-action")
       canUndoListAction = !listUndoStack.isEmpty
       let restoredSelection = restoredListSelection(from: undoState)
-      reloadCardLists(
-        selecting: restoredSelection.selectedListID,
+      reloadCardCollections(
+        selecting: restoredSelection.selectedCollectionID,
         activatingSelection: restoredSelection.activatesSelection
       )
       sidebarSelection = restoredSelection.sidebarSelection
       if case .list(let listID) = sidebarSelection {
-        selectedListID = listID
+        selectedCollectionID = listID
         loadSelectedListState()
-      } else if sidebarSelection != .list(selectedListID ?? "") {
-        selectedListID = nil
-        selectedListCategories = []
-        selectedListEntries = []
-        selectedListRulesetWarnings = []
+      } else if sidebarSelection != .list(selectedCollectionID ?? "") {
+        selectedCollectionID = nil
+        selectedCollectionCategories = []
+        selectedCollectionEntries = []
+        selectedCollectionRulesetWarnings = []
         resetSelectedListSearchResults()
       }
-      statusMessage = "Undid list action."
+      statusMessage = "Undid collection action."
       pushCloudSyncChangesIfNeeded()
     } catch {
       canUndoListAction = !listUndoStack.isEmpty
@@ -225,11 +225,11 @@ extension GrimoraAppModel {
   }
 
   @discardableResult
-  public func createCardList(
+  public func createCardCollection(
     named name: String,
     adding card: CardRecord? = nil,
     selectAfterCreate: Bool = false
-  ) -> CardListRecord? {
+  ) -> CardCollectionRecord? {
     if Self.isFavouritesListName(name) {
       return useFavouritesList(
         adding: card.map { [$0.id] } ?? [],
@@ -240,32 +240,32 @@ extension GrimoraAppModel {
 
     do {
       let list = try performListMutation {
-        let list = try database.createCardList(named: name)
+        let list = try database.createCardCollection(named: name)
         if let card {
           try database.appendCard(card.id, toList: list.id)
         }
         return list
       }
-      reloadCardLists(
-        selecting: selectAfterCreate ? list.id : selectedListID,
+      reloadCardCollections(
+        selecting: selectAfterCreate ? list.id : selectedCollectionID,
         activatingSelection: selectAfterCreate
       )
       statusMessage = card.map { "Added \($0.name) to \(list.name)." } ?? "Created \(list.name)."
-      return cardLists.first { $0.id == list.id } ?? list
-    } catch CardListDatabaseError.emptyName {
+      return cardCollections.first { $0.id == list.id } ?? list
+    } catch CardCollectionDatabaseError.emptyName {
       return nil
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
       return nil
     }
   }
 
   @discardableResult
-  public func createCardList(
+  public func createCardCollection(
     named name: String,
     addingCardIDs cardIDs: [CardRecord.ID],
     selectAfterCreate: Bool = false
-  ) -> CardListRecord? {
+  ) -> CardCollectionRecord? {
     if Self.isFavouritesListName(name) {
       return useFavouritesList(
         adding: cardIDs,
@@ -277,14 +277,14 @@ extension GrimoraAppModel {
     let requestedCardIDs = cardIDs
     do {
       let list = try performListMutation {
-        let list = try database.createCardList(named: name)
+        let list = try database.createCardCollection(named: name)
         for cardID in requestedCardIDs {
           try database.appendCard(cardID, toList: list.id)
         }
         return list
       }
-      reloadCardLists(
-        selecting: selectAfterCreate ? list.id : selectedListID,
+      reloadCardCollections(
+        selecting: selectAfterCreate ? list.id : selectedCollectionID,
         activatingSelection: selectAfterCreate
       )
       if requestedCardIDs.isEmpty {
@@ -293,17 +293,17 @@ extension GrimoraAppModel {
         let noun = requestedCardIDs.count == 1 ? "card" : "cards"
         statusMessage = "Created \(list.name) with \(formatted(requestedCardIDs.count)) \(noun)."
       }
-      return cardLists.first { $0.id == list.id } ?? list
-    } catch CardListDatabaseError.emptyName {
+      return cardCollections.first { $0.id == list.id } ?? list
+    } catch CardCollectionDatabaseError.emptyName {
       return nil
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
       return nil
     }
   }
 
   @discardableResult
-  public func createCardListFromCurrentSearch(named name: String) async -> CardListRecord? {
+  public func createCardCollectionFromCurrentSearch(named name: String) async -> CardCollectionRecord? {
     let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !normalizedName.isEmpty else {
       return nil
@@ -330,15 +330,15 @@ extension GrimoraAppModel {
       printingDisplayMode: printingDisplayMode,
       limit: totalCount
     )
-    let undoState: CardListUndoState
+    let undoState: CardCollectionUndoState
     do {
-      undoState = try CardListUndoState(
-        snapshot: database.cardListLibrarySnapshot(),
+      undoState = try CardCollectionUndoState(
+        snapshot: database.cardCollectionLibrarySnapshot(),
         sidebarSelection: sidebarSelection,
-        selectedListID: selectedListID
+        selectedCollectionID: selectedCollectionID
       )
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
       return nil
     }
 
@@ -352,7 +352,7 @@ extension GrimoraAppModel {
           guard !cards.isEmpty else {
             return SearchListCreationResult.empty
           }
-          let list = try database.createCardList(named: normalizedName)
+          let list = try database.createCardCollection(named: normalizedName)
           for card in cards {
             try database.appendCard(card.id, toList: list.id)
           }
@@ -360,7 +360,7 @@ extension GrimoraAppModel {
         case .unsupported:
           return SearchListCreationResult.unsupported
         }
-      } catch CardListDatabaseError.emptyName {
+      } catch CardCollectionDatabaseError.emptyName {
         return SearchListCreationResult.emptyName
       } catch {
         return SearchListCreationResult.failure
@@ -368,7 +368,7 @@ extension GrimoraAppModel {
     }.value
 
     guard generation == searchGeneration else {
-      statusMessage = "Search changed before the list could be created."
+      statusMessage = "Search changed before the collection could be created."
       return nil
     }
 
@@ -376,10 +376,10 @@ extension GrimoraAppModel {
     case .success(let listID, let cardCount):
       pushListUndoState(undoState)
       try? database.recordLocalSyncSnapshotChange(reason: "search-list-created")
-      reloadCardLists(selecting: listID, activatingSelection: true)
+      reloadCardCollections(selecting: listID, activatingSelection: true)
       pushCloudSyncChangesIfNeeded()
-      guard let list = selectedList else {
-        statusMessage = "List update failed."
+      guard let list = selectedCollection else {
+        statusMessage = "Collection update failed."
         return nil
       }
       let noun = cardCount == 1 ? "card" : "cards"
@@ -391,12 +391,12 @@ extension GrimoraAppModel {
     case .emptyName:
       return nil
     case .failure:
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
       return nil
     }
   }
 
-  public func renameCardList(id: CardListRecord.ID, to name: String) {
+  public func renameCardCollection(id: CardCollectionRecord.ID, to name: String) {
     guard !isProtectedFavouritesListID(id) else {
       statusMessage = "\(Self.favouritesListName) is managed by Grimora."
       return
@@ -404,19 +404,19 @@ extension GrimoraAppModel {
 
     do {
       let list = try performListMutation {
-        try database.renameCardList(id: id, to: name)
+        try database.renameCardCollection(id: id, to: name)
       }
-      reloadCardLists(selecting: selectedListID)
-      statusMessage = "Renamed list to \(list.name)."
-    } catch CardListDatabaseError.emptyName {
+      reloadCardCollections(selecting: selectedCollectionID)
+      statusMessage = "Renamed collection to \(list.name)."
+    } catch CardCollectionDatabaseError.emptyName {
       return
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
-  public func setCardListPinned(
-    id: CardListRecord.ID,
+  public func setCardCollectionPinned(
+    id: CardCollectionRecord.ID,
     isPinned: Bool,
     now: Date = Date()
   ) {
@@ -427,33 +427,33 @@ extension GrimoraAppModel {
 
     do {
       let list = try performListMutation {
-        try database.setCardListPinned(id: id, isPinned: isPinned, now: now)
+        try database.setCardCollectionPinned(id: id, isPinned: isPinned, now: now)
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage = isPinned ? "Pinned \(list.name)." : "Unpinned \(list.name)."
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
-  public func moveCardList(id: CardListRecord.ID, by offset: Int) {
-    guard let list = cardLists.first(where: { $0.id == id }) else {
+  public func moveCardCollection(id: CardCollectionRecord.ID, by offset: Int) {
+    guard let list = cardCollections.first(where: { $0.id == id }) else {
       return
     }
     guard !isProtectedFavouritesList(list) else {
       statusMessage = "\(Self.favouritesListName) stays at the top."
       return
     }
-    let sectionLists = list.isPinned ? pinnedCardLists : unpinnedCardLists
+    let sectionLists = list.isPinned ? pinnedCardCollections : unpinnedCardCollections
     guard let index = sectionLists.firstIndex(where: { $0.id == id }) else {
       return
     }
 
-    moveCardList(id: id, toPosition: index + offset, isPinned: list.isPinned)
+    moveCardCollection(id: id, toPosition: index + offset, isPinned: list.isPinned)
   }
 
-  public func moveCardList(
-    id: CardListRecord.ID,
+  public func moveCardCollection(
+    id: CardCollectionRecord.ID,
     toPosition position: Int,
     isPinned: Bool? = nil
   ) {
@@ -464,105 +464,105 @@ extension GrimoraAppModel {
 
     do {
       let moved = try performListMutation {
-        try database.moveCardList(id: id, toPosition: position, isPinned: isPinned)
+        try database.moveCardCollection(id: id, toPosition: position, isPinned: isPinned)
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage = "Moved \(moved.name)."
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
-  public func saveCardListDescription(
-    forListID listID: CardListRecord.ID,
+  public func saveCardCollectionDescription(
+    forListID listID: CardCollectionRecord.ID,
     rtfdData: Data?,
     plainText: String
   ) {
     do {
-      try database.updateCardListDescription(id: listID, rtfdData: rtfdData, plainText: plainText)
+      try database.updateCardCollectionDescription(id: listID, rtfdData: rtfdData, plainText: plainText)
       try? database.recordLocalSyncSnapshotChange(reason: "list-description")
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       pushCloudSyncChangesIfNeeded()
     } catch {
       statusMessage = "Description save failed."
     }
   }
 
-  public func setCardListDashboardVisibility(
-    id: CardListRecord.ID,
+  public func setCardCollectionDashboardVisibility(
+    id: CardCollectionRecord.ID,
     showsDashboard: Bool
   ) {
     do {
       try performListMutation {
-        try database.setCardListDashboardVisibility(id: id, showsDashboard: showsDashboard)
+        try database.setCardCollectionDashboardVisibility(id: id, showsDashboard: showsDashboard)
       }
-      reloadCardLists(selecting: selectedListID)
-      statusMessage = showsDashboard ? "Showing list stats." : "Hid list stats."
+      reloadCardCollections(selecting: selectedCollectionID)
+      statusMessage = showsDashboard ? "Showing collection stats." : "Hid collection stats."
     } catch {
-      statusMessage = "List stats update failed."
+      statusMessage = "Collection stats update failed."
     }
   }
 
-  public func setCardListDashboardIncludesLands(
-    id: CardListRecord.ID,
+  public func setCardCollectionDashboardIncludesLands(
+    id: CardCollectionRecord.ID,
     includesLands: Bool
   ) {
     do {
       try performListMutation {
-        try database.setCardListDashboardIncludesLands(id: id, includesLands: includesLands)
+        try database.setCardCollectionDashboardIncludesLands(id: id, includesLands: includesLands)
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage = includesLands ? "Type stats include lands." : "Type stats exclude lands."
     } catch {
-      statusMessage = "List stats update failed."
+      statusMessage = "Collection stats update failed."
     }
   }
 
-  public func setCardListDisplaySort(
-    id: CardListRecord.ID,
+  public func setCardCollectionDisplaySort(
+    id: CardCollectionRecord.ID,
     mode: SortMode?,
     direction: SearchSortDirection
   ) {
     do {
-      let list = try database.setCardListDisplaySort(id: id, mode: mode, direction: direction)
+      let list = try database.setCardCollectionDisplaySort(id: id, mode: mode, direction: direction)
       try? database.recordLocalSyncSnapshotChange(reason: "list-display-sort")
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       pushCloudSyncChangesIfNeeded()
       if let mode {
         statusMessage =
           "Sorted \(list.name) by \(GrimoraSearchPreferences.sortDescription(sortMode: mode, sortDirection: direction))."
       } else {
-        statusMessage = "Showing \(list.name) in list order."
+        statusMessage = "Showing \(list.name) in collection order."
       }
     } catch {
-      statusMessage = "List sort update failed."
+      statusMessage = "Collection sort update failed."
     }
   }
 
-  public func setCardListViewMode(
-    id: CardListRecord.ID,
-    mode: CardListViewMode
+  public func setCardCollectionViewMode(
+    id: CardCollectionRecord.ID,
+    mode: CardCollectionViewMode
   ) {
     do {
-      let list = try database.setCardListViewMode(id: id, viewMode: mode)
+      let list = try database.setCardCollectionViewMode(id: id, viewMode: mode)
       try? database.recordLocalSyncSnapshotChange(reason: "list-view-mode")
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       pushCloudSyncChangesIfNeeded()
       statusMessage = "Showing \(list.name) as \(mode == .grid ? "grid" : "list")."
     } catch {
-      statusMessage = "List view update failed."
+      statusMessage = "Collection view update failed."
     }
   }
 
-  public func setCardListRuleset(
-    id: CardListRecord.ID,
-    ruleset: CardListRuleset
+  public func setCardCollectionRuleset(
+    id: CardCollectionRecord.ID,
+    ruleset: CardCollectionRuleset
   ) {
     do {
       let list = try performListMutation {
-        try database.setCardListRuleset(id: id, ruleset: ruleset)
+        try database.setCardCollectionRuleset(id: id, ruleset: ruleset)
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage = "Set \(list.name) ruleset to \(ruleset.title)."
     } catch {
       statusMessage = "Ruleset update failed."
@@ -570,13 +570,13 @@ extension GrimoraAppModel {
   }
 
   @discardableResult
-  public func importCardListArchive(data: Data) -> CardListImportSummary? {
+  public func importCardCollectionArchive(data: Data) -> CardCollectionImportSummary? {
     do {
-      let archive = try CardListArchiveCoder.decode(data)
+      let archive = try CardCollectionArchiveCoder.decode(data)
       let listName = Self.normalizedImportListName(archive.list.name)
-      let importResult = try performListMutation { () -> (listID: CardListRecord.ID, summary: CardListImportSummary) in
-        let list = try database.createCardList(named: listName)
-        try database.setCardListRuleset(id: list.id, ruleset: archive.list.ruleset)
+      let importResult = try performListMutation { () -> (listID: CardCollectionRecord.ID, summary: CardCollectionImportSummary) in
+        let list = try database.createCardCollection(named: listName)
+        try database.setCardCollectionRuleset(id: list.id, ruleset: archive.list.ruleset)
 
         let sortedCategories = archive.categories.sorted { lhs, rhs in
           if lhs.zone != rhs.zone {
@@ -587,9 +587,9 @@ extension GrimoraAppModel {
           }
           return lhs.id < rhs.id
         }
-        var categoryIDMap: [String: CardListCategoryRecord.ID] = [:]
+        var categoryIDMap: [String: CardCollectionCategoryRecord.ID] = [:]
         for category in sortedCategories {
-          let createdCategory = try database.createCardListCategory(
+          let createdCategory = try database.createCardCollectionCategory(
             inList: list.id,
             zone: category.zone,
             named: category.name
@@ -617,31 +617,31 @@ extension GrimoraAppModel {
           )
         }
 
-        try database.updateCardListDescription(
+        try database.updateCardCollectionDescription(
           id: list.id,
           rtfdData: archive.list.descriptionRTFDData,
           plainText: archive.list.descriptionPlainText
         )
-        try database.setCardListDashboardVisibility(
+        try database.setCardCollectionDashboardVisibility(
           id: list.id,
           showsDashboard: archive.list.showsDashboard
         )
-        try database.setCardListDashboardIncludesLands(
+        try database.setCardCollectionDashboardIncludesLands(
           id: list.id,
           includesLands: archive.list.dashboardIncludesLands
         )
-        try database.setCardListDisplaySort(
+        try database.setCardCollectionDisplaySort(
           id: list.id,
           mode: archive.list.displaySortMode,
           direction: archive.list.displaySortDirection
         )
-        try database.setCardListViewMode(
+        try database.setCardCollectionViewMode(
           id: list.id,
           viewMode: archive.list.viewMode
         )
 
         let uniqueMissingCardIDs = Array(Set(missingCardIDs)).sorted()
-        let summary = CardListImportSummary(
+        let summary = CardCollectionImportSummary(
           listName: listName,
           cardCount: sortedEntries.reduce(0) { $0 + $1.quantity },
           categoryCount: sortedCategories.count,
@@ -650,7 +650,7 @@ extension GrimoraAppModel {
         return (list.id, summary)
       }
 
-      reloadCardLists(selecting: importResult.listID, activatingSelection: true)
+      reloadCardCollections(selecting: importResult.listID, activatingSelection: true)
       if importResult.summary.missingCardIDs.isEmpty {
         statusMessage = "Imported \(listName)."
       } else {
@@ -659,21 +659,21 @@ extension GrimoraAppModel {
       }
       return importResult.summary
     } catch {
-      statusMessage = "List import failed."
+      statusMessage = "Collection import failed."
       return nil
     }
   }
 
   @discardableResult
-  public func createCardListFromArchidektSource(
+  public func createCardCollectionFromArchidektSource(
     _ source: String,
     named requestedName: String? = nil
-  ) async -> CardListImportSummary? {
+  ) async -> CardCollectionImportSummary? {
     do {
       let importDeck = try await archidektImportDeck(from: source)
       let listName = Self.normalizedImportListName(requestedName ?? importDeck.name ?? "")
       return try performListMutation {
-        let list = try database.createCardList(named: listName)
+        let list = try database.createCardCollection(named: listName)
         return try importArchidektDeck(
           importDeck,
           intoListID: list.id,
@@ -682,7 +682,7 @@ extension GrimoraAppModel {
         )
       }
     } catch {
-      statusMessage = "List import failed."
+      statusMessage = "Collection import failed."
       return nil
     }
   }
@@ -690,11 +690,11 @@ extension GrimoraAppModel {
   @discardableResult
   public func importArchidektCards(
     from source: String,
-    intoListID listID: CardListRecord.ID
-  ) async -> CardListImportSummary? {
+    intoListID listID: CardCollectionRecord.ID
+  ) async -> CardCollectionImportSummary? {
     do {
       let importDeck = try await archidektImportDeck(from: source)
-      let listName = try database.cardList(id: listID)?.name ?? "List"
+      let listName = try database.cardCollection(id: listID)?.name ?? "Collection"
       return try performListMutation {
         try importArchidektDeck(
           importDeck,
@@ -704,12 +704,12 @@ extension GrimoraAppModel {
         )
       }
     } catch {
-      statusMessage = "List import failed."
+      statusMessage = "Collection import failed."
       return nil
     }
   }
 
-  public func deleteCardList(id: CardListRecord.ID) {
+  public func deleteCardCollection(id: CardCollectionRecord.ID) {
     guard !isProtectedFavouritesListID(id) else {
       statusMessage = "\(Self.favouritesListName) is managed by Grimora."
       return
@@ -717,35 +717,35 @@ extension GrimoraAppModel {
 
     do {
       try performListMutation {
-        try database.deleteCardList(id: id)
+        try database.deleteCardCollection(id: id)
       }
-      reloadCardLists(selecting: selectedListID == id ? nil : selectedListID)
-      statusMessage = "Deleted list."
+      reloadCardCollections(selecting: selectedCollectionID == id ? nil : selectedCollectionID)
+      statusMessage = "Deleted collection."
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
   @discardableResult
-  public func createCardListCategory(
+  public func createCardCollectionCategory(
     named name: String,
-    inListID listID: CardListRecord.ID? = nil,
-    zone: CardListZone = .mainboard
-  ) -> CardListCategoryRecord? {
-    guard let listID = listID ?? selectedListID else {
+    inListID listID: CardCollectionRecord.ID? = nil,
+    zone: CardCollectionZone = .mainboard
+  ) -> CardCollectionCategoryRecord? {
+    guard let listID = listID ?? selectedCollectionID else {
       return nil
     }
 
     do {
       let category = try performListMutation {
-        try database.createCardListCategory(inList: listID, zone: zone, named: name)
+        try database.createCardCollectionCategory(inList: listID, zone: zone, named: name)
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage = "Created \(category.name)."
-      return selectedListCategories.first { $0.id == category.id } ?? category
-    } catch CardListDatabaseError.emptyName {
+      return selectedCollectionCategories.first { $0.id == category.id } ?? category
+    } catch CardCollectionDatabaseError.emptyName {
       return nil
-    } catch CardListDatabaseError.duplicateName {
+    } catch CardCollectionDatabaseError.duplicateName {
       statusMessage = "Category already exists."
       return nil
     } catch {
@@ -754,55 +754,55 @@ extension GrimoraAppModel {
     }
   }
 
-  public func renameCardListCategory(id: CardListCategoryRecord.ID, to name: String) {
+  public func renameCardCollectionCategory(id: CardCollectionCategoryRecord.ID, to name: String) {
     do {
       let category = try performListMutation {
-        try database.renameCardListCategory(id: id, to: name)
+        try database.renameCardCollectionCategory(id: id, to: name)
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage = "Renamed category to \(category.name)."
-    } catch CardListDatabaseError.emptyName {
+    } catch CardCollectionDatabaseError.emptyName {
       return
-    } catch CardListDatabaseError.duplicateName {
+    } catch CardCollectionDatabaseError.duplicateName {
       statusMessage = "Category already exists."
     } catch {
       statusMessage = "Category update failed."
     }
   }
 
-  public func deleteCardListCategory(id: CardListCategoryRecord.ID) {
+  public func deleteCardCollectionCategory(id: CardCollectionCategoryRecord.ID) {
     do {
       try performListMutation {
-        try database.deleteCardListCategory(id: id)
+        try database.deleteCardCollectionCategory(id: id)
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage = "Deleted category."
     } catch {
       statusMessage = "Category update failed."
     }
   }
 
-  public func moveCardListCategory(id: CardListCategoryRecord.ID, by offset: Int) {
-    guard let index = selectedListCategories.firstIndex(where: { $0.id == id }) else {
+  public func moveCardCollectionCategory(id: CardCollectionCategoryRecord.ID, by offset: Int) {
+    guard let index = selectedCollectionCategories.firstIndex(where: { $0.id == id }) else {
       return
     }
 
-    moveCardListCategory(id: id, toPosition: index + offset)
+    moveCardCollectionCategory(id: id, toPosition: index + offset)
   }
 
-  public func moveCardListCategory(id: CardListCategoryRecord.ID, toPosition position: Int) {
+  public func moveCardCollectionCategory(id: CardCollectionCategoryRecord.ID, toPosition position: Int) {
     do {
       try performListMutation {
-        try database.moveCardListCategory(id: id, toPosition: position)
+        try database.moveCardCollectionCategory(id: id, toPosition: position)
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage = "Moved category."
     } catch {
       statusMessage = "Category update failed."
     }
   }
 
-  public func addCard(_ card: CardRecord, toListID listID: CardListRecord.ID) {
+  public func addCard(_ card: CardRecord, toListID listID: CardCollectionRecord.ID) {
     addCardID(card.id, named: card.name, toListID: listID)
   }
 
@@ -830,7 +830,7 @@ extension GrimoraAppModel {
     }
 
     do {
-      let entryIDs = try database.cardListEntries(forListID: favouritesList.id)
+      let entryIDs = try database.cardCollectionEntries(forListID: favouritesList.id)
         .filter { $0.cardID == card.id }
         .map(\.id)
       guard !entryIDs.isEmpty else {
@@ -839,14 +839,14 @@ extension GrimoraAppModel {
 
       try performListMutation {
         for id in entryIDs {
-          try database.removeCardListEntryCompletely(id: id)
+          try database.removeCardCollectionEntryCompletely(id: id)
         }
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       let listName = currentFavouriteListName(fallback: favouritesList.name)
       statusMessage = "Removed \(card.name) from \(listName)."
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
@@ -867,14 +867,14 @@ extension GrimoraAppModel {
         }
       }
 
-      let currentLists = try database.cardLists()
+      let currentLists = try database.cardCollections()
       let favouritesList =
         currentLists.first(where: { Self.isCanonicalFavouritesListName($0.name) })
         ?? currentLists.first(where: { Self.isFavouritesListName($0.name) })
       let existingFavouriteCardIDs: Set<CardRecord.ID>
       if let favouritesList {
         existingFavouriteCardIDs = Set(
-          try database.cardListEntries(forListID: favouritesList.id).map(\.cardID)
+          try database.cardCollectionEntries(forListID: favouritesList.id).map(\.cardID)
         )
       } else {
         existingFavouriteCardIDs = []
@@ -890,11 +890,11 @@ extension GrimoraAppModel {
       }
 
       let updatedList = try performListMutation {
-        let list: CardListRecord
+        let list: CardCollectionRecord
         if let favouritesList {
           list = favouritesList
         } else {
-          list = try database.createCardList(named: Self.favouritesListName)
+          list = try database.createCardCollection(named: Self.favouritesListName)
         }
         for cardID in cardIDsToAdd {
           try database.appendCard(cardID, toList: list.id)
@@ -902,7 +902,7 @@ extension GrimoraAppModel {
         return list
       }
 
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       let listName = currentFavouriteListName(fallback: updatedList.name)
       if cardIDsToAdd.count == 1,
         requestedCardIDs.count == 1,
@@ -915,15 +915,15 @@ extension GrimoraAppModel {
         statusMessage = "Added \(formatted(cardIDsToAdd.count)) \(noun) to \(listName)."
       }
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
-  public func addCardID(_ cardID: CardRecord.ID, toListID listID: CardListRecord.ID) {
+  public func addCardID(_ cardID: CardRecord.ID, toListID listID: CardCollectionRecord.ID) {
     addCardID(cardID, named: nil, toListID: listID)
   }
 
-  public func addCards(_ cardIDs: [CardRecord.ID], toListID listID: CardListRecord.ID) {
+  public func addCards(_ cardIDs: [CardRecord.ID], toListID listID: CardCollectionRecord.ID) {
     let requestedCardIDs = cardIDs
     guard !requestedCardIDs.isEmpty else {
       return
@@ -942,26 +942,26 @@ extension GrimoraAppModel {
           try database.appendCard(cardID, toList: listID)
         }
       }
-      reloadCardLists(selecting: selectedListID)
-      if let list = cardLists.first(where: { $0.id == listID }) {
+      reloadCardCollections(selecting: selectedCollectionID)
+      if let list = cardCollections.first(where: { $0.id == listID }) {
         let noun = requestedCardIDs.count == 1 ? "card" : "cards"
         statusMessage =
           "Added \(formatted(requestedCardIDs.count)) \(noun) to \(list.name)."
       }
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
-  public func removeCardListEntry(id: CardListEntryRecord.ID) {
-    removeCardListEntries(ids: [id])
+  public func removeCardCollectionEntry(id: CardCollectionEntryRecord.ID) {
+    removeCardCollectionEntries(ids: [id])
   }
 
-  public func incrementCardListEntryQuantity(id: CardListEntryRecord.ID) {
-    incrementCardListEntryQuantities(ids: [id])
+  public func incrementCardCollectionEntryQuantity(id: CardCollectionEntryRecord.ID) {
+    incrementCardCollectionEntryQuantities(ids: [id])
   }
 
-  public func incrementCardListEntryQuantities(ids: [CardListEntryRecord.ID]) {
+  public func incrementCardCollectionEntryQuantities(ids: [CardCollectionEntryRecord.ID]) {
     let uniqueIDs = uniqueEntryIDs(ids)
     guard !uniqueIDs.isEmpty else {
       return
@@ -970,21 +970,21 @@ extension GrimoraAppModel {
     do {
       try performListMutation {
         for id in uniqueIDs {
-          try database.incrementCardListEntryQuantity(id: id)
+          try database.incrementCardCollectionEntryQuantity(id: id)
         }
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage =
         uniqueIDs.count == 1
         ? "Increased card quantity."
         : "Increased \(formatted(uniqueIDs.count)) card quantities."
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
-  public func setCardListEntryQuantities(
-    ids: [CardListEntryRecord.ID],
+  public func setCardCollectionEntryQuantities(
+    ids: [CardCollectionEntryRecord.ID],
     quantity: Int
   ) {
     let uniqueIDs = uniqueEntryIDs(ids)
@@ -995,39 +995,39 @@ extension GrimoraAppModel {
     do {
       try performListMutation {
         for id in uniqueIDs {
-          try database.setCardListEntryQuantity(id: id, quantity: quantity)
+          try database.setCardCollectionEntryQuantity(id: id, quantity: quantity)
         }
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage =
         uniqueIDs.count == 1
         ? "Set card quantity."
         : "Set \(formatted(uniqueIDs.count)) card quantities."
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
-  public func removeCardListEntries(ids: [CardListEntryRecord.ID]) {
+  public func removeCardCollectionEntries(ids: [CardCollectionEntryRecord.ID]) {
     let uniqueIDs = uniqueEntryIDs(ids)
     guard !uniqueIDs.isEmpty else {
       return
     }
 
     do {
-      let entriesBeforeRemoval = selectedListEntries.filter { uniqueIDs.contains($0.id) }
+      let entriesBeforeRemoval = selectedCollectionEntries.filter { uniqueIDs.contains($0.id) }
       try performListMutation {
         for id in uniqueIDs {
-          try database.removeCardListEntry(id: id)
+          try database.removeCardCollectionEntry(id: id)
         }
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       let removedEntries = entriesBeforeRemoval.contains { $0.quantity <= 1 }
       if removedEntries {
         statusMessage =
           uniqueIDs.count == 1
-          ? "Removed card from list."
-          : "Removed \(formatted(uniqueIDs.count)) cards from list."
+          ? "Removed card from collection."
+          : "Removed \(formatted(uniqueIDs.count)) cards from collection."
       } else {
         statusMessage =
           uniqueIDs.count == 1
@@ -1035,11 +1035,11 @@ extension GrimoraAppModel {
           : "Decreased \(formatted(uniqueIDs.count)) card quantities."
       }
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
-  public func removeCardListEntriesCompletely(ids: [CardListEntryRecord.ID]) {
+  public func removeCardCollectionEntriesCompletely(ids: [CardCollectionEntryRecord.ID]) {
     let uniqueIDs = uniqueEntryIDs(ids)
     guard !uniqueIDs.isEmpty else {
       return
@@ -1048,29 +1048,29 @@ extension GrimoraAppModel {
     do {
       try performListMutation {
         for id in uniqueIDs {
-          try database.removeCardListEntryCompletely(id: id)
+          try database.removeCardCollectionEntryCompletely(id: id)
         }
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       statusMessage =
         uniqueIDs.count == 1
-        ? "Removed card from list."
-        : "Removed \(formatted(uniqueIDs.count)) cards from list."
+        ? "Removed card from collection."
+        : "Removed \(formatted(uniqueIDs.count)) cards from collection."
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
-  public func moveCardListEntry(
-    id: CardListEntryRecord.ID,
-    toCategoryID categoryID: CardListCategoryRecord.ID?
+  public func moveCardCollectionEntry(
+    id: CardCollectionEntryRecord.ID,
+    toCategoryID categoryID: CardCollectionCategoryRecord.ID?
   ) {
-    moveCardListEntries(ids: [id], toCategoryID: categoryID)
+    moveCardCollectionEntries(ids: [id], toCategoryID: categoryID)
   }
 
-  public func moveCardListEntries(
-    ids: [CardListEntryRecord.ID],
-    toCategoryID categoryID: CardListCategoryRecord.ID?
+  public func moveCardCollectionEntries(
+    ids: [CardCollectionEntryRecord.ID],
+    toCategoryID categoryID: CardCollectionCategoryRecord.ID?
   ) {
     let uniqueIDs = uniqueEntryIDs(ids)
     guard !uniqueIDs.isEmpty else {
@@ -1080,13 +1080,13 @@ extension GrimoraAppModel {
     do {
       try performListMutation {
         for id in uniqueIDs {
-          try database.moveCardListEntry(id: id, toCategory: categoryID)
+          try database.moveCardCollectionEntry(id: id, toCategory: categoryID)
         }
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       let subject = uniqueIDs.count == 1 ? "card" : "\(formatted(uniqueIDs.count)) cards"
       if let categoryID,
-        let category = selectedListCategories.first(where: { $0.id == categoryID })
+        let category = selectedCollectionCategories.first(where: { $0.id == categoryID })
       {
         statusMessage = "Moved \(subject) to \(category.name)."
       } else {
@@ -1097,39 +1097,39 @@ extension GrimoraAppModel {
     }
   }
 
-  public func moveCardListEntry(
-    id: CardListEntryRecord.ID,
-    toZone zone: CardListZone
+  public func moveCardCollectionEntry(
+    id: CardCollectionEntryRecord.ID,
+    toZone zone: CardCollectionZone
   ) {
-    moveCardListEntries(ids: [id], toZone: zone)
+    moveCardCollectionEntries(ids: [id], toZone: zone)
   }
 
-  public func moveCardListEntries(
-    ids: [CardListEntryRecord.ID],
-    toZone zone: CardListZone
+  public func moveCardCollectionEntries(
+    ids: [CardCollectionEntryRecord.ID],
+    toZone zone: CardCollectionZone
   ) {
     let uniqueIDs = uniqueEntryIDs(ids)
     guard !uniqueIDs.isEmpty else {
       return
     }
-    let zone = selectedList?.ruleset.normalizedZone(zone) ?? zone
+    let zone = selectedCollection?.ruleset.normalizedZone(zone) ?? zone
 
     do {
       try performListMutation {
         for id in uniqueIDs {
-          try database.moveCardListEntry(id: id, toZone: zone)
+          try database.moveCardCollectionEntry(id: id, toZone: zone)
         }
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       let subject = uniqueIDs.count == 1 ? "card" : "\(formatted(uniqueIDs.count)) cards"
       statusMessage = "Moved \(subject) to \(zone.title)."
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
-  func uniqueEntryIDs(_ ids: [CardListEntryRecord.ID]) -> [CardListEntryRecord.ID] {
-    var seenIDs: Set<CardListEntryRecord.ID> = []
+  func uniqueEntryIDs(_ ids: [CardCollectionEntryRecord.ID]) -> [CardCollectionEntryRecord.ID] {
+    var seenIDs: Set<CardCollectionEntryRecord.ID> = []
     return ids.filter { seenIDs.insert($0).inserted }
   }
 
@@ -1138,12 +1138,12 @@ extension GrimoraAppModel {
     return ids.filter { seenIDs.insert($0).inserted }
   }
 
-  func isProtectedFavouritesListID(_ id: CardListRecord.ID) -> Bool {
-    if let list = cardLists.first(where: { $0.id == id }) {
+  func isProtectedFavouritesListID(_ id: CardCollectionRecord.ID) -> Bool {
+    if let list = cardCollections.first(where: { $0.id == id }) {
       return isProtectedFavouritesList(list)
     }
 
-    guard let list = try? database.cardList(id: id) else {
+    guard let list = try? database.cardCollection(id: id) else {
       return false
     }
     return isProtectedFavouritesList(list)
@@ -1154,32 +1154,32 @@ extension GrimoraAppModel {
     adding cardIDs: [CardRecord.ID],
     primaryCard: CardRecord?,
     selectAfterCreate: Bool
-  ) -> CardListRecord? {
+  ) -> CardCollectionRecord? {
     do {
       let list = try ensureFavouritesList()
       if !cardIDs.isEmpty {
         addCardsToFavourites(cardIDs, primaryCard: primaryCard)
       } else {
-        reloadCardLists(
-          selecting: selectAfterCreate ? list.id : selectedListID,
+        reloadCardCollections(
+          selecting: selectAfterCreate ? list.id : selectedCollectionID,
           activatingSelection: selectAfterCreate
         )
         statusMessage = "\(Self.favouritesListName) already exists."
       }
 
       if selectAfterCreate {
-        selectCardList(id: list.id)
+        selectCardCollection(id: list.id)
       }
-      return cardLists.first { $0.id == list.id } ?? list
+      return cardCollections.first { $0.id == list.id } ?? list
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
       return nil
     }
   }
 
   private func currentFavouriteListName(fallback: String) -> String {
-    cardLists.first(where: { Self.isCanonicalFavouritesListName($0.name) })?.name
-      ?? cardLists.first(where: { Self.isFavouritesListName($0.name) })?.name
+    cardCollections.first(where: { Self.isCanonicalFavouritesListName($0.name) })?.name
+      ?? cardCollections.first(where: { Self.isFavouritesListName($0.name) })?.name
       ?? fallback
   }
 }

@@ -135,7 +135,7 @@ extension GrimoraAppModel {
         "Imported \(summary.importedCards) cards. Images load as you browse."
         + priceHistoryStatusSuffix(for: summary.priceHistoryStatus)
       finishLibraryActivityForImportSummary(summary, message: statusMessage)
-      reloadCardLists()
+      reloadCardCollections()
       reloadSearch()
       startDeferredValueHistoryRefreshIfNeeded(for: summary.priceHistoryStatus)
       if cloudSyncMode == .enabled {
@@ -231,7 +231,7 @@ extension GrimoraAppModel {
       currentSearchCacheKey = nil
       searchVisibleImageWindowTracker.reset()
       resetSearchVisibleImageRequests()
-      reloadCardLists()
+      reloadCardCollections()
       reloadSearch()
       pushCloudSyncChangesIfNeeded()
       startValueHistoryBackgroundImportIfNeeded()
@@ -301,7 +301,7 @@ extension GrimoraAppModel {
       try database.clearStoredImagePaths()
       updateManifest = nil
       refreshLibraryState()
-      reloadCardLists()
+      reloadCardCollections()
       if hasLibrary {
         reloadSearch()
       } else {
@@ -324,7 +324,7 @@ extension GrimoraAppModel {
         "Deleted cached images and refreshed \(self.formatted(summary.importedCards)) cards. Images load as you browse."
           + self.priceHistoryStatusSuffix(for: summary.priceHistoryStatus)
       },
-      failureMessage: "Delete and refresh failed. Existing lists were preserved."
+      failureMessage: "Delete and refresh failed. Existing collections were preserved."
     )
   }
 
@@ -376,7 +376,7 @@ extension GrimoraAppModel {
       currentSearchCacheKey = nil
       searchVisibleImageWindowTracker.reset()
       resetSearchVisibleImageRequests()
-      reloadCardLists()
+      reloadCardCollections()
       if hasLibrary {
         reloadSearch()
       } else {
@@ -430,7 +430,7 @@ extension GrimoraAppModel {
       currentSearchCacheKey = nil
       searchVisibleImageWindowTracker.reset()
       resetSearchVisibleImageRequests()
-      reloadCardLists()
+      reloadCardCollections()
       if hasLibrary {
         reloadSearch()
       } else {
@@ -825,7 +825,7 @@ extension GrimoraAppModel {
 
   public func selectCard(
     _ card: CardRecord,
-    fromListEntryID listEntryID: CardListEntryRecord.ID
+    fromListEntryID listEntryID: CardCollectionEntryRecord.ID
   ) {
     setSelectedCard(card, listEntryID: listEntryID)
   }
@@ -835,22 +835,22 @@ extension GrimoraAppModel {
   }
 
   public func selectPrinting(_ printing: CardRecord) {
-    guard let selectedCardListEntryID else {
+    guard let selectedCardCollectionEntryID else {
       setSelectedCard(printing, listEntryID: nil)
       return
     }
 
     do {
       let updatedEntry = try performListMutation {
-        try database.replaceCardListEntryPrint(
-          id: selectedCardListEntryID,
+        try database.replaceCardCollectionEntryPrint(
+          id: selectedCardCollectionEntryID,
           withCardID: printing.id
         )
       }
-      reloadCardLists(selecting: selectedListID)
+      reloadCardCollections(selecting: selectedCollectionID)
       setSelectedCard(updatedEntry.card ?? printing, listEntryID: updatedEntry.id)
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 }

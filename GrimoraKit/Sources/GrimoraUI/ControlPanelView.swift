@@ -4,12 +4,12 @@ import SwiftUI
 struct ControlPanelView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(GrimoraAppModel.self) private var model
-    @State private var draggedListID: CardListRecord.ID?
+    @State private var draggedListID: CardCollectionRecord.ID?
     @State private var navigationFeedbackTrigger = 0
     @State private var createListFeedbackTrigger = 0
 
     var onCreateList: () -> Void
-    var onRenameList: (CardListRecord) -> Void
+    var onRenameList: (CardCollectionRecord) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -31,7 +31,7 @@ struct ControlPanelView: View {
                         navigationFeedbackTrigger += 1
                         model.selectListsOverview()
                     } label: {
-                        Label("Lists", systemImage: "square.grid.2x2")
+                        Label("Collections", systemImage: "square.grid.2x2")
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(
@@ -53,7 +53,7 @@ struct ControlPanelView: View {
 
             if let favourites = model.favouritesList {
                 SidebarSection("Favourites", palette: palette) {
-                    CardListsSidebarContent(
+                    CardCollectionsSidebarContent(
                         lists: [favourites],
                         isPinnedSection: false,
                         emptyTitle: "No Favourites",
@@ -67,11 +67,11 @@ struct ControlPanelView: View {
                 SidebarDivider(palette: palette)
             }
 
-            SidebarSection("Pinned Lists", palette: palette) {
-                CardListsSidebarContent(
-                    lists: model.pinnedCardLists,
+            SidebarSection("Pinned Collections", palette: palette) {
+                CardCollectionsSidebarContent(
+                    lists: model.pinnedCardCollections,
                     isPinnedSection: true,
-                    emptyTitle: "No Pinned Lists",
+                    emptyTitle: "No Pinned Collections",
                     emptyAccessibilityIdentifier: "empty-pinned-lists-sidebar",
                     palette: palette,
                     draggedListID: $draggedListID,
@@ -81,11 +81,11 @@ struct ControlPanelView: View {
 
             SidebarDivider(palette: palette)
 
-            SidebarSection("Lists", palette: palette) {
-                CardListsSidebarContent(
-                    lists: model.unpinnedCardLists,
+            SidebarSection("Collections", palette: palette) {
+                CardCollectionsSidebarContent(
+                    lists: model.unpinnedCardCollections,
                     isPinnedSection: false,
-                    emptyTitle: model.pinnedCardLists.isEmpty ? "No Lists" : "All Lists Pinned",
+                    emptyTitle: model.pinnedCardCollections.isEmpty ? "No Collections" : "All Collections Pinned",
                     emptyAccessibilityIdentifier: "empty-lists-sidebar",
                     palette: palette,
                     draggedListID: $draggedListID,
@@ -112,7 +112,7 @@ struct ControlPanelView: View {
                 createListFeedbackTrigger += 1
                 onCreateList()
             } label: {
-                Label("New List", systemImage: "plus")
+                Label("New Collection", systemImage: "plus")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(SidebarNavigationButtonStyle(isSelected: model.sidebarSelection == .newList, palette: palette))
@@ -197,7 +197,7 @@ private struct ManagedCatalogMigrationCallout: View {
         case .validating:
             return "Checking the downloaded catalog before it can be activated."
         case .restartRequired:
-            return "Quit and reopen Grimora to finish upgrading. Your lists remain available until then."
+            return "Quit and reopen Grimora to finish upgrading. Your collections remain available until then."
         case .failed(let message):
             return message
         }

@@ -52,10 +52,10 @@ extension GrimoraAppModel {
 
   func setSelectedCard(
     _ card: CardRecord?,
-    listEntryID: CardListEntryRecord.ID?
+    listEntryID: CardCollectionEntryRecord.ID?
   ) {
     isUpdatingSelectedCardSource = true
-    selectedCardListEntryID = listEntryID
+    selectedCardCollectionEntryID = listEntryID
     selectedCard = card
     isUpdatingSelectedCardSource = false
   }
@@ -128,21 +128,21 @@ extension GrimoraAppModel {
   }
 
   public func cacheVisibleListEntryImages(
-    around entryID: CardListEntryRecord.ID,
+    around entryID: CardCollectionEntryRecord.ID,
     quality: CardImageQuality = .small,
     forceRefresh: Bool = false
   ) async {
     await cacheVisibleListEntryImages(
       around: entryID,
-      displayedEntries: selectedListEntries,
+      displayedEntries: selectedCollectionEntries,
       quality: quality,
       forceRefresh: forceRefresh
     )
   }
 
   func cacheVisibleListEntryImages(
-    around entryID: CardListEntryRecord.ID,
-    displayedEntries: [CardListEntryRecord],
+    around entryID: CardCollectionEntryRecord.ID,
+    displayedEntries: [CardCollectionEntryRecord],
     quality: CardImageQuality = .small,
     forceRefresh: Bool = false
   ) async {
@@ -194,8 +194,8 @@ extension GrimoraAppModel {
   }
 
   func refreshVisibleListEntryImages(
-    displayedEntries: [CardListEntryRecord],
-    around entryID: CardListEntryRecord.ID?,
+    displayedEntries: [CardCollectionEntryRecord],
+    around entryID: CardCollectionEntryRecord.ID?,
     quality: CardImageQuality
   ) async {
     listVisibleImageWindowTracker.reset()
@@ -240,8 +240,8 @@ extension GrimoraAppModel {
 
   func visibleListImageWindow(
     startingAt startIndex: Int,
-    entries: [CardListEntryRecord]
-  ) -> [CardListEntryRecord] {
+    entries: [CardCollectionEntryRecord]
+  ) -> [CardCollectionEntryRecord] {
     guard !entries.isEmpty else {
       return []
     }
@@ -657,7 +657,7 @@ extension GrimoraAppModel {
 
   private func cardForVisibleImageRequest(_ key: VisibleImageRequestKey) -> CardRecord? {
     cards.first { $0.id == key.cardID }
-      ?? selectedListEntries.compactMap(\.card).first { $0.id == key.cardID }
+      ?? selectedCollectionEntries.compactMap(\.card).first { $0.id == key.cardID }
   }
 
   private func hasRemoteDisplayCandidate(

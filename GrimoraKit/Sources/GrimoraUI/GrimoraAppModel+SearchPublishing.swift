@@ -254,16 +254,16 @@ extension GrimoraAppModel {
       }
     }
 
-    for index in selectedListEntries.indices where selectedListEntries[index].cardID == updatedCard.id {
-      if selectedListEntries[index].card != updatedCard {
-        selectedListEntries[index].card = updatedCard
+    for index in selectedCollectionEntries.indices where selectedCollectionEntries[index].cardID == updatedCard.id {
+      if selectedCollectionEntries[index].card != updatedCard {
+        selectedCollectionEntries[index].card = updatedCard
       }
     }
 
-    for index in cardListOverviewItems.indices where cardListOverviewItems[index].topCard?.id == updatedCard.id {
-      if cardListOverviewItems[index].topCard != updatedCard {
-        cardListOverviewItems[index].topCard = updatedCard
-        cardListOverviewItems[index].topEntry?.card = updatedCard
+    for index in cardCollectionOverviewItems.indices where cardCollectionOverviewItems[index].topCard?.id == updatedCard.id {
+      if cardCollectionOverviewItems[index].topCard != updatedCard {
+        cardCollectionOverviewItems[index].topCard = updatedCard
+        cardCollectionOverviewItems[index].topEntry?.card = updatedCard
       }
     }
 
@@ -271,7 +271,7 @@ extension GrimoraAppModel {
     searchPageCache.patchImageUpdate(updatedCard)
 
     if selectedCard?.id == updatedCard.id, selectedCard != Optional(updatedCard) {
-      setSelectedCard(updatedCard, listEntryID: selectedCardListEntryID)
+      setSelectedCard(updatedCard, listEntryID: selectedCardCollectionEntryID)
     }
   }
 

@@ -191,7 +191,7 @@ final class GrimoraMacUITests: XCTestCase {
             )
         ])
         let database = try CardDatabase(storage: .file(databaseURL))
-        _ = try database.createCardList(named: "Detail Picks")
+        _ = try database.createCardCollection(named: "Detail Picks")
 
         let app = launchApp(databaseURL: databaseURL)
         let cardButton = app.buttons["open-card-alpha"]
@@ -246,77 +246,6 @@ final class GrimoraMacUITests: XCTestCase {
 
         searchField.typeKey(.return, modifierFlags: [])
         XCTAssertTrue(app.staticTexts["Unsupported Search"].waitForExistence(timeout: 2))
-    }
-
-    func testCreateListFromSearchResultsPromptsForNameAndSelectsList() throws {
-        let databaseURL = try seedDatabase(cards: [
-            CardRecord(
-                id: "alpha",
-                name: "Alpha Forest",
-                releasedAt: "2020-01-01",
-                setCode: "abc",
-                setName: "Alpha Set",
-                setType: "expansion",
-                collectorNumber: "1",
-                collectorNumberNumber: 1,
-                rarity: "common",
-                rarityRank: 0,
-                manaValue: 2,
-                colorSortKey: 4,
-                layout: "normal",
-                typeLine: "Creature",
-                oracleText: "Reach",
-                isRealCard: true
-            ),
-            CardRecord(
-                id: "beta",
-                name: "Beta Mage",
-                releasedAt: "2020-01-02",
-                setCode: "abc",
-                setName: "Alpha Set",
-                setType: "expansion",
-                collectorNumber: "2",
-                collectorNumberNumber: 2,
-                rarity: "rare",
-                rarityRank: 2,
-                colorSortKey: 1,
-                layout: "normal",
-                typeLine: "Creature",
-                oracleText: "Draw a card.",
-                isRealCard: true
-            )
-        ])
-
-        let app = launchApp(databaseURL: databaseURL, appearance: .light)
-        let searchField = app.searchFields.firstMatch
-        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
-        searchField.click()
-        searchField.typeText("forest")
-        searchField.typeKey(.return, modifierFlags: [])
-
-        let resultTotal = app.staticTexts["search-results-total"]
-        XCTAssertTrue(resultTotal.waitForExistence(timeout: 2))
-        XCTAssertTrue(waitForValue(of: resultTotal, toEqual: "1 card"))
-
-        let createButton = app.buttons["create-list-from-search-button"]
-        XCTAssertTrue(createButton.waitForExistence(timeout: 2))
-        XCTAssertTrue(createButton.isEnabled)
-        createButton.click()
-
-        let nameField = app.textFields.firstMatch
-        XCTAssertTrue(nameField.waitForExistence(timeout: 2))
-        nameField.typeText("Forest Picks")
-        app.sheets.firstMatch.buttons["Create"].click()
-
-        let listRow = app.buttons["card-list-row-Forest Picks"]
-        XCTAssertTrue(listRow.waitForExistence(timeout: 3))
-        XCTAssertTrue(waitForValue(of: listRow, toEqual: "1 card"))
-        XCTAssertTrue(app.staticTexts["card-list-entry-count"].waitForExistence(timeout: 3))
-        XCTAssertTrue(waitForValue(of: app.staticTexts["card-list-entry-count"], toEqual: "1 card"))
-        let listEntry = app.buttons
-            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "open-list-entry-"))
-            .firstMatch
-        XCTAssertTrue(listEntry.waitForExistence(timeout: 3))
     }
 
     func testSearchHistorySuggestionReplaysRecentQuery() throws {
@@ -478,7 +407,7 @@ final class GrimoraMacUITests: XCTestCase {
             )
         ])
         let database = try CardDatabase(storage: .file(databaseURL))
-        let list = try database.createCardList(named: "Tempo Picks")
+        let list = try database.createCardCollection(named: "Tempo Picks")
         try database.appendCard("tempo-old", toList: list.id)
 
         var app = launchApp(databaseURL: databaseURL)
@@ -544,7 +473,7 @@ final class GrimoraMacUITests: XCTestCase {
             )
         ])
         let database = try CardDatabase(storage: .file(databaseURL))
-        let list = try database.createCardList(named: "Drafts")
+        let list = try database.createCardCollection(named: "Drafts")
         try database.appendCard("alpha", toList: list.id)
 
         let app = launchApp(databaseURL: databaseURL)
@@ -687,7 +616,7 @@ final class GrimoraMacUITests: XCTestCase {
     func testSelectedSearchCardsBulkAddIntoSidebarList() throws {
         let databaseURL = try seedDatabase(cards: makeZoomFixtureCards(count: 4))
         let database = try CardDatabase(storage: .file(databaseURL))
-        _ = try database.createCardList(named: "Bulk Drops")
+        _ = try database.createCardCollection(named: "Bulk Drops")
 
         let app = launchApp(databaseURL: databaseURL)
         let resultTotal = app.staticTexts["search-results-total"]
@@ -733,7 +662,7 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Zoom Fixture 2"].waitForExistence(timeout: 3))
     }
 
-    func testCardListsCreateAddDuplicateQuantitiesRemoveAndClose() throws {
+    func testCardCollectionsCreateAddDuplicateQuantitiesRemoveAndClose() throws {
         let databaseURL = try seedDatabase(cards: [
             CardRecord(
                 id: "alpha",
@@ -982,7 +911,7 @@ final class GrimoraMacUITests: XCTestCase {
         try openArtworkContextMenu(app: app, cardID: "alpha")
         XCTAssertTrue(contextMenuContains(app: app, named: "Share"))
         XCTAssertTrue(contextMenuContains(app: app, named: "Add to Favourites"))
-        XCTAssertTrue(contextMenuContains(app: app, named: "Create New List"))
+        XCTAssertTrue(contextMenuContains(app: app, named: "Create New Collection"))
         XCTAssertTrue(clickMenuItemOrButton(app: app, named: "Add to Favourites"))
 
         let favouritesRow = app.buttons["card-list-row-Favourites"]
@@ -994,7 +923,7 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(waitForValue(of: favouritesRow, toEqual: "1 card"))
 
         try openArtworkContextMenu(app: app, cardID: "alpha")
-        XCTAssertTrue(clickMenuItemOrButton(app: app, named: "Create New List"))
+        XCTAssertTrue(clickMenuItemOrButton(app: app, named: "Create New Collection"))
 
         let nameField = app.textFields.firstMatch
         XCTAssertTrue(nameField.waitForExistence(timeout: 2))
@@ -1117,7 +1046,7 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(app.scrollViews["card-detail"].waitForExistence(timeout: 3))
     }
 
-    func testCardListDescriptionNotesShortcutsPersistPlainText() throws {
+    func testCardCollectionDescriptionNotesShortcutsPersistPlainText() throws {
         let databaseURL = try seedDatabase(cards: [
             CardRecord(
                 id: "alpha",
@@ -1662,7 +1591,7 @@ final class GrimoraMacUITests: XCTestCase {
                 break
             }
 
-            let scrollView = cardListScrollView(app: app)
+            let scrollView = cardCollectionScrollView(app: app)
             if actionButton.exists, scrollView.exists {
                 if actionButton.frame.midY < scrollView.frame.minY {
                     scrollPrimaryScrollView(app: app, down: false)
@@ -1704,13 +1633,13 @@ final class GrimoraMacUITests: XCTestCase {
         }
     }
 
-    private func cardListScrollView(app: XCUIApplication) -> XCUIElement {
+    private func cardCollectionScrollView(app: XCUIApplication) -> XCUIElement {
         let identifiedScrollView = app.scrollViews["card-list-detail-scroll"]
         return identifiedScrollView.exists ? identifiedScrollView : app.scrollViews.firstMatch
     }
 
     private func scrollPrimaryScrollView(app: XCUIApplication, down: Bool) {
-        let scrollView = cardListScrollView(app: app)
+        let scrollView = cardCollectionScrollView(app: app)
         guard scrollView.waitForExistence(timeout: 1) else {
             return
         }

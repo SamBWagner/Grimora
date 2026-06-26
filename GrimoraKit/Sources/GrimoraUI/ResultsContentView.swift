@@ -230,7 +230,7 @@ struct ResultsContentView: View {
         searchResultBulkSelection.prepareMenu(triggeredBy: card.id)
     }
 
-    private func addLiveSelectedSearchCards(to listID: CardListRecord.ID, triggeredBy card: CardRecord) -> Bool {
+    private func addLiveSelectedSearchCards(to listID: CardCollectionRecord.ID, triggeredBy card: CardRecord) -> Bool {
         let ids = searchResultBulkSelection.preparedOrCurrentCardIDs(triggeredBy: card.id)
         guard !ids.isEmpty else {
             return false

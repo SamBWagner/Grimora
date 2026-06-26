@@ -54,7 +54,7 @@ public final class GrimoraAppModel {
   public var selectedCard: CardRecord? {
     didSet {
       if !isUpdatingSelectedCardSource {
-        selectedCardListEntryID = nil
+        selectedCardCollectionEntryID = nil
       }
       guard selectedCard?.id != oldValue?.id else {
         return
@@ -85,24 +85,24 @@ public final class GrimoraAppModel {
     GrimoraDefaultSearchConfiguration()
   public internal(set) var searchHistory: [String] = []
   public internal(set) var hiddenSearchTerms: [SearchRefinement] = []
-  public internal(set) var cardLists: [CardListRecord] = []
-  public internal(set) var cardListOverviewItems: [CardListOverviewItem] = []
+  public internal(set) var cardCollections: [CardCollectionRecord] = []
+  public internal(set) var cardCollectionOverviewItems: [CardCollectionOverviewItem] = []
   /// Card IDs currently in the Favourites list, refreshed whenever the lists reload.
   /// Backs the star toggle surfaced on search result cards.
   public internal(set) var favouriteCardIDs: Set<CardRecord.ID> = []
   public internal(set) var sidebarSelection: GrimoraSidebarSelection = .search
-  public internal(set) var selectedListID: CardListRecord.ID?
-  public internal(set) var selectedListCategories: [CardListCategoryRecord] = []
-  public internal(set) var selectedListEntries: [CardListEntryRecord] = []
-  public internal(set) var selectedListSearchText = ""
-  public internal(set) var searchedSelectedListEntries: [CardListEntryRecord]?
-  public internal(set) var selectedListSearchUnsupportedMessage: String?
+  public internal(set) var selectedCollectionID: CardCollectionRecord.ID?
+  public internal(set) var selectedCollectionCategories: [CardCollectionCategoryRecord] = []
+  public internal(set) var selectedCollectionEntries: [CardCollectionEntryRecord] = []
+  public internal(set) var selectedCollectionSearchText = ""
+  public internal(set) var searchedSelectedListEntries: [CardCollectionEntryRecord]?
+  public internal(set) var selectedCollectionSearchUnsupportedMessage: String?
   public internal(set) var dashboardSearchText = ""
-  public internal(set) var dashboardListMatchIDs: Set<CardListRecord.ID>?
-  public internal(set) var dashboardListMatches: [CardListRecord.ID: CrossListSearchMatch] = [:]
+  public internal(set) var dashboardListMatchIDs: Set<CardCollectionRecord.ID>?
+  public internal(set) var dashboardListMatches: [CardCollectionRecord.ID: CrossListSearchMatch] = [:]
   public internal(set) var dashboardSearchUnsupportedMessage: String?
-  public internal(set) var selectedListRulesetWarnings: [CardListRulesetWarning] = []
-  public internal(set) var selectedCardListEntryID: CardListEntryRecord.ID?
+  public internal(set) var selectedCollectionRulesetWarnings: [CardCollectionRulesetWarning] = []
+  public internal(set) var selectedCardCollectionEntryID: CardCollectionEntryRecord.ID?
   public internal(set) var canUndoListAction = false
   public internal(set) var cloudSyncMode: GrimoraCloudSyncMode = .undecided
   public internal(set) var cloudSyncStatus: CloudSyncStatus = .disabled
@@ -120,35 +120,35 @@ public final class GrimoraAppModel {
     libraryState == .ready
   }
 
-  public var selectedList: CardListRecord? {
-    guard let selectedListID else {
+  public var selectedCollection: CardCollectionRecord? {
+    guard let selectedCollectionID else {
       return nil
     }
 
-    return cardLists.first { $0.id == selectedListID }
+    return cardCollections.first { $0.id == selectedCollectionID }
   }
 
   /// Total cards in the selected list, derived from the freshly-loaded entries rather than
-  /// the denormalized `CardListRecord.entryCount`. The cached count can lag behind the
+  /// the denormalized `CardCollectionRecord.entryCount`. The cached count can lag behind the
   /// entries table (e.g. after an out-of-band cloud-sync apply), so the detail header reads
   /// this to stay consistent with the cards actually on screen.
-  public var selectedListEntryTotal: Int {
-    selectedListEntries.reduce(0) { $0 + $1.quantity }
+  public var selectedCollectionEntryTotal: Int {
+    selectedCollectionEntries.reduce(0) { $0 + $1.quantity }
   }
 
-  public var favouritesList: CardListRecord? {
-    cardLists.first { isProtectedFavouritesList($0) }
+  public var favouritesList: CardCollectionRecord? {
+    cardCollections.first { isProtectedFavouritesList($0) }
   }
 
-  public var pinnedCardLists: [CardListRecord] {
-    sortedCardLists(cardLists.filter { $0.isPinned && !isProtectedFavouritesList($0) })
+  public var pinnedCardCollections: [CardCollectionRecord] {
+    sortedCardCollections(cardCollections.filter { $0.isPinned && !isProtectedFavouritesList($0) })
   }
 
-  public var unpinnedCardLists: [CardListRecord] {
-    sortedCardLists(cardLists.filter { !$0.isPinned && !isProtectedFavouritesList($0) })
+  public var unpinnedCardCollections: [CardCollectionRecord] {
+    sortedCardCollections(cardCollections.filter { !$0.isPinned && !isProtectedFavouritesList($0) })
   }
 
-  func sortedCardLists(_ lists: [CardListRecord]) -> [CardListRecord] {
+  func sortedCardCollections(_ lists: [CardCollectionRecord]) -> [CardCollectionRecord] {
     lists.sorted { lhs, rhs in
       if lhs.position != rhs.position {
         return lhs.position < rhs.position
@@ -271,7 +271,7 @@ public final class GrimoraAppModel {
   var visibleImageDownloadGeneration = 0
   var visibleImageRetryTasks: [VisibleImageRequestKey: Task<Void, Never>] = [:]
   var searchHistoryImageWarmTask: Task<Void, Never>?
-  var listUndoStack: [CardListUndoState] = []
+  var listUndoStack: [CardCollectionUndoState] = []
 
   public init(
     environment: GrimoraEnvironment,
@@ -340,7 +340,7 @@ public final class GrimoraAppModel {
 
     searchHistory = environment.searchHistoryStore.load()
     hiddenSearchTerms = environment.hiddenSearchTermsStore.load()
-    reloadCardLists()
+    reloadCardCollections()
     reloadCloudSyncRecoverySnapshots()
     reloadCloudSyncDiagnostics()
     refreshLibraryState()

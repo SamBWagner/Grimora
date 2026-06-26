@@ -44,7 +44,7 @@ struct CardCellView: View {
     }
 
     private var palette: GrimoraPalette {
-        GrimoraPalette(colorScheme: colorScheme)
+        .cached(for: colorScheme)
     }
 
     private func updateArtworkOverflow(_ isOverflowing: Bool) {
@@ -470,7 +470,7 @@ struct CardArtworkView: View {
     }
 
     private var palette: GrimoraPalette {
-        GrimoraPalette(colorScheme: colorScheme)
+        .cached(for: colorScheme)
     }
 
     private static let rotationAnimationDuration: TimeInterval = 0.18
@@ -882,7 +882,7 @@ struct CardIdentityLabel: View {
     }
 
     private var palette: GrimoraPalette {
-        GrimoraPalette(colorScheme: colorScheme)
+        .cached(for: colorScheme)
     }
 }
 

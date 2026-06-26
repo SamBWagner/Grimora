@@ -41,6 +41,13 @@ final class GrimoraPaletteTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(contrast(GrimoraPalette.dark.secondaryText, GrimoraPalette.dark.placeholderFill), 3)
     }
 
+    func testCachedPaletteMatchesFreshlyConstructedPalette() {
+        XCTAssertEqual(GrimoraPalette.cached(for: .light), GrimoraPalette(colorScheme: .light))
+        XCTAssertEqual(GrimoraPalette.cached(for: .dark), GrimoraPalette(colorScheme: .dark))
+        XCTAssertEqual(GrimoraPalette.cached(for: .light), .light)
+        XCTAssertEqual(GrimoraPalette.cached(for: .dark), .dark)
+    }
+
     private func contrast(_ first: GrimoraColorValue, _ second: GrimoraColorValue) -> Double {
         let firstLuminance = luminance(first)
         let secondLuminance = luminance(second)

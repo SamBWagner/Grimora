@@ -15,15 +15,15 @@ final class ModelAndPolicyTests: XCTestCase {
         ])
     }
 
-    func testCardListRulesetsExposeAllowedZonesAndNormalizeInvalidZones() {
-        XCTAssertEqual(CardListRuleset.commander.allowedZones, [.commander, .mainboard, .maybeboard])
-        XCTAssertEqual(CardListRuleset.modern.allowedZones, [.mainboard, .sideboard, .maybeboard])
-        XCTAssertEqual(CardListRuleset.none.allowedZones, [.mainboard, .maybeboard])
+    func testCardCollectionRulesetsExposeAllowedZonesAndNormalizeInvalidZones() {
+        XCTAssertEqual(CardCollectionRuleset.commander.allowedZones, [.commander, .mainboard, .maybeboard])
+        XCTAssertEqual(CardCollectionRuleset.modern.allowedZones, [.mainboard, .sideboard, .maybeboard])
+        XCTAssertEqual(CardCollectionRuleset.none.allowedZones, [.mainboard, .maybeboard])
 
-        XCTAssertEqual(CardListRuleset.commander.normalizedZone(.sideboard), .mainboard)
-        XCTAssertEqual(CardListRuleset.modern.normalizedZone(.commander), .mainboard)
-        XCTAssertEqual(CardListRuleset.none.normalizedZone(.sideboard), .mainboard)
-        XCTAssertEqual(CardListRuleset.commander.normalizedZone(.maybeboard), .maybeboard)
+        XCTAssertEqual(CardCollectionRuleset.commander.normalizedZone(.sideboard), .mainboard)
+        XCTAssertEqual(CardCollectionRuleset.modern.normalizedZone(.commander), .mainboard)
+        XCTAssertEqual(CardCollectionRuleset.none.normalizedZone(.sideboard), .mainboard)
+        XCTAssertEqual(CardCollectionRuleset.commander.normalizedZone(.maybeboard), .maybeboard)
     }
 
     func testCardImageFallbacksPreferExpectedPaths() {

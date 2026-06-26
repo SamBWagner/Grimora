@@ -518,12 +518,12 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
       RecordType.metadata
     case .searchSettings:
       RecordType.preferences
-    case .cardList:
-      RecordType.cardList
-    case .cardListCategory:
-      RecordType.cardListCategory
-    case .cardListEntry:
-      RecordType.cardListEntry
+    case .cardCollection:
+      RecordType.cardCollection
+    case .cardCollectionCategory:
+      RecordType.cardCollectionCategory
+    case .cardCollectionEntry:
+      RecordType.cardCollectionEntry
     case .snapshot:
       RecordType.legacyDeviceSnapshot
     }
@@ -535,12 +535,12 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
       .library
     case RecordType.preferences:
       .searchSettings
-    case RecordType.cardList:
-      .cardList
-    case RecordType.cardListCategory:
-      .cardListCategory
-    case RecordType.cardListEntry:
-      .cardListEntry
+    case RecordType.cardCollection:
+      .cardCollection
+    case RecordType.cardCollectionCategory:
+      .cardCollectionCategory
+    case RecordType.cardCollectionEntry:
+      .cardCollectionEntry
     default:
       nil
     }
@@ -552,11 +552,11 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
       CloudSyncEntityCodec.metadataRecordID
     case .searchSettings:
       CloudSyncEntityCodec.preferencesRecordID
-    case .cardList:
+    case .cardCollection:
       "list-\(entity.recordID)"
-    case .cardListCategory:
+    case .cardCollectionCategory:
       "category-\(entity.recordID)"
-    case .cardListEntry:
+    case .cardCollectionEntry:
       "entry-\(entity.recordID)"
     case .snapshot:
       "snapshot-\(entity.recordID)"

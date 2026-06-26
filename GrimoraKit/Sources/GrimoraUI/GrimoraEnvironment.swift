@@ -232,9 +232,9 @@ public struct GrimoraEnvironment: Sendable {
       return
     }
 
-    let list = try database.createCardList(named: listName)
+    let list = try database.createCardCollection(named: listName)
     let categories = try categoryNames.map {
-      try database.createCardListCategory(inList: list.id, named: $0)
+      try database.createCardCollectionCategory(inList: list.id, named: $0)
     }
     for (index, card) in cards.enumerated() {
       try database.appendCard(

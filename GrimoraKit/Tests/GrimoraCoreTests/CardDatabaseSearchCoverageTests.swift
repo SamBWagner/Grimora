@@ -35,7 +35,7 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
         XCTAssertEqual(try database.printings(for: card).map(\.name), ["Alpha Forest"])
     }
 
-    func testCardListEntrySearchUsesScryfallSyntaxWithinList() throws {
+    func testCardCollectionEntrySearchUsesScryfallSyntaxWithinList() throws {
         let database = try CardDatabase(storage: .inMemory)
         try database.replaceAllCards([
             testCard(
@@ -67,12 +67,12 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
             ),
         ])
 
-        let list = try database.createCardList(named: "Searchable")
+        let list = try database.createCardCollection(named: "Searchable")
         try database.appendCard("forest", toList: list.id)
         try database.appendCard("goblin", toList: list.id)
         try database.appendCard("blue", toList: list.id)
 
-        guard case .results(let goblins) = try database.searchCardListEntries(
+        guard case .results(let goblins) = try database.searchCardCollectionEntries(
             forListID: list.id,
             text: "t:goblin"
         ) else {
@@ -80,7 +80,7 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
         }
         XCTAssertEqual(goblins.map(\.cardID), ["goblin"])
 
-        guard case .results(let blueCards) = try database.searchCardListEntries(
+        guard case .results(let blueCards) = try database.searchCardCollectionEntries(
             forListID: list.id,
             text: "c=u"
         ) else {
@@ -89,15 +89,15 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
         XCTAssertEqual(blueCards.map(\.cardID), ["blue"])
     }
 
-    func testCardListEntrySearchReturnsUnsupportedSyntaxReason() throws {
+    func testCardCollectionEntrySearchReturnsUnsupportedSyntaxReason() throws {
         let database = try CardDatabase(storage: .inMemory)
         try database.replaceAllCards([
             testCard(id: "alpha", name: "Alpha Mage", typeLine: "Creature - Wizard")
         ])
-        let list = try database.createCardList(named: "Searchable")
+        let list = try database.createCardCollection(named: "Searchable")
         try database.appendCard("alpha", toList: list.id)
 
-        guard case .unsupported(let reason) = try database.searchCardListEntries(
+        guard case .unsupported(let reason) = try database.searchCardCollectionEntries(
             forListID: list.id,
             text: "cube:vintage"
         ) else {
@@ -133,24 +133,24 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
             ),
         ])
 
-        let aggro = try database.createCardList(named: "Aggro")
+        let aggro = try database.createCardCollection(named: "Aggro")
         try database.appendCard("goblin", toList: aggro.id, quantity: 2)
         try database.appendCard("blue", toList: aggro.id)
 
-        let control = try database.createCardList(named: "Control")
+        let control = try database.createCardCollection(named: "Control")
         try database.appendCard("blue", toList: control.id)
 
-        let izzetDeck = try database.createCardList(named: "Izzet")
+        let izzetDeck = try database.createCardCollection(named: "Izzet")
         try database.appendCard("izzet", toList: izzetDeck.id)
 
-        guard case .results(let goblinMatches) = try database.searchAllCardListEntries(text: "t:goblin") else {
+        guard case .results(let goblinMatches) = try database.searchAllCardCollectionEntries(text: "t:goblin") else {
             return XCTFail("Expected goblin matches")
         }
         XCTAssertEqual(goblinMatches.map(\.listID), [aggro.id])
         XCTAssertEqual(goblinMatches.first?.entries.map(\.cardID), ["goblin"])
         XCTAssertEqual(goblinMatches.first?.matchedCardQuantity, 2)
 
-        guard case .results(let blueMatches) = try database.searchAllCardListEntries(text: "c=u") else {
+        guard case .results(let blueMatches) = try database.searchAllCardCollectionEntries(text: "c=u") else {
             return XCTFail("Expected blue matches")
         }
         XCTAssertEqual(Set(blueMatches.map(\.listID)), [aggro.id, control.id])
@@ -159,7 +159,7 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
             ["blue"]
         )
 
-        guard case .results(let izzetMatches) = try database.searchAllCardListEntries(text: "ci=ur") else {
+        guard case .results(let izzetMatches) = try database.searchAllCardCollectionEntries(text: "ci=ur") else {
             return XCTFail("Expected izzet matches")
         }
         XCTAssertEqual(izzetMatches.map(\.listID), [izzetDeck.id])
@@ -170,10 +170,10 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
         try database.replaceAllCards([
             testCard(id: "alpha", name: "Alpha Mage", typeLine: "Creature - Wizard")
         ])
-        let list = try database.createCardList(named: "Searchable")
+        let list = try database.createCardCollection(named: "Searchable")
         try database.appendCard("alpha", toList: list.id)
 
-        guard case .results(let matches) = try database.searchAllCardListEntries(text: "   ") else {
+        guard case .results(let matches) = try database.searchAllCardCollectionEntries(text: "   ") else {
             return XCTFail("Expected empty results for blank query")
         }
         XCTAssertTrue(matches.isEmpty)
@@ -184,10 +184,10 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
         try database.replaceAllCards([
             testCard(id: "alpha", name: "Alpha Mage", typeLine: "Creature - Wizard")
         ])
-        let list = try database.createCardList(named: "Searchable")
+        let list = try database.createCardCollection(named: "Searchable")
         try database.appendCard("alpha", toList: list.id)
 
-        guard case .unsupported(let reason) = try database.searchAllCardListEntries(text: "cube:vintage") else {
+        guard case .unsupported(let reason) = try database.searchAllCardCollectionEntries(text: "cube:vintage") else {
             return XCTFail("Expected unsupported response")
         }
         XCTAssertEqual(reason.token, "cube:vintage")
@@ -209,11 +209,11 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
                 oracleText: "Defender"
             ),
         ])
-        let list = try database.createCardList(named: "Mixed")
+        let list = try database.createCardCollection(named: "Mixed")
         try database.appendCard("flyer", toList: list.id)
         try database.appendCard("grounded", toList: list.id)
 
-        guard case .results(let matches) = try database.searchAllCardListEntries(text: "o:/flying/") else {
+        guard case .results(let matches) = try database.searchAllCardCollectionEntries(text: "o:/flying/") else {
             return XCTFail("Expected regex post-filter matches")
         }
         XCTAssertEqual(matches.map(\.listID), [list.id])

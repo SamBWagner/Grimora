@@ -49,17 +49,17 @@ public enum CardSearchResponse: Equatable, Sendable {
     case unsupported(SearchQueryUnsupportedReason)
 }
 
-public enum CardListEntrySearchResponse: Equatable, Sendable {
-    case results([CardListEntryRecord])
+public enum CardCollectionEntrySearchResponse: Equatable, Sendable {
+    case results([CardCollectionEntryRecord])
     case unsupported(SearchQueryUnsupportedReason)
 }
 
 /// One list whose cards matched a cross-list search, together with the matching entries.
 public struct CrossListSearchMatch: Equatable, Sendable {
     public var listID: String
-    public var entries: [CardListEntryRecord]
+    public var entries: [CardCollectionEntryRecord]
 
-    public init(listID: String, entries: [CardListEntryRecord]) {
+    public init(listID: String, entries: [CardCollectionEntryRecord]) {
         self.listID = listID
         self.entries = entries
     }

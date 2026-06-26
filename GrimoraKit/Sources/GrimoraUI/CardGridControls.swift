@@ -59,7 +59,7 @@ struct CardGridQuantityStepper: View {
                 decrementTrigger += 1
                 onDecrement()
             }
-            .accessibilityLabel(quantity > 1 ? "Decrease Quantity" : "Remove from List")
+            .accessibilityLabel(quantity > 1 ? "Decrease Quantity" : "Remove from Collection")
             .accessibilityIdentifier(decrementAccessibilityIdentifier)
         }
         .frame(height: controlHeight)
@@ -126,7 +126,7 @@ struct CardGridQuantityStepper: View {
     }
 
     private var palette: GrimoraPalette {
-        GrimoraPalette(colorScheme: colorScheme)
+        .cached(for: colorScheme)
     }
 }
 
@@ -144,14 +144,14 @@ struct CardGridMoreMenu: View {
     var selectedCardIDsProvider: (() -> [CardRecord.ID])?
     var onCreateListForCard: ((CardRecord) -> Void)?
     var onCreateListForCards: (([CardRecord.ID]) -> Void)?
-    var onAddCardsToList: ((CardListRecord.ID, CardRecord) -> Bool)?
-    var categoryEntry: CardListEntryRecord?
-    var categories: [CardListCategoryRecord] = []
-    var onMoveToCategory: ((CardListCategoryRecord.ID?) -> Void)?
+    var onAddCardsToList: ((CardCollectionRecord.ID, CardRecord) -> Bool)?
+    var categoryEntry: CardCollectionEntryRecord?
+    var categories: [CardCollectionCategoryRecord] = []
+    var onMoveToCategory: ((CardCollectionCategoryRecord.ID?) -> Void)?
     /// Creates a new category (named via the prompt) and files the entry into it.
     var onCreateCategory: ((String) -> Void)?
-    var onMoveToZone: ((CardListZone) -> Void)?
-    var isMoveDestinationDisabled: ((CardListCategoryRecord.ID?) -> Bool)?
+    var onMoveToZone: ((CardCollectionZone) -> Void)?
+    var isMoveDestinationDisabled: ((CardCollectionCategoryRecord.ID?) -> Bool)?
     var onEditQuantity: (() -> Void)?
     var onRemoveCompletely: (() -> Void)?
     var quantity = 1
@@ -167,7 +167,7 @@ struct CardGridMoreMenu: View {
         .help("More Actions")
         .accessibilityLabel("More Actions")
         .accessibilityIdentifier(accessibilityIdentifier)
-        .cardListNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
+        .cardCollectionNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
             onCreateCategory?(name)
         }
     }
@@ -175,8 +175,8 @@ struct CardGridMoreMenu: View {
     @ViewBuilder
     private var menuContent: some View {
         if let card, let onCreateListForCard {
-            Menu("Add to List") {
-                CardListAddMenuContent(
+            Menu("Add to Collection") {
+                CardCollectionAddMenuContent(
                     card: card,
                     selectedCardIDs: selectedCardIDs,
                     selectedCardIDsProvider: selectedCardIDsProvider,
@@ -190,7 +190,7 @@ struct CardGridMoreMenu: View {
 
         if let categoryEntry, onCreateCategory != nil || !categories.isEmpty || categoryEntry.categoryID != nil {
             Menu("Move to Category") {
-                CardListMoveCategoryMenuContent(
+                CardCollectionMoveCategoryMenuContent(
                     entry: categoryEntry,
                     categories: categories,
                     onMoveToCategory: onMoveToCategory,
@@ -203,7 +203,7 @@ struct CardGridMoreMenu: View {
 
         if let categoryEntry {
             Menu("Move to Zone") {
-                CardListMoveZoneMenuContent(
+                CardCollectionMoveZoneMenuContent(
                     entry: categoryEntry,
                     onMoveToZone: onMoveToZone
                 )

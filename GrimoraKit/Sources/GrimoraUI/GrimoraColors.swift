@@ -64,4 +64,11 @@ struct GrimoraPalette: Equatable, Sendable {
 extension GrimoraPalette {
     static let light = GrimoraPalette(colorScheme: .light)
     static let dark = GrimoraPalette(colorScheme: .dark)
+
+    /// The palette is derived purely from the colour scheme, so there are only ever two instances.
+    /// Returning the cached statics avoids rebuilding 13 colour values every time a card cell's
+    /// `body` is evaluated (it was being reconstructed several times per cell, per render).
+    static func cached(for colorScheme: ColorScheme) -> GrimoraPalette {
+        colorScheme == .dark ? .dark : .light
+    }
 }

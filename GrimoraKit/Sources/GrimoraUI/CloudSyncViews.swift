@@ -13,7 +13,7 @@ struct CloudSyncSetupView: View {
         GrimoraLogoView(size: 72)
       }
     } description: {
-      Text("Download the card database, then choose whether lists, favourites, and search settings sync with iCloud on your devices.")
+      Text("Download the card database, then choose whether collections, favourites, and search settings sync with iCloud on your devices.")
     } actions: {
       VStack(spacing: 10) {
         Button {

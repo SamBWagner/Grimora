@@ -1,0 +1,68 @@
+import GrimoraCore
+import SwiftUI
+
+/// The menu items for moving a list entry to a category (or uncategorized).
+struct CardCollectionMoveCategoryMenuContent: View {
+    @Environment(GrimoraAppModel.self) private var model
+
+    var entry: CardCollectionEntryRecord
+    var categories: [CardCollectionCategoryRecord]
+    var onMoveToCategory: ((CardCollectionCategoryRecord.ID?) -> Void)?
+    var isDestinationDisabled: ((CardCollectionCategoryRecord.ID?) -> Bool)?
+    /// When provided, surfaces a "New Category…" item that lets the user file
+    /// this entry into a brand-new category without leaving the card's context.
+    var onCreateCategory: (() -> Void)?
+    var onMoved: () -> Void = {}
+
+    var body: some View {
+        if let onCreateCategory {
+            Button(action: onCreateCategory) {
+                Label("New Category…", systemImage: "folder.badge.plus")
+            }
+            .accessibilityIdentifier("move-list-entry-\(entry.id)-new-category")
+
+            Divider()
+        }
+
+        Button {
+            move(to: nil)
+        } label: {
+            GrimoraMenuSelectionLabel(
+                title: "Uncategorized",
+                isSelected: entry.categoryID == nil
+            )
+        }
+        .disabled(isMoveDisabled(to: nil))
+        .accessibilityIdentifier("move-list-entry-\(entry.id)-category-uncategorized")
+
+        if !categories.isEmpty {
+            Divider()
+        }
+
+        ForEach(categories) { category in
+            Button {
+                move(to: category.id)
+            } label: {
+                GrimoraMenuSelectionLabel(
+                    title: category.name,
+                    isSelected: entry.categoryID == category.id
+                )
+            }
+            .disabled(isMoveDisabled(to: category.id))
+            .accessibilityIdentifier("move-list-entry-\(entry.id)-category-\(category.name)")
+        }
+    }
+
+    private func move(to categoryID: CardCollectionCategoryRecord.ID?) {
+        if let onMoveToCategory {
+            onMoveToCategory(categoryID)
+        } else {
+            model.moveCardCollectionEntry(id: entry.id, toCategoryID: categoryID)
+        }
+        onMoved()
+    }
+
+    private func isMoveDisabled(to categoryID: CardCollectionCategoryRecord.ID?) -> Bool {
+        isDestinationDisabled?(categoryID) ?? (entry.categoryID == categoryID)
+    }
+}

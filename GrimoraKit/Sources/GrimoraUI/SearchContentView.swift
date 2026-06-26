@@ -9,7 +9,6 @@ struct SearchContentView: View {
     var onSelect: (CardRecord) -> Void
     var onCreateListForCard: (CardRecord) -> Void
     var onCreateListForCards: ([CardRecord.ID]) -> Void = { _ in }
-    var onCreateListFromSearch: () -> Void
 
     // Touch platforms surface Advanced Search from the search tab's top toolbar
     // (see `TouchRootView`); only macOS keeps the in-content launch button + sheet.
@@ -49,7 +48,6 @@ struct SearchContentView: View {
             onSelect: onSelect,
             onCreateListForCard: onCreateListForCard,
             onCreateListForCards: onCreateListForCards,
-            onCreateListFromSearch: onCreateListFromSearch,
             onOpenAdvancedSearch: { isAdvancedSearchPresented = true }
         )
         #elseif os(visionOS)

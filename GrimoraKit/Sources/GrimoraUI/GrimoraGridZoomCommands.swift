@@ -38,16 +38,16 @@ public struct GrimoraGridZoomCommands: Commands {
 #if os(macOS)
 @Observable
 @MainActor
-public final class GrimoraListCommandController {
-    var renameRequest: CardListRecord?
+public final class GrimoraCollectionCommandController {
+    var renameRequest: CardCollectionRecord?
 
     public init() {}
 
-    public func requestRename(_ list: CardListRecord) {
+    public func requestRename(_ list: CardCollectionRecord) {
         renameRequest = list
     }
 
-    func consumeRenameRequest() -> CardListRecord? {
+    func consumeRenameRequest() -> CardCollectionRecord? {
         defer {
             renameRequest = nil
         }
@@ -75,13 +75,13 @@ public struct GrimoraSearchCommands: Commands {
 
 public struct GrimoraListCommands: Commands {
     @FocusedValue(\.appModel) private var model: GrimoraAppModel?
-    @FocusedValue(\.listCommandController) private var listCommandController: GrimoraListCommandController?
+    @FocusedValue(\.listCommandController) private var listCommandController: GrimoraCollectionCommandController?
 
     public init() {}
 
     public var body: some Commands {
-        CommandMenu("List") {
-            Button("Undo List Action") {
+        CommandMenu("Collection") {
+            Button("Undo Collection Action") {
                 model?.undoLastListAction()
             }
             .keyboardShortcut("z", modifiers: .command)
@@ -89,34 +89,34 @@ public struct GrimoraListCommands: Commands {
 
             Divider()
 
-            Button("Rename List...") {
+            Button("Rename Collection...") {
                 requestSelectedListRename()
             }
-            .disabled(selectedList == nil || listCommandController == nil)
+            .disabled(selectedCollection == nil || listCommandController == nil)
 
-            Button(selectedList?.isPinned == true ? "Unpin List" : "Pin List") {
+            Button(selectedCollection?.isPinned == true ? "Unpin Collection" : "Pin Collection") {
                 toggleSelectedListPinned()
             }
-            .disabled(selectedList == nil)
+            .disabled(selectedCollection == nil)
 
             Divider()
 
-            Button("Move List to Top") {
+            Button("Move Collection to Top") {
                 moveSelectedListToTop()
             }
             .disabled(!canMoveSelectedListUp)
 
-            Button("Move List Up") {
+            Button("Move Collection Up") {
                 moveSelectedList(by: -1)
             }
             .disabled(!canMoveSelectedListUp)
 
-            Button("Move List Down") {
+            Button("Move Collection Down") {
                 moveSelectedList(by: 1)
             }
             .disabled(!canMoveSelectedListDown)
 
-            Button("Move List to Bottom") {
+            Button("Move Collection to Bottom") {
                 moveSelectedListToBottom()
             }
             .disabled(!canMoveSelectedListDown)
@@ -126,88 +126,88 @@ public struct GrimoraListCommands: Commands {
             Button(role: .destructive) {
                 deleteSelectedList()
             } label: {
-                Text("Delete List")
+                Text("Delete Collection")
             }
-            .disabled(selectedList == nil)
+            .disabled(selectedCollection == nil)
         }
     }
 
-    private var selectedList: CardListRecord? {
-        model?.selectedList
+    private var selectedCollection: CardCollectionRecord? {
+        model?.selectedCollection
     }
 
-    private var selectedListSection: [CardListRecord] {
-        guard let selectedList else {
+    private var selectedCollectionSection: [CardCollectionRecord] {
+        guard let selectedCollection else {
             return []
         }
-        return selectedList.isPinned ? model?.pinnedCardLists ?? [] : model?.unpinnedCardLists ?? []
+        return selectedCollection.isPinned ? model?.pinnedCardCollections ?? [] : model?.unpinnedCardCollections ?? []
     }
 
-    private var selectedListIndex: Int? {
-        guard let selectedList else {
+    private var selectedCollectionIndex: Int? {
+        guard let selectedCollection else {
             return nil
         }
-        return selectedListSection.firstIndex { $0.id == selectedList.id }
+        return selectedCollectionSection.firstIndex { $0.id == selectedCollection.id }
     }
 
     private var canMoveSelectedListUp: Bool {
-        guard let selectedListIndex else {
+        guard let selectedCollectionIndex else {
             return false
         }
-        return selectedListIndex > 0
+        return selectedCollectionIndex > 0
     }
 
     private var canMoveSelectedListDown: Bool {
-        guard let selectedListIndex else {
+        guard let selectedCollectionIndex else {
             return false
         }
-        return selectedListIndex < selectedListSection.count - 1
+        return selectedCollectionIndex < selectedCollectionSection.count - 1
     }
 
     private func requestSelectedListRename() {
-        guard let selectedList else {
+        guard let selectedCollection else {
             return
         }
-        listCommandController?.requestRename(selectedList)
+        listCommandController?.requestRename(selectedCollection)
     }
 
     private func toggleSelectedListPinned() {
-        guard let selectedList else {
+        guard let selectedCollection else {
             return
         }
-        model?.setCardListPinned(id: selectedList.id, isPinned: !selectedList.isPinned)
+        model?.setCardCollectionPinned(id: selectedCollection.id, isPinned: !selectedCollection.isPinned)
     }
 
     private func moveSelectedListToTop() {
-        guard let selectedList else {
+        guard let selectedCollection else {
             return
         }
-        model?.moveCardList(id: selectedList.id, toPosition: 0, isPinned: selectedList.isPinned)
+        model?.moveCardCollection(id: selectedCollection.id, toPosition: 0, isPinned: selectedCollection.isPinned)
     }
 
     private func moveSelectedList(by offset: Int) {
-        guard let selectedList else {
+        guard let selectedCollection else {
             return
         }
-        model?.moveCardList(id: selectedList.id, by: offset)
+        model?.moveCardCollection(id: selectedCollection.id, by: offset)
     }
 
     private func moveSelectedListToBottom() {
-        guard let selectedList else {
+        guard let selectedCollection else {
             return
         }
-        model?.moveCardList(
-            id: selectedList.id,
-            toPosition: selectedListSection.count - 1,
-            isPinned: selectedList.isPinned
+        model?.moveCardCollection(
+            id: selectedCollection.id,
+            toPosition: selectedCollectionSection.count - 1,
+            isPinned: selectedCollection.isPinned
         )
     }
 
     private func deleteSelectedList() {
-        guard let selectedList else {
+        guard let selectedCollection else {
             return
         }
-        model?.deleteCardList(id: selectedList.id)
+        model?.deleteCardCollection(id: selectedCollection.id)
     }
 }
 #endif

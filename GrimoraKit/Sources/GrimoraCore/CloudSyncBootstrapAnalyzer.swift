@@ -69,15 +69,15 @@ enum CloudSyncBootstrapAnalyzer {
     var snapshot = snapshot
     let groups = Dictionary(
       grouping: snapshot.listSnapshot.lists.filter { !isFavourites($0) },
-      by: { CloudSyncListSemanticIdentity.normalizedName($0.name) }
+      by: { CloudSyncCollectionSemanticIdentity.normalizedName($0.name) }
     )
-    var removedListIDs: Set<CardListRecord.ID> = []
+    var removedListIDs: Set<CardCollectionRecord.ID> = []
 
     for lists in groups.values where lists.count > 1 {
       let identityGroups = Dictionary(
         grouping: lists,
         by: {
-          CloudSyncListSemanticIdentity(listID: $0.id, snapshot: snapshot.listSnapshot)
+          CloudSyncCollectionSemanticIdentity(listID: $0.id, snapshot: snapshot.listSnapshot)
         }
       )
       for identicalLists in identityGroups.values where identicalLists.count > 1 {
@@ -105,14 +105,14 @@ enum CloudSyncBootstrapAnalyzer {
       for listID in removedListIDs {
         snapshot.deletedLists.append(SyncListDeletion(id: listID, deletedAt: deletedAt))
         snapshot.deletedEntities.append(
-          SyncTombstone(entityType: .cardList, recordID: listID, deletedAt: deletedAt)
+          SyncTombstone(entityType: .cardCollection, recordID: listID, deletedAt: deletedAt)
         )
       }
     }
     return snapshot
   }
 
-  private static func isFavourites(_ list: CardListRecord) -> Bool {
+  private static func isFavourites(_ list: CardCollectionRecord) -> Bool {
     list.id == CloudSyncEntityCodec.favouritesListID
       || CloudSyncEntityCodec.isFavouritesListName(list.name)
   }

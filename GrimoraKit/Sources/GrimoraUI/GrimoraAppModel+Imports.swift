@@ -2,7 +2,7 @@ import Foundation
 import GrimoraCore
 
 extension GrimoraAppModel {
-  func addCardID(_ cardID: CardRecord.ID, named cardName: String?, toListID listID: CardListRecord.ID) {
+  func addCardID(_ cardID: CardRecord.ID, named cardName: String?, toListID listID: CardCollectionRecord.ID) {
     do {
       let resolvedCard = try database.card(id: cardID)
       guard resolvedCard != nil else {
@@ -13,13 +13,13 @@ extension GrimoraAppModel {
       try performListMutation {
         try database.appendCard(cardID, toList: listID)
       }
-      reloadCardLists(selecting: selectedListID)
-      if let list = cardLists.first(where: { $0.id == listID }) {
+      reloadCardCollections(selecting: selectedCollectionID)
+      if let list = cardCollections.first(where: { $0.id == listID }) {
         let name = cardName ?? resolvedCard?.name ?? "Card"
         statusMessage = "Added \(name) to \(list.name)."
       }
     } catch {
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
@@ -34,28 +34,28 @@ extension GrimoraAppModel {
 
   func importArchidektDeck(
     _ importDeck: ArchidektDeckImport,
-    intoListID listID: CardListRecord.ID,
+    intoListID listID: CardCollectionRecord.ID,
     fallbackListName: String,
     sourceName: String?
-  ) throws -> CardListImportSummary {
-    guard let list = try database.cardList(id: listID) else {
-      throw CardListDatabaseError.listNotFound
+  ) throws -> CardCollectionImportSummary {
+    guard let list = try database.cardCollection(id: listID) else {
+      throw CardCollectionDatabaseError.listNotFound
     }
 
-    var categoriesByName = try database.cardListCategories(forListID: listID)
-      .reduce(into: [ArchidektImportCategoryKey: CardListCategoryRecord]()) { result, category in
+    var categoriesByName = try database.cardCollectionCategories(forListID: listID)
+      .reduce(into: [ArchidektImportCategoryKey: CardCollectionCategoryRecord]()) { result, category in
         result[ArchidektImportCategoryKey(zone: category.zone, nameKey: Self.normalizedCategoryKey(category.name))] = category
       }
     var usedCategoryKeys = Set<ArchidektImportCategoryKey>()
     var skippedLines = importDeck.skippedLines.map {
-      CardListImportSkippedLine(lineNumber: $0.lineNumber, text: $0.text, reason: $0.reason)
+      CardCollectionImportSkippedLine(lineNumber: $0.lineNumber, text: $0.text, reason: $0.reason)
     }
     var importedEntryCount = 0
 
     for reference in importDeck.cards {
       guard let cardID = try resolvedCardID(for: reference) else {
         skippedLines.append(
-          CardListImportSkippedLine(
+          CardCollectionImportSkippedLine(
             text: reference.sourceDescription,
             reason: "No matching local print was found."
           ))
@@ -66,7 +66,7 @@ extension GrimoraAppModel {
         for: reference.categories,
         ruleset: list.ruleset
       )
-      let categoryID: CardListCategoryRecord.ID?
+      let categoryID: CardCollectionCategoryRecord.ID?
       if let categoryName = destination.categoryName {
         let categoryKey = Self.normalizedCategoryKey(categoryName)
         let importCategoryKey = ArchidektImportCategoryKey(
@@ -76,7 +76,7 @@ extension GrimoraAppModel {
         if let existingCategory = categoriesByName[importCategoryKey] {
           categoryID = existingCategory.id
         } else {
-          let createdCategory = try database.createCardListCategory(
+          let createdCategory = try database.createCardCollectionCategory(
             inList: listID,
             zone: destination.zone,
             named: categoryName
@@ -99,9 +99,9 @@ extension GrimoraAppModel {
       importedEntryCount += reference.quantity
     }
 
-      reloadCardLists(selecting: listID, activatingSelection: true)
-    let listName = cardLists.first { $0.id == listID }?.name ?? fallbackListName
-    let summary = CardListImportSummary(
+      reloadCardCollections(selecting: listID, activatingSelection: true)
+    let listName = cardCollections.first { $0.id == listID }?.name ?? fallbackListName
+    let summary = CardCollectionImportSummary(
       listName: listName,
       cardCount: importedEntryCount,
       categoryCount: usedCategoryKeys.count,
@@ -130,7 +130,7 @@ extension GrimoraAppModel {
     return nil
   }
 
-  func importStatusMessage(for summary: CardListImportSummary) -> String {
+  func importStatusMessage(for summary: CardCollectionImportSummary) -> String {
     let skippedSuffix = summary.skippedLines.isEmpty
       ? ""
       : " \(summary.skippedLines.count) skipped."
@@ -146,10 +146,10 @@ extension GrimoraAppModel {
   func performListMutation<T>(_ body: () throws -> T) throws -> T {
     pauseCloudSyncMonitoringForLocalMutation()
     defer { resumeCloudSyncMonitoringAfterLocalMutation() }
-    let undoState = try CardListUndoState(
-      snapshot: database.cardListLibrarySnapshot(),
+    let undoState = try CardCollectionUndoState(
+      snapshot: database.cardCollectionLibrarySnapshot(),
       sidebarSelection: sidebarSelection,
-      selectedListID: selectedListID
+      selectedCollectionID: selectedCollectionID
     )
     let result = try body()
     pushListUndoState(undoState)
@@ -158,7 +158,7 @@ extension GrimoraAppModel {
     return result
   }
 
-  func pushListUndoState(_ state: CardListUndoState) {
+  func pushListUndoState(_ state: CardCollectionUndoState) {
     listUndoStack.append(state)
     if listUndoStack.count > Self.maximumListUndoDepth {
       listUndoStack.removeFirst(listUndoStack.count - Self.maximumListUndoDepth)
@@ -166,8 +166,8 @@ extension GrimoraAppModel {
     canUndoListAction = true
   }
 
-  func restoredListSelection(from state: CardListUndoState)
-    -> (selectedListID: CardListRecord.ID?, sidebarSelection: GrimoraSidebarSelection, activatesSelection: Bool)
+  func restoredListSelection(from state: CardCollectionUndoState)
+    -> (selectedCollectionID: CardCollectionRecord.ID?, sidebarSelection: GrimoraSidebarSelection, activatesSelection: Bool)
   {
     switch state.sidebarSelection {
     case .list(let listID) where state.snapshot.lists.contains(where: { $0.id == listID }):
@@ -177,25 +177,25 @@ extension GrimoraAppModel {
     case .newList:
       return (nil, .newList, false)
     case .search, .list:
-      return (state.selectedListID, .search, false)
+      return (state.selectedCollectionID, .search, false)
     }
   }
 
   @discardableResult
-  func ensureFavouritesList() throws -> CardListRecord {
-    let lists = try database.cardLists()
+  func ensureFavouritesList() throws -> CardCollectionRecord {
+    let lists = try database.cardCollections()
     if let favourites = lists.first(where: { Self.isCanonicalFavouritesListName($0.name) }) {
       return favourites
     }
 
     if let alias = lists.first(where: { Self.isFavouritesListName($0.name) }) {
-      return try database.renameCardList(id: alias.id, to: Self.favouritesListName)
+      return try database.renameCardCollection(id: alias.id, to: Self.favouritesListName)
     }
 
-    return try database.createCardList(named: Self.favouritesListName)
+    return try database.createCardCollection(named: Self.favouritesListName)
   }
 
-  func orderedCardListsForDisplay(_ lists: [CardListRecord]) -> [CardListRecord] {
+  func orderedCardCollectionsForDisplay(_ lists: [CardCollectionRecord]) -> [CardCollectionRecord] {
     let favouritesLists = lists
       .filter { Self.isFavouritesListName($0.name) }
       .sorted { lhs, rhs in
@@ -212,14 +212,14 @@ extension GrimoraAppModel {
 
     let userLists = lists.filter { !Self.isFavouritesListName($0.name) }
     return favouritesLists
-      + sortedCardLists(userLists.filter(\.isPinned))
-      + sortedCardLists(userLists.filter { !$0.isPinned })
+      + sortedCardCollections(userLists.filter(\.isPinned))
+      + sortedCardCollections(userLists.filter { !$0.isPinned })
   }
 
   func refreshListOverviewItems() {
-    cardListOverviewItems = cardLists.map { list in
+    cardCollectionOverviewItems = cardCollections.map { list in
       let topEntry = topOverviewEntry(for: list)
-      return CardListOverviewItem(
+      return CardCollectionOverviewItem(
         list: list,
         topEntry: topEntry,
         topCard: topEntry?.card
@@ -228,11 +228,11 @@ extension GrimoraAppModel {
     reloadDashboardSearch()
   }
 
-  private func topOverviewEntry(for list: CardListRecord) -> CardListEntryRecord? {
+  private func topOverviewEntry(for list: CardCollectionRecord) -> CardCollectionEntryRecord? {
     do {
-      let entries = try database.cardListEntries(forListID: list.id)
-      let categories = try database.cardListCategories(forListID: list.id)
-      return CardListEntrySectionBuilder.sections(
+      let entries = try database.cardCollectionEntries(forListID: list.id)
+      let categories = try database.cardCollectionCategories(forListID: list.id)
+      return CardCollectionEntrySectionBuilder.sections(
         entries: entries,
         categories: categories,
         ruleset: list.ruleset,
@@ -246,33 +246,33 @@ extension GrimoraAppModel {
     }
   }
 
-  func reloadCardLists(
-    selecting requestedSelection: CardListRecord.ID? = nil,
+  func reloadCardCollections(
+    selecting requestedSelection: CardCollectionRecord.ID? = nil,
     activatingSelection: Bool = false
   ) {
     do {
       try ensureFavouritesList()
-      let lists = orderedCardListsForDisplay(try database.cardLists())
-      cardLists = lists
+      let lists = orderedCardCollectionsForDisplay(try database.cardCollections())
+      cardCollections = lists
       refreshFavouriteCardIDs()
       if let requestedSelection,
         lists.contains(where: { $0.id == requestedSelection })
       {
-        selectedListID = requestedSelection
-      } else if let selectedListID, lists.contains(where: { $0.id == selectedListID }) {
-        self.selectedListID = selectedListID
+        selectedCollectionID = requestedSelection
+      } else if let selectedCollectionID, lists.contains(where: { $0.id == selectedCollectionID }) {
+        self.selectedCollectionID = selectedCollectionID
       } else {
-        selectedListID = nil
+        selectedCollectionID = nil
       }
       reconcileSidebarSelection(availableLists: lists, activatingSelection: activatingSelection)
       loadSelectedListState()
     } catch {
-      cardLists = []
-      cardListOverviewItems = []
-      selectedListID = nil
-      selectedListCategories = []
-      selectedListEntries = []
-      selectedListRulesetWarnings = []
+      cardCollections = []
+      cardCollectionOverviewItems = []
+      selectedCollectionID = nil
+      selectedCollectionCategories = []
+      selectedCollectionEntries = []
+      selectedCollectionRulesetWarnings = []
       resetSelectedListSearchResults()
       sidebarSelection = .search
       favouriteCardIDs = []
@@ -283,15 +283,15 @@ extension GrimoraAppModel {
   /// disturbing the current selection, loaded entries, search results, or image trackers.
   ///
   /// The sidebar shows counts for every list but only keeps the selected list's entries in
-  /// memory, so it relies on the denormalized `CardListRecord.entryCount`. That cache can go
+  /// memory, so it relies on the denormalized `CardCollectionRecord.entryCount`. That cache can go
   /// stale relative to the entries table when an out-of-band write (e.g. a cloud-sync apply
-  /// whose follow-up reload was skipped) lands without a full `reloadCardLists()`. This is a
+  /// whose follow-up reload was skipped) lands without a full `reloadCardCollections()`. This is a
   /// cheap, idempotent re-sync (one grouped `SUM` query) used to self-heal those counts.
-  func refreshCardListCounts() {
-    guard let lists = try? database.cardLists() else {
+  func refreshCardCollectionCounts() {
+    guard let lists = try? database.cardCollections() else {
       return
     }
-    cardLists = orderedCardListsForDisplay(lists)
+    cardCollections = orderedCardCollectionsForDisplay(lists)
     refreshFavouriteCardIDs()
     refreshListOverviewItems()
   }
@@ -304,7 +304,7 @@ extension GrimoraAppModel {
 
     do {
       favouriteCardIDs = Set(
-        try database.cardListEntries(forListID: favouritesList.id).map(\.cardID)
+        try database.cardCollectionEntries(forListID: favouritesList.id).map(\.cardID)
       )
     } catch {
       favouriteCardIDs = []
@@ -312,11 +312,11 @@ extension GrimoraAppModel {
   }
 
   func reconcileSidebarSelection(
-    availableLists: [CardListRecord],
+    availableLists: [CardCollectionRecord],
     activatingSelection: Bool
   ) {
-    if activatingSelection, let selectedListID {
-      sidebarSelection = .list(selectedListID)
+    if activatingSelection, let selectedCollectionID {
+      sidebarSelection = .list(selectedCollectionID)
       return
     }
 
@@ -330,43 +330,43 @@ extension GrimoraAppModel {
   func loadSelectedListState() {
     listVisibleImageWindowTracker.reset()
     resetListVisibleImageRequests()
-    guard let selectedListID else {
-      selectedListCategories = []
-      selectedListEntries = []
-      selectedListRulesetWarnings = []
+    guard let selectedCollectionID else {
+      selectedCollectionCategories = []
+      selectedCollectionEntries = []
+      selectedCollectionRulesetWarnings = []
       resetSelectedListSearchResults()
       refreshListOverviewItems()
       return
     }
 
     do {
-      selectedListCategories = try database.cardListCategories(forListID: selectedListID)
-      selectedListEntries = try database.cardListEntries(forListID: selectedListID)
-      if let selectedList {
-        selectedListRulesetWarnings = CardListRulesetValidator.warnings(
-          for: selectedList,
-          entries: selectedListEntries
+      selectedCollectionCategories = try database.cardCollectionCategories(forListID: selectedCollectionID)
+      selectedCollectionEntries = try database.cardCollectionEntries(forListID: selectedCollectionID)
+      if let selectedCollection {
+        selectedCollectionRulesetWarnings = CardCollectionRulesetValidator.warnings(
+          for: selectedCollection,
+          entries: selectedCollectionEntries
         )
       } else {
-        selectedListRulesetWarnings = []
+        selectedCollectionRulesetWarnings = []
       }
       reloadSelectedListSearch()
       refreshListOverviewItems()
     } catch {
-      selectedListCategories = []
-      selectedListEntries = []
-      selectedListRulesetWarnings = []
+      selectedCollectionCategories = []
+      selectedCollectionEntries = []
+      selectedCollectionRulesetWarnings = []
       resetSelectedListSearchResults()
       refreshListOverviewItems()
-      statusMessage = "List update failed."
+      statusMessage = "Collection update failed."
     }
   }
 
   static func archidektImportDestination(
     for categories: [String],
-    ruleset: CardListRuleset
+    ruleset: CardCollectionRuleset
   ) -> ArchidektImportDestination {
-    var zone = CardListZone.mainboard
+    var zone = CardCollectionZone.mainboard
     var regularCategoryName: String?
 
     for category in categories {
@@ -399,11 +399,11 @@ extension GrimoraAppModel {
 }
 
 struct ArchidektImportDestination: Equatable {
-  var zone: CardListZone
+  var zone: CardCollectionZone
   var categoryName: String?
 }
 
 private struct ArchidektImportCategoryKey: Hashable {
-  var zone: CardListZone
+  var zone: CardCollectionZone
   var nameKey: String
 }

@@ -1,7 +1,7 @@
 import Foundation
 
 extension CardDatabase {
-  func cardListsUnlocked() throws -> [CardListRecord] {
+  func cardCollectionsUnlocked() throws -> [CardCollectionRecord] {
     let statement = try database.prepare(
       """
       SELECT
@@ -27,14 +27,14 @@ extension CardDatabase {
       ORDER BY card_lists.is_pinned DESC, card_lists.position ASC, card_lists.created_at ASC, card_lists.id ASC
       """)
 
-    var lists: [CardListRecord] = []
+    var lists: [CardCollectionRecord] = []
     while try statement.step() {
-      lists.append(readCardList(from: statement))
+      lists.append(readCardCollection(from: statement))
     }
     return lists
   }
 
-  func cardListUnlocked(id: String) throws -> CardListRecord? {
+  func cardCollectionUnlocked(id: String) throws -> CardCollectionRecord? {
     let statement = try database.prepare(
       """
       SELECT
@@ -65,13 +65,13 @@ extension CardDatabase {
     guard try statement.step() else {
       return nil
     }
-    return readCardList(from: statement)
+    return readCardCollection(from: statement)
   }
 
-  func cardListsUnlocked(
+  func cardCollectionsUnlocked(
     isPinned: Bool,
-    ordering: CardListPositionOrdering
-  ) throws -> [CardListRecord] {
+    ordering: CardCollectionPositionOrdering
+  ) throws -> [CardCollectionRecord] {
     let orderClause: String
     switch ordering {
     case .storedPosition:
@@ -111,14 +111,14 @@ extension CardDatabase {
       """)
     try statement.bind(isPinned, at: 1)
 
-    var lists: [CardListRecord] = []
+    var lists: [CardCollectionRecord] = []
     while try statement.step() {
-      lists.append(readCardList(from: statement))
+      lists.append(readCardCollection(from: statement))
     }
     return lists
   }
 
-  func cardListCategoriesUnlocked(forListID listID: String) throws -> [CardListCategoryRecord] {
+  func cardCollectionCategoriesUnlocked(forListID listID: String) throws -> [CardCollectionCategoryRecord] {
     let statement = try database.prepare(
       """
       SELECT
@@ -138,14 +138,14 @@ extension CardDatabase {
       """)
     try statement.bind(listID, at: 1)
 
-    var categories: [CardListCategoryRecord] = []
+    var categories: [CardCollectionCategoryRecord] = []
     while try statement.step() {
-      categories.append(readCardListCategory(from: statement))
+      categories.append(readCardCollectionCategory(from: statement))
     }
     return categories
   }
 
-  func cardListCategoriesUnlocked() throws -> [CardListCategoryRecord] {
+  func cardCollectionCategoriesUnlocked() throws -> [CardCollectionCategoryRecord] {
     let statement = try database.prepare(
       """
       SELECT
@@ -164,14 +164,14 @@ extension CardDatabase {
           card_list_categories.position ASC, card_list_categories.created_at ASC, card_list_categories.id ASC
       """)
 
-    var categories: [CardListCategoryRecord] = []
+    var categories: [CardCollectionCategoryRecord] = []
     while try statement.step() {
-      categories.append(readCardListCategory(from: statement))
+      categories.append(readCardCollectionCategory(from: statement))
     }
     return categories
   }
 
-  func cardListCategoryUnlocked(id: String) throws -> CardListCategoryRecord? {
+  func cardCollectionCategoryUnlocked(id: String) throws -> CardCollectionCategoryRecord? {
     let statement = try database.prepare(
       """
       SELECT
@@ -194,10 +194,10 @@ extension CardDatabase {
     guard try statement.step() else {
       return nil
     }
-    return readCardListCategory(from: statement)
+    return readCardCollectionCategory(from: statement)
   }
 
-  func cardListEntryUnlocked(id: String) throws -> CardListEntryRecord? {
+  func cardCollectionEntryUnlocked(id: String) throws -> CardCollectionEntryRecord? {
     let statement = try database.prepare(
       """
       SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
@@ -211,10 +211,10 @@ extension CardDatabase {
     guard try statement.step() else {
       return nil
     }
-    return readCardListEntry(from: statement)
+    return readCardCollectionEntry(from: statement)
   }
 
-  func cardListEntriesUnlocked() throws -> [CardListEntryRecord] {
+  func cardCollectionEntriesUnlocked() throws -> [CardCollectionEntryRecord] {
     let statement = try database.prepare(
       """
       SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
@@ -223,20 +223,20 @@ extension CardDatabase {
       ORDER BY list_id ASC, zone ASC, position ASC, created_at ASC, id ASC
       """)
 
-    var entries: [CardListEntryRecord] = []
+    var entries: [CardCollectionEntryRecord] = []
     while try statement.step() {
-      entries.append(readCardListEntry(from: statement))
+      entries.append(readCardCollectionEntry(from: statement))
     }
     return entries
   }
 
-  func matchingCardListEntryUnlocked(
+  func matchingCardCollectionEntryUnlocked(
     listID: String,
-    zone: CardListZone,
+    zone: CardCollectionZone,
     categoryID: String?,
     cardID: String,
     excluding excludedID: String?
-  ) throws -> CardListEntryRecord? {
+  ) throws -> CardCollectionEntryRecord? {
     let statement: SQLiteStatement
     if let excludedID {
       statement = try database.prepare(
@@ -272,12 +272,12 @@ extension CardDatabase {
     guard try statement.step() else {
       return nil
     }
-    return readCardListEntry(from: statement)
+    return readCardCollectionEntry(from: statement)
   }
 
-  func cardListCategoryNameExistsUnlocked(
+  func cardCollectionCategoryNameExistsUnlocked(
     inList listID: String,
-    zone: CardListZone,
+    zone: CardCollectionZone,
     named name: String,
     excluding excludedID: String?
   ) throws -> Bool {
@@ -310,7 +310,7 @@ extension CardDatabase {
     return try statement.step()
   }
 
-  func touchCardListUnlocked(id: String, date: String) throws {
+  func touchCardCollectionUnlocked(id: String, date: String) throws {
     let statement = try database.prepare(
       """
       UPDATE card_lists
@@ -322,7 +322,7 @@ extension CardDatabase {
     try statement.step()
   }
 
-  func nextCardListPositionUnlocked(isPinned: Bool) throws -> Int {
+  func nextCardCollectionPositionUnlocked(isPinned: Bool) throws -> Int {
     let statement = try database.prepare(
       """
       SELECT COALESCE(MAX(position), -1) + 1
@@ -334,14 +334,14 @@ extension CardDatabase {
     return statement.int(at: 0) ?? 0
   }
 
-  func normalizeCardListPositionsUnlocked(ordering: CardListPositionOrdering) throws {
-    let pinnedLists = try cardListsUnlocked(isPinned: true, ordering: ordering)
-    let unpinnedLists = try cardListsUnlocked(isPinned: false, ordering: ordering)
-    try updateCardListPositionsUnlocked(pinnedLists)
-    try updateCardListPositionsUnlocked(unpinnedLists)
+  func normalizeCardCollectionPositionsUnlocked(ordering: CardCollectionPositionOrdering) throws {
+    let pinnedLists = try cardCollectionsUnlocked(isPinned: true, ordering: ordering)
+    let unpinnedLists = try cardCollectionsUnlocked(isPinned: false, ordering: ordering)
+    try updateCardCollectionPositionsUnlocked(pinnedLists)
+    try updateCardCollectionPositionsUnlocked(unpinnedLists)
   }
 
-  func updateCardListPositionsUnlocked(_ lists: [CardListRecord]) throws {
+  func updateCardCollectionPositionsUnlocked(_ lists: [CardCollectionRecord]) throws {
     let statement = try database.prepare(
       """
       UPDATE card_lists
@@ -356,13 +356,13 @@ extension CardDatabase {
     }
   }
 
-  func normalizeCardListCategoryPositionsUnlocked(listID: String, date: String) throws {
-    let categories = try cardListCategoriesUnlocked(forListID: listID)
-    try updateCardListCategoryPositionsUnlocked(categories, date: date)
+  func normalizeCardCollectionCategoryPositionsUnlocked(listID: String, date: String) throws {
+    let categories = try cardCollectionCategoriesUnlocked(forListID: listID)
+    try updateCardCollectionCategoryPositionsUnlocked(categories, date: date)
   }
 
-  func updateCardListCategoryPositionsUnlocked(
-    _ categories: [CardListCategoryRecord],
+  func updateCardCollectionCategoryPositionsUnlocked(
+    _ categories: [CardCollectionCategoryRecord],
     date: String
   ) throws {
     let statement = try database.prepare(
@@ -380,11 +380,11 @@ extension CardDatabase {
     }
   }
 
-  func readCardList(from statement: SQLiteStatement) -> CardListRecord {
-    CardListRecord(
+  func readCardCollection(from statement: SQLiteStatement) -> CardCollectionRecord {
+    CardCollectionRecord(
       id: statement.string(at: 0) ?? "",
       name: statement.string(at: 1) ?? "",
-      ruleset: CardListRuleset(rawValueOrDefault: statement.string(at: 2)),
+      ruleset: CardCollectionRuleset(rawValueOrDefault: statement.string(at: 2)),
       descriptionRTFDData: statement.data(at: 3),
       descriptionPlainText: statement.string(at: 4) ?? "",
       createdAt: Self.parseListDate(statement.string(at: 5)),
@@ -397,16 +397,16 @@ extension CardDatabase {
       displaySortMode: statement.string(at: 12).flatMap(SortMode.init(rawValue:)),
       displaySortDirection: SearchSortDirection(rawValue: statement.string(at: 13) ?? "")
         ?? .ascending,
-      viewMode: CardListViewMode(rawValueOrDefault: statement.string(at: 14)),
+      viewMode: CardCollectionViewMode(rawValueOrDefault: statement.string(at: 14)),
       entryCount: statement.int(at: 15) ?? 0
     )
   }
 
-  func readCardListCategory(from statement: SQLiteStatement) -> CardListCategoryRecord {
-    CardListCategoryRecord(
+  func readCardCollectionCategory(from statement: SQLiteStatement) -> CardCollectionCategoryRecord {
+    CardCollectionCategoryRecord(
       id: statement.string(at: 0) ?? "",
       listID: statement.string(at: 1) ?? "",
-      zone: CardListZone(rawValueOrDefault: statement.string(at: 2)),
+      zone: CardCollectionZone(rawValueOrDefault: statement.string(at: 2)),
       name: statement.string(at: 3) ?? "",
       position: statement.int(at: 4) ?? 0,
       createdAt: Self.parseListDate(statement.string(at: 5)),
@@ -415,11 +415,11 @@ extension CardDatabase {
     )
   }
 
-  func readCardListEntry(from statement: SQLiteStatement) -> CardListEntryRecord {
-    CardListEntryRecord(
+  func readCardCollectionEntry(from statement: SQLiteStatement) -> CardCollectionEntryRecord {
+    CardCollectionEntryRecord(
       id: statement.string(at: 0) ?? "",
       listID: statement.string(at: 1) ?? "",
-      zone: CardListZone(rawValueOrDefault: statement.string(at: 2)),
+      zone: CardCollectionZone(rawValueOrDefault: statement.string(at: 2)),
       categoryID: statement.string(at: 3),
       cardID: statement.string(at: 4) ?? "",
       position: statement.int(at: 5) ?? 0,

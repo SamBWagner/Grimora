@@ -50,10 +50,10 @@ final class CloudSyncConvergenceTests: XCTestCase {
   /// A semantic fingerprint of a library that ignores timestamps and ordering so two
   /// devices that have converged compare equal.
   private func signature(of database: CardDatabase) throws -> String {
-    try database.cardLists()
+    try database.cardCollections()
       .sorted { $0.id < $1.id }
       .map { list in
-        let entries = try database.cardListEntries(forListID: list.id)
+        let entries = try database.cardCollectionEntries(forListID: list.id)
           .map { "\($0.cardID)|\($0.zone.rawValue)|\($0.categoryID ?? "")|\($0.quantity)" }
           .sorted()
         return "\(list.id):\(list.name):[\(entries.joined(separator: ","))]"
@@ -111,16 +111,16 @@ final class CloudSyncConvergenceTests: XCTestCase {
 
     // Both devices start out sharing one list with the same id (as a link-import that
     // preserves the original list's UUID would produce).
-    let shared = try deviceA.database.createCardList(named: "Architect", now: nextDate())
+    let shared = try deviceA.database.createCardCollection(named: "Architect", now: nextDate())
     try deviceA.database.appendCard("alpha", toList: shared.id, now: nextDate())
     try await settle([deviceA, deviceB])
     XCTAssertTrue(
-      try deviceB.database.cardLists().contains { $0.id == shared.id },
+      try deviceB.database.cardCollections().contains { $0.id == shared.id },
       "Device B should have received the shared list."
     )
 
     // Now both edit the same list incompatibly before syncing — a genuine divergence.
-    try deviceA.database.renameCardList(id: shared.id, to: "Architect (mine)", now: nextDate())
+    try deviceA.database.renameCardCollection(id: shared.id, to: "Architect (mine)", now: nextDate())
     try deviceA.database.appendCard("beta", toList: shared.id, now: nextDate())
     try deviceB.database.appendCard("gamma", toList: shared.id, now: nextDate())
 
@@ -147,7 +147,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
 
     // The independent additions from each device survive the merge (entry union).
     let entries = Set(
-      try deviceA.database.cardListEntries(forListID: shared.id).map(\.cardID)
+      try deviceA.database.cardCollectionEntries(forListID: shared.id).map(\.cardID)
     )
     XCTAssertTrue(entries.isSuperset(of: ["beta", "gamma"]), "Both devices' adds must survive, got \(entries)")
   }
@@ -158,7 +158,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
     let transport = SimulatedCloudKitTransport()
     // Device A has already published a list.
     let deviceA = try makeDevice(id: "device-a", name: "iPhone", transport: transport)
-    let shared = try deviceA.database.createCardList(named: "Architect", now: nextDate())
+    let shared = try deviceA.database.createCardCollection(named: "Architect", now: nextDate())
     try deviceA.database.appendCard("alpha", toList: shared.id, now: nextDate())
     _ = await deviceA.coordinator.pushLocalState(
       deviceID: deviceA.id,
@@ -169,14 +169,14 @@ final class CloudSyncConvergenceTests: XCTestCase {
     // Device B joins for the first time (bootstrap NOT resolved) carrying a divergent
     // copy of the same list id.
     let deviceB = try makeDevice(id: "device-b", name: "iPad", transport: transport, bootstrapResolved: false)
-    try deviceB.database.restoreCardListLibrarySnapshot(
-      CardListLibrarySnapshot(
+    try deviceB.database.restoreCardCollectionLibrarySnapshot(
+      CardCollectionLibrarySnapshot(
         lists: [
-          CardListRecord(id: shared.id, name: "Architect", createdAt: nextDate(), updatedAt: nextDate())
+          CardCollectionRecord(id: shared.id, name: "Architect", createdAt: nextDate(), updatedAt: nextDate())
         ],
         categories: [],
         entries: [
-          CardListEntryRecord(id: "b-entry", listID: shared.id, cardID: "gamma", position: 0, createdAt: nextDate())
+          CardCollectionEntryRecord(id: "b-entry", listID: shared.id, cardID: "gamma", position: 0, createdAt: nextDate())
         ]
       )
     )
@@ -200,7 +200,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
     let deviceA = try makeDevice(id: "device-a", name: "iPhone", transport: transport)
     let deviceB = try makeDevice(id: "device-b", name: "iPad", transport: transport)
 
-    let list = try deviceA.database.createCardList(named: "Deck", now: nextDate())
+    let list = try deviceA.database.createCardCollection(named: "Deck", now: nextDate())
     try await settle([deviceA, deviceB])
 
     // Same list, different cards added concurrently before either syncs.
@@ -211,7 +211,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
     assertNoSyncFailure(statuses)
     try assertConverged([deviceA, deviceB])
     XCTAssertEqual(
-      Set(try deviceA.database.cardListEntries(forListID: list.id).map(\.cardID)),
+      Set(try deviceA.database.cardCollectionEntries(forListID: list.id).map(\.cardID)),
       ["alpha", "beta"]
     )
   }
@@ -223,13 +223,13 @@ final class CloudSyncConvergenceTests: XCTestCase {
     let deviceA = try makeDevice(id: "device-a", name: "iPhone", transport: transport)
     let deviceB = try makeDevice(id: "device-b", name: "iPad", transport: transport)
 
-    let list = try deviceA.database.createCardList(named: "Temp", now: nextDate())
+    let list = try deviceA.database.createCardCollection(named: "Temp", now: nextDate())
     try deviceA.database.appendCard("alpha", toList: list.id, now: nextDate())
     try await settle([deviceA, deviceB])
 
     // A edits the list; B deletes it strictly later. Newest action (delete) wins.
     try deviceA.database.appendCard("beta", toList: list.id, now: nextDate())
-    try deviceB.database.deleteCardList(id: list.id)
+    try deviceB.database.deleteCardCollection(id: list.id)
     let deleteDate = nextDate()
     try deviceB.database.recordLocalSyncSnapshotChange(reason: "delete")
     _ = deleteDate
@@ -238,7 +238,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
     assertNoSyncFailure(statuses)
     try assertConverged([deviceA, deviceB])
     XCTAssertFalse(
-      try deviceA.database.cardLists().contains { $0.id == list.id },
+      try deviceA.database.cardCollections().contains { $0.id == list.id },
       "The later deletion should win on every device."
     )
   }
@@ -250,7 +250,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
     let deviceA = try makeDevice(id: "device-a", name: "iPhone", transport: transport)
     let deviceB = try makeDevice(id: "device-b", name: "iPad", transport: transport)
 
-    let list = try deviceA.database.createCardList(named: "Resilient", now: nextDate())
+    let list = try deviceA.database.createCardCollection(named: "Resilient", now: nextDate())
     try deviceA.database.appendCard("alpha", toList: list.id, now: nextDate())
     try deviceA.database.recordLocalSyncSnapshotChange(reason: "create")
 
@@ -273,7 +273,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
     assertNoSyncFailure(statuses)
     try assertConverged([deviceA, deviceB])
     XCTAssertEqual(
-      Set(try deviceB.database.cardLists().map(\.name)),
+      Set(try deviceB.database.cardCollections().map(\.name)),
       ["Resilient"]
     )
   }
@@ -289,7 +289,7 @@ final class CloudSyncConvergenceTests: XCTestCase {
     ]
 
     // Seed a shared list from device A.
-    let list = try devices[0].database.createCardList(named: "Shared", now: nextDate())
+    let list = try devices[0].database.createCardCollection(named: "Shared", now: nextDate())
     try await settle(devices)
 
     // A fixed, deterministic interleaving of edits across all three devices.

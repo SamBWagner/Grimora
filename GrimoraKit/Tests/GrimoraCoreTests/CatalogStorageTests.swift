@@ -16,9 +16,9 @@ final class CatalogStorageTests: XCTestCase {
     XCTAssertTrue(database.usesExternalCatalog)
     XCTAssertEqual(try database.cardCount(), 1)
 
-    let list = try database.createCardList(named: "Local List")
+    let list = try database.createCardCollection(named: "Local List")
     try database.appendCard("alpha", toList: list.id)
-    XCTAssertEqual(try database.cardListEntries(forListID: list.id).map(\.cardID), ["alpha"])
+    XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.cardID), ["alpha"])
 
     var card = try XCTUnwrap(database.card(id: "alpha"))
     card.smallImagePath = "/tmp/alpha-small.jpg"
@@ -49,7 +49,7 @@ final class CatalogStorageTests: XCTestCase {
     )
     let legacy = try CardDatabase(storage: .file(legacyURL))
     try legacy.replaceAllCards([Fixtures.records()[0]])
-    let list = try legacy.createCardList(named: "Migrated")
+    let list = try legacy.createCardCollection(named: "Migrated")
     try legacy.appendCard("alpha", toList: list.id)
     let legacySize = try fileSize(legacyURL)
 
@@ -64,8 +64,8 @@ final class CatalogStorageTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: legacyURL.path))
     XCTAssertEqual(try fileSize(legacyURL), legacySize)
     let migrated = try CardDatabase(storage: .file(userURL))
-    XCTAssertEqual(try migrated.cardLists().map(\.name), ["Migrated"])
-    XCTAssertEqual(try migrated.cardListEntries(forListID: list.id).map(\.cardID), ["alpha"])
+    XCTAssertEqual(try migrated.cardCollections().map(\.name), ["Migrated"])
+    XCTAssertEqual(try migrated.cardCollectionEntries(forListID: list.id).map(\.cardID), ["alpha"])
   }
 
   func testLiveLegacyMigrationWhenConfigured() throws {
@@ -141,7 +141,7 @@ final class CatalogStorageTests: XCTestCase {
     XCTAssertTrue(try XCTUnwrap(first).database.usesExternalCatalog)
     XCTAssertFalse(try XCTUnwrap(first).databaseAlreadyExists)
     XCTAssertEqual(try XCTUnwrap(first).database.cardCount(), 0)
-    _ = try XCTUnwrap(first).database.createCardList(named: "Before Catalog")
+    _ = try XCTUnwrap(first).database.createCardCollection(named: "Before Catalog")
     first = nil
 
     let second = try ManagedCatalogMigrationService.bootstrap(
@@ -151,7 +151,7 @@ final class CatalogStorageTests: XCTestCase {
     XCTAssertTrue(second.database.usesExternalCatalog)
     XCTAssertFalse(second.databaseAlreadyExists)
     XCTAssertEqual(try second.database.cardCount(), 0)
-    XCTAssertEqual(try second.database.cardLists().map(\.name), ["Before Catalog"])
+    XCTAssertEqual(try second.database.cardCollections().map(\.name), ["Before Catalog"])
   }
 
   func testManagedMigrationStagesWithoutReplacingLegacyAndActivatesLatestUserDataOnNextLaunch()
@@ -162,7 +162,7 @@ final class CatalogStorageTests: XCTestCase {
     let legacyURL = directory.appendingPathComponent("Grimora.sqlite")
     var legacy: CardDatabase? = try CardDatabase(storage: .file(legacyURL))
     try legacy?.replaceAllCards([Fixtures.records()[0]])
-    let originalList = try XCTUnwrap(legacy?.createCardList(named: "Before Download"))
+    let originalList = try XCTUnwrap(legacy?.createCardCollection(named: "Before Download"))
     try legacy?.appendCard("alpha", toList: originalList.id)
 
     let fixture = try managedCatalogFixture(in: directory, cards: [Fixtures.records()[1]])
@@ -191,7 +191,7 @@ final class CatalogStorageTests: XCTestCase {
     let stageRequests = await network.requests()
     XCTAssertEqual(stageRequests.map(\.1), [.manifestCheck, .automaticCatalogDownload])
 
-    let latestList = try legacy?.createCardList(named: "After Download")
+    let latestList = try legacy?.createCardCollection(named: "After Download")
     XCTAssertNotNil(latestList)
     legacy = nil
     first = nil
@@ -204,7 +204,7 @@ final class CatalogStorageTests: XCTestCase {
     )
     XCTAssertTrue(try XCTUnwrap(second).database.usesExternalCatalog)
     XCTAssertEqual(
-      try XCTUnwrap(second).database.cardLists().map(\.name).sorted(),
+      try XCTUnwrap(second).database.cardCollections().map(\.name).sorted(),
       ["After Download", "Before Download"]
     )
     XCTAssertNil(try XCTUnwrap(second).database.card(id: "alpha"))

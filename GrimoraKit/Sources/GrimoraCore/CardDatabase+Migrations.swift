@@ -391,7 +391,7 @@ extension CardDatabase {
       column: "pinned_at",
       definition: "pinned_at TEXT"
     )
-    let addedCardListPositionColumn = try addColumnIfNeeded(
+    let addedCardCollectionPositionColumn = try addColumnIfNeeded(
       "card_lists",
       column: "position",
       definition: "position INTEGER NOT NULL DEFAULT 0"
@@ -517,10 +517,10 @@ extension CardDatabase {
     try database.execute("UPDATE card_list_entries SET updated_at = created_at WHERE updated_at IS NULL")
     try database.execute(
       "UPDATE card_list_entries SET sync_updated_at = updated_at WHERE sync_updated_at IS NULL")
-    try normalizeCardListZonesForRulesetsUnlocked()
-    try consolidateDuplicateCardListEntriesUnlocked()
-    try normalizeCardListPositionsUnlocked(
-      ordering: addedCardListPositionColumn ? .legacySidebarOrder : .storedPosition
+    try normalizeCardCollectionZonesForRulesetsUnlocked()
+    try consolidateDuplicateCardCollectionEntriesUnlocked()
+    try normalizeCardCollectionPositionsUnlocked(
+      ordering: addedCardCollectionPositionColumn ? .legacySidebarOrder : .storedPosition
     )
 
     try database.execute("CREATE INDEX IF NOT EXISTS idx_cards_name_key ON cards(name_key)")
@@ -696,7 +696,7 @@ extension CardDatabase {
     try rebuildNameSearchIndexIfNeeded()
   }
 
-  enum CardListPositionOrdering {
+  enum CardCollectionPositionOrdering {
     case storedPosition
     case legacySidebarOrder
   }
@@ -809,7 +809,7 @@ extension CardDatabase {
     return statement.int(at: 0) ?? 0
   }
 
-  func consolidateDuplicateCardListEntriesUnlocked(listID: String? = nil) throws {
+  func consolidateDuplicateCardCollectionEntriesUnlocked(listID: String? = nil) throws {
     let duplicateGroups: SQLiteStatement
     if let listID {
       duplicateGroups = try database.prepare(
@@ -835,7 +835,7 @@ extension CardDatabase {
     while try duplicateGroups.step() {
       groups.append((
         listID: duplicateGroups.string(at: 0) ?? "",
-        zone: duplicateGroups.string(at: 1) ?? CardListZone.mainboard.rawValue,
+        zone: duplicateGroups.string(at: 1) ?? CardCollectionZone.mainboard.rawValue,
         categoryID: duplicateGroups.string(at: 2),
         cardID: duplicateGroups.string(at: 3) ?? ""
       ))

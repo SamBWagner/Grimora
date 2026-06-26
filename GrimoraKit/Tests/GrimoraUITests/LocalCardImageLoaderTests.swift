@@ -72,6 +72,37 @@ import XCTest
       XCTAssertEqual(LocalCardImageLoader.shared.cachedPathCountForTesting(), 2)
     }
 
+    func testRepeatedCacheHitsKeepEntryMostRecentlyUsed() async throws {
+      LocalCardImageLoader.shared.configure(
+        countLimit: 2,
+        totalCostLimit: 512 * 1_024 * 1_024,
+        preloadConcurrency: 2
+      )
+      let imageURLs = try (0..<3).map { _ in
+        let url = FileManager.default.temporaryDirectory
+          .appendingPathComponent(UUID().uuidString)
+          .appendingPathExtension("png")
+        try makeFixtureImage(at: url)
+        return url
+      }
+
+      for url in imageURLs.prefix(2) {
+        let image = await LocalCardImageLoader.shared.image(atPath: url.path)
+        XCTAssertNotNil(image)
+      }
+      // Touch the first entry repeatedly so it is unambiguously the most recently used.
+      for _ in 0..<5 {
+        XCTAssertNotNil(LocalCardImageLoader.shared.cachedImage(atPath: imageURLs[0].path))
+      }
+      let thirdImage = await LocalCardImageLoader.shared.image(atPath: imageURLs[2].path)
+      XCTAssertNotNil(thirdImage)
+
+      XCTAssertNotNil(LocalCardImageLoader.shared.cachedImage(atPath: imageURLs[0].path))
+      XCTAssertNil(LocalCardImageLoader.shared.cachedImage(atPath: imageURLs[1].path))
+      XCTAssertNotNil(LocalCardImageLoader.shared.cachedImage(atPath: imageURLs[2].path))
+      XCTAssertEqual(LocalCardImageLoader.shared.cachedPathCountForTesting(), 2)
+    }
+
     func testCacheEvictsImagesWhenCostLimitIsExceeded() async throws {
       LocalCardImageLoader.shared.configure(
         countLimit: 100,

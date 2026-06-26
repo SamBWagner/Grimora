@@ -38,13 +38,13 @@ private struct GrimoraAppModelFocusedValueKey: FocusedValueKey {
 
 #if os(macOS)
 extension FocusedValues {
-    var listCommandController: GrimoraListCommandController? {
-        get { self[GrimoraListCommandControllerFocusedValueKey.self] }
-        set { self[GrimoraListCommandControllerFocusedValueKey.self] = newValue }
+    var listCommandController: GrimoraCollectionCommandController? {
+        get { self[GrimoraCollectionCommandControllerFocusedValueKey.self] }
+        set { self[GrimoraCollectionCommandControllerFocusedValueKey.self] = newValue }
     }
 }
 
-private struct GrimoraListCommandControllerFocusedValueKey: FocusedValueKey {
-    typealias Value = GrimoraListCommandController
+private struct GrimoraCollectionCommandControllerFocusedValueKey: FocusedValueKey {
+    typealias Value = GrimoraCollectionCommandController
 }
 #endif

@@ -205,7 +205,7 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
   public var capturedAt: Date
   public var libraryIdentity: LibraryIdentity
   public var searchSettings: SyncSearchSettings
-  public var listSnapshot: CardListLibrarySnapshot
+  public var listSnapshot: CardCollectionLibrarySnapshot
   public var deletedLists: [SyncListDeletion]
   public var deletedEntities: [SyncTombstone]
 
@@ -215,7 +215,7 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
     capturedAt: Date = Date(),
     libraryIdentity: LibraryIdentity,
     searchSettings: SyncSearchSettings,
-    listSnapshot: CardListLibrarySnapshot,
+    listSnapshot: CardCollectionLibrarySnapshot,
     deletedLists: [SyncListDeletion] = [],
     deletedEntities: [SyncTombstone] = []
   ) {
@@ -247,7 +247,7 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
     capturedAt = try container.decode(Date.self, forKey: .capturedAt)
     libraryIdentity = try container.decode(LibraryIdentity.self, forKey: .libraryIdentity)
     searchSettings = try container.decode(SyncSearchSettings.self, forKey: .searchSettings)
-    listSnapshot = try container.decode(CardListLibrarySnapshot.self, forKey: .listSnapshot)
+    listSnapshot = try container.decode(CardCollectionLibrarySnapshot.self, forKey: .listSnapshot)
     deletedLists = try container.decodeIfPresent([SyncListDeletion].self, forKey: .deletedLists) ?? []
     deletedEntities =
       try container.decodeIfPresent([SyncTombstone].self, forKey: .deletedEntities) ?? []
@@ -291,10 +291,10 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
 }
 
 public struct SyncListDeletion: Codable, Equatable, Identifiable, Sendable {
-  public var id: CardListRecord.ID
+  public var id: CardCollectionRecord.ID
   public var deletedAt: Date
 
-  public init(id: CardListRecord.ID, deletedAt: Date) {
+  public init(id: CardCollectionRecord.ID, deletedAt: Date) {
     self.id = id
     self.deletedAt = deletedAt
   }
@@ -305,7 +305,7 @@ public struct CloudSyncRecoverySnapshot: Codable, Equatable, Identifiable, Senda
   public var createdAt: Date
   public var reason: String
   public var libraryIdentity: LibraryIdentity
-  public var listSnapshot: CardListLibrarySnapshot
+  public var listSnapshot: CardCollectionLibrarySnapshot
   public var deletedLists: [SyncListDeletion]
 
   public init(
@@ -313,7 +313,7 @@ public struct CloudSyncRecoverySnapshot: Codable, Equatable, Identifiable, Senda
     createdAt: Date = Date(),
     reason: String,
     libraryIdentity: LibraryIdentity,
-    listSnapshot: CardListLibrarySnapshot,
+    listSnapshot: CardCollectionLibrarySnapshot,
     deletedLists: [SyncListDeletion]
   ) {
     self.id = id
@@ -370,14 +370,14 @@ extension DeviceSyncSnapshot {
   }
 }
 
-extension CardListLibrarySnapshot {
+extension CardCollectionLibrarySnapshot {
   public func validateForApplication() throws {
-    var listIDs: Set<CardListRecord.ID> = []
+    var listIDs: Set<CardCollectionRecord.ID> = []
     for list in lists where !listIDs.insert(list.id).inserted {
       throw CloudSyncSnapshotValidationError.duplicateListID(list.id)
     }
 
-    var categoriesByID: [CardListCategoryRecord.ID: CardListCategoryRecord] = [:]
+    var categoriesByID: [CardCollectionCategoryRecord.ID: CardCollectionCategoryRecord] = [:]
     for category in categories {
       guard categoriesByID[category.id] == nil else {
         throw CloudSyncSnapshotValidationError.duplicateCategoryID(category.id)
@@ -391,7 +391,7 @@ extension CardListLibrarySnapshot {
       categoriesByID[category.id] = category
     }
 
-    var entryIDs: Set<CardListEntryRecord.ID> = []
+    var entryIDs: Set<CardCollectionEntryRecord.ID> = []
     for entry in entries {
       guard entryIDs.insert(entry.id).inserted else {
         throw CloudSyncSnapshotValidationError.duplicateEntryID(entry.id)
@@ -436,8 +436,8 @@ extension DeviceSyncSnapshot {
       return lhs.id < rhs.id
     }
 
-    var winningLists: [CardListRecord.ID: (snapshot: DeviceSyncSnapshot, list: CardListRecord)] = [:]
-    var winningDeletions: [CardListRecord.ID: (snapshot: DeviceSyncSnapshot, deletion: SyncListDeletion)] = [:]
+    var winningLists: [CardCollectionRecord.ID: (snapshot: DeviceSyncSnapshot, list: CardCollectionRecord)] = [:]
+    var winningDeletions: [CardCollectionRecord.ID: (snapshot: DeviceSyncSnapshot, deletion: SyncListDeletion)] = [:]
 
     for snapshot in candidates {
       for list in snapshot.listSnapshot.lists {
@@ -457,9 +457,9 @@ extension DeviceSyncSnapshot {
       }
     }
 
-    var lists: [CardListRecord] = []
-    var categories: [CardListCategoryRecord] = []
-    var entries: [CardListEntryRecord] = []
+    var lists: [CardCollectionRecord] = []
+    var categories: [CardCollectionCategoryRecord] = []
+    var entries: [CardCollectionEntryRecord] = []
     var deletedLists: [SyncListDeletion] = []
     let allListIDs = Set(winningLists.keys).union(winningDeletions.keys)
 
@@ -518,7 +518,7 @@ extension DeviceSyncSnapshot {
       capturedAt: capturedAt,
       libraryIdentity: libraryIdentity,
       searchSettings: searchSettings,
-      listSnapshot: CardListLibrarySnapshot(
+      listSnapshot: CardCollectionLibrarySnapshot(
         lists: lists,
         categories: categories,
         entries: entries
@@ -542,8 +542,8 @@ extension DeviceSyncSnapshot {
   }
 
   private static func isNewer(
-    _ candidate: (snapshot: DeviceSyncSnapshot, list: CardListRecord),
-    than current: (snapshot: DeviceSyncSnapshot, list: CardListRecord)
+    _ candidate: (snapshot: DeviceSyncSnapshot, list: CardCollectionRecord),
+    than current: (snapshot: DeviceSyncSnapshot, list: CardCollectionRecord)
   ) -> Bool {
     compare(
       timestamp: candidate.list.updatedAt,
@@ -567,7 +567,7 @@ extension DeviceSyncSnapshot {
 
   private static func isNewer(
     _ deletion: (snapshot: DeviceSyncSnapshot, deletion: SyncListDeletion),
-    than list: (snapshot: DeviceSyncSnapshot, list: CardListRecord)
+    than list: (snapshot: DeviceSyncSnapshot, list: CardCollectionRecord)
   ) -> Bool {
     compare(
       timestamp: deletion.deletion.deletedAt,
@@ -595,8 +595,8 @@ extension DeviceSyncSnapshot {
     return snapshot.id < otherSnapshot.id ? .orderedAscending : .orderedDescending
   }
 
-  private static func normalizedListPositions(_ lists: [CardListRecord]) -> [CardListRecord] {
-    var normalized: [CardListRecord] = []
+  private static func normalizedListPositions(_ lists: [CardCollectionRecord]) -> [CardCollectionRecord] {
+    var normalized: [CardCollectionRecord] = []
     for isPinned in [true, false] {
       let section = lists
         .filter { $0.isPinned == isPinned }
@@ -624,9 +624,13 @@ extension DeviceSyncSnapshot {
 public enum SyncEntityType: String, Codable, Equatable, Sendable {
   case library
   case searchSettings
-  case cardList
-  case cardListCategory
-  case cardListEntry
+  // Raw values are the on-the-wire / persisted (sync outbox + CloudKit payload)
+  // identifiers. The Swift cases were renamed list -> collection, but these raw
+  // strings MUST stay as the original "cardList*" so existing synced data and
+  // outbox rows continue to decode.
+  case cardCollection = "cardList"
+  case cardCollectionCategory = "cardListCategory"
+  case cardCollectionEntry = "cardListEntry"
   case snapshot
 }
 

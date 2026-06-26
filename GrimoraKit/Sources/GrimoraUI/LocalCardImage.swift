@@ -101,7 +101,7 @@ struct LocalCardImage: View {
   private static let loadRetryDelayNanoseconds: UInt64 = 120_000_000
 
   private var palette: GrimoraPalette {
-    GrimoraPalette(colorScheme: colorScheme)
+    .cached(for: colorScheme)
   }
 
   @ViewBuilder
@@ -212,7 +212,10 @@ final class LocalCardImageLoader: @unchecked Sendable {
 
   private let lock = NSLock()
   private var cache: [String: PlatformImageBox] = [:]
-  private var accessOrder: [String] = []
+  // LRU recency tracked by a monotonic counter per entry so touching a cache hit is O(1) (the hot
+  // scroll path). Eviction scans for the smallest stamp, which only runs when over a limit.
+  private var lastUsed: [String: UInt64] = [:]
+  private var accessClock: UInt64 = 0
   private var inFlightLoads: [String: Task<PlatformImageBox?, Never>] = [:]
   private var totalCost = 0
   private var countLimit: Int
@@ -327,7 +330,8 @@ final class LocalCardImageLoader: @unchecked Sendable {
   func clear() {
     lock.withLock {
       cache.removeAll()
-      accessOrder.removeAll()
+      lastUsed.removeAll()
+      accessClock = 0
       totalCost = 0
       inFlightLoads.removeAll()
     }
@@ -401,17 +405,19 @@ final class LocalCardImageLoader: @unchecked Sendable {
   }
 
   private func markRecentlyUsed(_ filePath: String) {
-    accessOrder.removeAll { $0 == filePath }
-    accessOrder.insert(filePath, at: 0)
+    accessClock &+= 1
+    lastUsed[filePath] = accessClock
   }
 
   private func pruneIfNeeded() {
     while cache.count > countLimit || totalCost > totalCostLimit {
-      guard let path = accessOrder.popLast() else {
+      guard let path = lastUsed.min(by: { $0.value < $1.value })?.key else {
         cache.removeAll()
+        lastUsed.removeAll()
         totalCost = 0
         return
       }
+      lastUsed.removeValue(forKey: path)
       if let removed = cache.removeValue(forKey: path) {
         totalCost -= removed.cost
       }

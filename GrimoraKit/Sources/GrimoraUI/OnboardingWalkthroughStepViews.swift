@@ -148,8 +148,8 @@ struct OnboardingListsStepView: View {
           .buttonStyle(.plain)
           .accessibilityLabel(
             filedCardIDs.contains(card.id)
-              ? "Remove \(card.name) from the sample list"
-              : "Add \(card.name) to the sample list"
+              ? "Remove \(card.name) from the sample collection"
+              : "Add \(card.name) to the sample collection"
           )
           .accessibilityIdentifier("onboarding-list-card-\(card.id)")
         }
@@ -166,8 +166,8 @@ struct OnboardingListsStepView: View {
   private var filedSummary: String {
     let count = filedCardIDs.count
     return count == 0
-      ? "Sample List — tap cards above to add them"
-      : "Sample List — \(count) card\(count == 1 ? "" : "s")"
+      ? "Sample Collection — tap cards above to add them"
+      : "Sample Collection — \(count) card\(count == 1 ? "" : "s")"
   }
 
   private func toggle(_ card: GrimoraOnboardingSampleCard) {
