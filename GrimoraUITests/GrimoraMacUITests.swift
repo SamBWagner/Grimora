@@ -1030,12 +1030,9 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(moreCards.waitForExistence(timeout: 2))
         moreCards.click()
 
-        // "More cards with …" appends the clause to the search draft; like any edit,
-        // it waits for an explicit submit (Return) before the results re-run.
-        searchField.click()
-        searchField.typeKey(.return, modifierFlags: [])
-
-        // The refine narrows to the two goad cards; the combat-only card drops out.
+        // "More cards with …" appends the clause and re-runs the search in one step —
+        // no manual submit needed. The refine narrows to the two goad cards; the
+        // combat-only card drops out.
         XCTAssertTrue(waitForValue(of: total, toEqual: "2 cards"))
         XCTAssertTrue(app.buttons["open-card-goad-flyer"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["open-card-combat-only"].exists)

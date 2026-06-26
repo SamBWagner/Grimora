@@ -4,9 +4,9 @@ import XCTest
 
 /// Proves the search-refinement journey on the touch platforms: search oracle text,
 /// open a result, and refine on its oracle text via "More cards with …", which appends
-/// an `o:"…"` clause to the search query. The follow-on submit + narrow + reopen of the
-/// flying card is covered by the macOS test, because XCUITest cannot re-focus the iOS
-/// search field to submit after the detail's fullScreenCover is dismissed.
+/// an `o:"…"` clause to the search query and re-runs the search in one step (no manual
+/// submit). The iOS branch asserts both that the field gained the clause and that the
+/// results narrowed.
 ///
 /// This file backs both `GrimoraiOSUITests` and `GrimoraVisionOSUITests`. The search +
 /// filtering assertions run on both; the open + oracle-refine steps are gated to iOS
@@ -93,11 +93,6 @@ final class SearchRefineWorkflowUITests: XCTestCase {
         // "More cards with …" appends an `o:"<selected text>"` clause to the search
         // query. Verify the refine populated the field with that extra oracle clause —
         // whichever goad-distinctive word the long-press landed on.
-        //
-        // Submitting the refined query (and the resulting 3→2 narrow + reopening the
-        // flying card) is covered by the macOS test: XCUITest cannot re-focus this
-        // search field to submit after the iOS fullScreenCover is dismissed, so the
-        // touch suite stops at the verified refine.
         let refinedField = app.searchFields.firstMatch
         XCTAssertTrue(refinedField.waitForExistence(timeout: 5))
         let baseQuery = "o:\"Deals combat damage\""
@@ -107,6 +102,13 @@ final class SearchRefineWorkflowUITests: XCTestCase {
                 && refinedValue.dropFirst(baseQuery.count).contains("o:"),
             "refine did not append an oracle clause; value=\(refinedValue)"
         )
+
+        // The refine fires the re-query immediately: the two goad cards remain while
+        // the combat-only distractor (which lacks the goad-distinctive word) drops out.
+        XCTAssertTrue(waitForValue(of: total, toEqual: "2 cards", timeout: 10))
+        XCTAssertTrue(firstElement(app, identifier: "open-card-goad-combat").exists)
+        XCTAssertTrue(firstElement(app, identifier: "open-card-goad-flyer").exists)
+        XCTAssertFalse(firstElement(app, identifier: "open-card-combat-only").exists)
         #endif
     }
 

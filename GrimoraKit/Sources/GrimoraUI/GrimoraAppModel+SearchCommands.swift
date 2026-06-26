@@ -72,6 +72,13 @@ extension GrimoraAppModel {
   }
 
   public func submitSearch() async {
+    commitSearchDraft()
+  }
+
+  /// Commit the current draft (`searchText`) as the active query and re-run the
+  /// search immediately. Shared by `submitSearch()` and the refinement actions so
+  /// a refine appends its clause *and* fires the re-query in a single step.
+  func commitSearchDraft() {
     let query = GrimoraSearchHistoryStore.normalizedQuery(searchText)
     submittedSearchText = query
     if searchText != query {

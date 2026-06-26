@@ -3,8 +3,8 @@ import GrimoraCore
 
 extension GrimoraAppModel {
     public func refineCurrentSearch(with refinement: SearchRefinement) {
-        let currentQuery = currentRefinementQuery
-        setSearchDraft(SearchQuery.appending(refinement, to: currentQuery))
+        searchText = SearchQuery.appending(refinement, to: currentRefinementQuery)
+        commitSearchDraft()
     }
 
     public func refinementState(for refinement: SearchRefinement) -> SearchRefinementState {
@@ -12,8 +12,8 @@ extension GrimoraAppModel {
     }
 
     public func applySearchRefinements(_ updates: [SearchRefinementUpdate]) {
-        let updatedQuery = SearchQuery.applying(updates, to: currentRefinementQuery)
-        setSearchDraft(updatedQuery)
+        searchText = SearchQuery.applying(updates, to: currentRefinementQuery)
+        commitSearchDraft()
     }
 
     public func addHiddenTerm(_ refinement: SearchRefinement) {
@@ -127,7 +127,10 @@ extension GrimoraAppModel {
     }
 
     private var currentRefinementQuery: String {
-        submittedSearchText
+        // Build on the field's live draft (which equals the committed query in the
+        // normal flow) so a refine respects any unsubmitted text and matches what
+        // the user sees in the search field.
+        searchText
     }
 }
 
