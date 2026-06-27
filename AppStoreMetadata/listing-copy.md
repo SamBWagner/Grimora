@@ -1,6 +1,6 @@
 # Grimora App Store Listing Copy
 
-Use this copy for version 1.2 (build 2026061404). All public screenshots use
+Use this copy for version 1.3 (build 2026062601). All public screenshots use
 the clean fictional-card screenshot set.
 
 ## App Name
@@ -18,7 +18,7 @@ Card Library & Lists
 ## Promotional Text
 
 ```text
-Build searchable card libraries, organize lists, compare versions, and review collection value with a private, local-first workspace.
+Search smarter — tap cards to refine your results, build advanced queries with live colour-coded syntax, and search across every collection at once.
 ```
 
 ## Keywords
@@ -30,15 +30,17 @@ cards,library,collection,deck,lists,trading,tcg,offline,search,prices,organizer,
 ## Description
 
 ```text
-Grimora is a local-first card library and list manager for players who want fast search, structured lists, and value context across a large personal collection.
+Grimora is a local-first card library and collection manager for players who want fast, precise search and structured organisation across a large personal collection.
 
-Search offline, save reusable list views, compare card versions, group entries into categories, and keep devices aligned with optional iCloud sync. Images and library data are cached locally so browsing stays quick after setup.
+Search offline with live syntax highlighting, refine results by tapping cards, build advanced queries, and search across every collection at once. Group cards into collections and categories, track value over time, and keep devices aligned with optional iCloud sync. Images and library data are cached locally so browsing stays quick after setup.
 
 Features:
-- Fast local card search
-- Flexible list and category organization
-- Detail views for card versions, notes, and value history
-- Import and export tools for personal lists
+- Fast local card search with live, colour-coded query syntax
+- Tap-to-refine search and a visual advanced-search builder
+- Search across all of your collections at once
+- Collections with categories, on-card actions, and reordering
+- Detail views for card versions, notes, artist art, and price history
+- Import and export tools for your collections
 - Optional iCloud sync across your Apple devices
 
 Grimora is independently developed and is not affiliated with or endorsed by any card publisher, data provider, or marketplace.
@@ -47,26 +49,28 @@ Grimora is independently developed and is not affiliated with or endorsed by any
 ## What's New
 
 ```text
-Version 1.2 moves Grimora's card catalog to a managed, prebuilt database.
+Version 1.3 makes finding and organising cards faster across all your devices.
 
-- Existing libraries remain usable while the approximately 126 MB catalog stages
-- Catalog updates no longer require rebuilding card and market indexes on device
-- Downloads validate before activation and safely fall back to the previous catalog
-- User lists and optional iCloud sync remain separate from managed card data
-- iCloud now combines safe changes automatically and asks only about genuine conflicts
-- Duplicate Favourites and identical lists are consolidated without imported copies
-- A recovery copy is created before automatic or manual iCloud consolidation
-- Improved migration recovery, storage checks, and cross-device compatibility
+- Refine searches by tapping cards or selecting oracle text to include or exclude what you want — and hide terms you never want to see again
+- Build precise queries with a new advanced search form and live, colour-coded Scryfall syntax right in the search field
+- Search across every collection at once and see matching cards highlighted on the dashboard
+- Lists are now Collections, with add, create and move-category actions on the card itself plus quick category reordering
+- Pinch to zoom the card grid and resize the collections dashboard on iPad
+- Star favourites from search results, scrub through price history, and jump from any card to all of an artist's art
+- A guided walkthrough helps new players get started, replayable any time from Settings
+- iCloud is now the single source of truth, ending the repeated sync prompt and keeping card counts accurate across devices
 ```
 
 ## App Review Notes
 
 ```text
-Version 1.2 (2026061404) requires no account or reviewer credentials. iCloud sync is optional.
+Version 1.3 (2026062601) requires no account or reviewer credentials. iCloud sync is optional.
 
-For an existing installation, Grimora keeps the current library fully usable while an approximately 126 MB managed catalog stages on an allowed network. The app then displays "Restart to finish"; activation occurs atomically on the next cold launch. A failed download, validation, migration, or activation leaves the existing library untouched. A manual refresh may use any network.
+Grimora's card catalogue is a managed, prebuilt database. For an existing installation, the current library stays fully usable while any catalogue update stages on an allowed network and activates atomically on the next cold launch. A failed download, validation, or activation leaves the existing library untouched. A manual refresh may use any network.
 
-When multiple devices contain different iCloud data, Grimora automatically combines non-conflicting lists, Favourites, and search settings. The "Review iCloud Data" screen appears only for same-list content conflicts or delete-versus-edit conflicts. Grimora creates a recovery copy before applying the result.
+iCloud sync is now deterministic: changes from all signed-in devices merge automatically with no prompts and no manual conflict resolution. The interactive "Review iCloud Data" screen from earlier versions has been removed.
+
+Card menus include a "Buy" link that opens the third-party MTG Mate marketplace in the device browser. Grimora has no in-app purchases and is not affiliated with or endorsed by MTG Mate or any marketplace.
 
 All App Store screenshots contain fictional card names, fictional set data, and original placeholder artwork. Grimora is independently developed and is not affiliated with or endorsed by any card publisher, data provider, or marketplace.
 ```
