@@ -77,6 +77,8 @@ struct CardArtworkView: View {
     var accessibilityHidden = true
     var showsControls = true
     var showsPreviewLoadingIndicator = false
+    /// When true, a synthetic holographic foil sheen is drawn over the artwork.
+    var isFoil = false
     var maximumVisualWidthExpansion: CGFloat?
     var onVisualOverflowChange: (Bool) -> Void = { _ in }
     var onLandscapeLayoutChange: (Bool) -> Void = { _ in }
@@ -170,6 +172,7 @@ struct CardArtworkView: View {
                 accessibilityHidden: accessibilityHidden,
                 onImageSizeChange: handleImageSizeChange
             )
+            .overlay { foilOverlay }
         } else if variants.isEmpty, let fallbackImagePath {
             CardArtworkVariantImage(
                 path: fallbackImagePath,
@@ -177,12 +180,22 @@ struct CardArtworkView: View {
                 accessibilityHidden: accessibilityHidden,
                 onImageSizeChange: handleImageSizeChange
             )
+            .overlay { foilOverlay }
         } else {
             TextOnlyCardArtView(
                 card: card,
                 palette: palette,
                 showsLoadingIndicator: showsPreviewLoadingIndicator
             )
+        }
+    }
+
+    @ViewBuilder
+    private var foilOverlay: some View {
+        if isFoil {
+            CardFoilOverlay(cornerRadius: cornerRadius)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
     }
 

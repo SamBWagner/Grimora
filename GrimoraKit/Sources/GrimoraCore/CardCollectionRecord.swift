@@ -249,6 +249,9 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
     public var quantity: Int
     public var createdAt: Date
     public var updatedAt: Date
+    /// The finish the user pinned for this entry. `nil` means normal (the default).
+    /// Persisted and synced so a foil choice survives like a printing/art swap.
+    public var selectedFinish: CardValueFinish?
     public var card: CardRecord?
 
     public init(
@@ -261,6 +264,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         quantity: Int = 1,
         createdAt: Date,
         updatedAt: Date? = nil,
+        selectedFinish: CardValueFinish? = nil,
         card: CardRecord? = nil
     ) {
         self.id = id
@@ -272,6 +276,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         self.quantity = quantity
         self.createdAt = createdAt
         self.updatedAt = updatedAt ?? createdAt
+        self.selectedFinish = selectedFinish
         self.card = card
     }
 
@@ -285,6 +290,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         case quantity
         case createdAt
         case updatedAt
+        case selectedFinish
         case card
     }
 
@@ -299,6 +305,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         quantity = max(1, try container.decodeIfPresent(Int.self, forKey: .quantity) ?? 1)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
+        selectedFinish = try container.decodeIfPresent(CardValueFinish.self, forKey: .selectedFinish)
         card = try container.decodeIfPresent(CardRecord.self, forKey: .card)
     }
 
@@ -313,6 +320,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         try container.encode(quantity, forKey: .quantity)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(selectedFinish, forKey: .selectedFinish)
         try container.encodeIfPresent(card, forKey: .card)
     }
 }

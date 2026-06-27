@@ -110,7 +110,8 @@ extension CardDatabase {
     } ?? ""
     let statement = try database.prepare(
       """
-      SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at
+      SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
+          COALESCE(sync_updated_at, updated_at), selected_finish
       FROM card_list_entries
       WHERE 1 = 1
       \(searchClause)
@@ -166,7 +167,8 @@ extension CardDatabase {
     } ?? ""
     let statement = try database.prepare(
       """
-      SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at
+      SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
+          COALESCE(sync_updated_at, updated_at), selected_finish
       FROM card_list_entries
       WHERE list_id = ?
       \(searchClause)
@@ -277,8 +279,9 @@ extension CardDatabase {
     let entryInsert = try database.prepare(
       """
       INSERT INTO card_list_entries (
-          id, list_id, zone, category_id, card_id, position, quantity, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, list_id, zone, category_id, card_id, position, quantity, created_at, updated_at,
+          selected_finish
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """)
     for entry in snapshot.entries {
       try entryInsert.bind(entry.id, at: 1)
@@ -290,6 +293,7 @@ extension CardDatabase {
       try entryInsert.bind(max(1, entry.quantity), at: 7)
       try entryInsert.bind(Self.formattedListDate(entry.createdAt), at: 8)
       try entryInsert.bind(Self.formattedListDate(entry.updatedAt), at: 9)
+      try entryInsert.bind(entry.selectedFinish?.rawValue, at: 10)
       try entryInsert.step()
       try entryInsert.reset()
     }
@@ -1046,6 +1050,11 @@ extension CardDatabase {
       let date = Self.formattedListDate(now)
       var updatedEntryID = id
 
+      // Carry the pinned finish onto the new printing, but drop it if that printing
+      // cannot be foil (e.g. swapping a foil pick onto a nonfoil-only version).
+      let newPrintingSupportsFoil = (try card(id: cardID))?.supportsFoil ?? false
+      let carriedFinish = newPrintingSupportsFoil ? entry.selectedFinish?.rawValue : nil
+
       try database.transaction {
         if let existingEntry = try matchingCardCollectionEntryUnlocked(
           listID: entry.listID,
@@ -1073,11 +1082,12 @@ extension CardDatabase {
           let update = try database.prepare(
             """
             UPDATE card_list_entries
-            SET card_id = ?
+            SET card_id = ?, selected_finish = ?
             WHERE id = ?
             """)
           try update.bind(cardID, at: 1)
-          try update.bind(entry.id, at: 2)
+          try update.bind(carriedFinish, at: 2)
+          try update.bind(entry.id, at: 3)
           try update.step()
         }
 
@@ -1085,6 +1095,45 @@ extension CardDatabase {
       }
 
       guard var updatedEntry = try cardCollectionEntryUnlocked(id: updatedEntryID) else {
+        throw CardCollectionDatabaseError.entryNotFound
+      }
+      updatedEntry.card = try card(id: updatedEntry.cardID)
+      return updatedEntry
+    }
+  }
+
+  /// Pins the finish (e.g. foil) the user chose for a collection entry. Passing `nil`
+  /// or `.normal` clears the pin. Persisted and synced like a printing swap.
+  @discardableResult
+  public func setCardCollectionEntryFinish(
+    id: String,
+    finish: CardValueFinish?,
+    now: Date = Date()
+  ) throws -> CardCollectionEntryRecord {
+    try withDatabaseLock {
+      guard let entry = try cardCollectionEntryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.entryNotFound
+      }
+
+      let storedFinish = (finish == .normal) ? nil : finish?.rawValue
+      let date = Self.formattedListDate(now)
+
+      try database.transaction {
+        let update = try database.prepare(
+          """
+          UPDATE card_list_entries
+          SET selected_finish = ?, updated_at = ?
+          WHERE id = ?
+          """)
+        try update.bind(storedFinish, at: 1)
+        try update.bind(date, at: 2)
+        try update.bind(id, at: 3)
+        try update.step()
+
+        try touchCardCollectionUnlocked(id: entry.listID, date: date)
+      }
+
+      guard var updatedEntry = try cardCollectionEntryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
       updatedEntry.card = try card(id: updatedEntry.cardID)

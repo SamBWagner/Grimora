@@ -462,6 +462,10 @@ struct TouchRootView: View {
                 onSelectPrinting: { printing in
                     model.selectPrinting(printing)
                 },
+                isFoilSelected: { model.isFoilSelected(for: $0) },
+                onSetFoil: { printing, isFoil in
+                    model.setFoil(isFoil, for: printing)
+                },
                 onLoadPrintingThumbnailImage: { printing in
                     await model.cachePrintingThumbnailImage(for: printing)
                 },

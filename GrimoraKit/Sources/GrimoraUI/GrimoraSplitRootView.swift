@@ -126,24 +126,36 @@ private struct SplitRootView: View {
                 valueGuide: model.selectedCardValueGuide,
                 valueHistoryBackgroundActivity: model.valueHistoryBackgroundActivity,
                 valueExchangeRate: model.valueExchangeRate,
-                presentationStyle: .inspector
-            ) { printing in
-                model.selectPrinting(printing)
-            } onLoadPrintingThumbnailImage: { printing in
-                await model.cachePrintingThumbnailImage(for: printing)
-            } onLoadPrintingPreviewImage: { printing in
-                await model.cachePrintingPreviewImages(for: printing)
-            } onLoadAvailablePrintingPreviewImages: { printings in
-                await model.cachePrintingPreviewImages(for: printings)
-            } onLoadValueExchangeRate: { currency in
-                await model.loadValueExchangeRateIfNeeded(for: currency)
-            } onCreateListForCard: { card in
-                presentCreateListPrompt(adding: card, selectAfterCreate: false)
-            } onSearchArtist: { artist in
-                Task { await model.searchArtworks(byArtist: artist) }
-            } onClose: {
-                model.closeSelectedCard()
-            }
+                presentationStyle: .inspector,
+                onSelectPrinting: { printing in
+                    model.selectPrinting(printing)
+                },
+                isFoilSelected: { model.isFoilSelected(for: $0) },
+                onSetFoil: { printing, isFoil in
+                    model.setFoil(isFoil, for: printing)
+                },
+                onLoadPrintingThumbnailImage: { printing in
+                    await model.cachePrintingThumbnailImage(for: printing)
+                },
+                onLoadPrintingPreviewImage: { printing in
+                    await model.cachePrintingPreviewImages(for: printing)
+                },
+                onLoadAvailablePrintingPreviewImages: { printings in
+                    await model.cachePrintingPreviewImages(for: printings)
+                },
+                onLoadValueExchangeRate: { currency in
+                    await model.loadValueExchangeRateIfNeeded(for: currency)
+                },
+                onCreateListForCard: { card in
+                    presentCreateListPrompt(adding: card, selectAfterCreate: false)
+                },
+                onSearchArtist: { artist in
+                    Task { await model.searchArtworks(byArtist: artist) }
+                },
+                onClose: {
+                    model.closeSelectedCard()
+                }
+            )
             .task(id: card.id) {
                 async let imageCaching: Void = model.cacheDetailImages(for: card)
                 async let printingLoad: Void = model.loadPrintings(for: card)

@@ -284,6 +284,13 @@ public struct CardRecord: Identifiable, Codable, Equatable, Sendable {
         self.faces = faces
     }
 
+    /// Whether this printing can exist as a foil. Scryfall reports availability via
+    /// the `finishes` array; `isFoil` is the legacy boolean. Either signalling foil
+    /// means the foil toggle should be enabled for this printing.
+    public var supportsFoil: Bool {
+        isFoil || finishes.contains("foil")
+    }
+
     public var displayImagePath: String? {
         firstPath([
             normalImagePath,

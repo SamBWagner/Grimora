@@ -41,6 +41,8 @@ public struct CardDetailView: View {
     public var valueExchangeRate: CurrencyExchangeRate?
     public var presentationStyle: CardDetailPresentationStyle
     public var onSelectPrinting: (CardRecord) -> Void
+    public var isFoilSelected: (CardRecord) -> Bool
+    public var onSetFoil: (CardRecord, Bool) -> Void
     public var onLoadPrintingThumbnailImage: (CardRecord) async -> Void
     public var onLoadPrintingPreviewImage: (CardRecord) async -> Void
     public var onLoadAvailablePrintingPreviewImages: ([CardRecord]) async -> Void
@@ -57,6 +59,8 @@ public struct CardDetailView: View {
         valueExchangeRate: CurrencyExchangeRate? = nil,
         presentationStyle: CardDetailPresentationStyle = .automatic,
         onSelectPrinting: @escaping (CardRecord) -> Void = { _ in },
+        isFoilSelected: @escaping (CardRecord) -> Bool = { _ in false },
+        onSetFoil: @escaping (CardRecord, Bool) -> Void = { _, _ in },
         onLoadPrintingThumbnailImage: @escaping (CardRecord) async -> Void = { _ in },
         onLoadPrintingPreviewImage: @escaping (CardRecord) async -> Void = { _ in },
         onLoadAvailablePrintingPreviewImages: @escaping ([CardRecord]) async -> Void = { _ in },
@@ -72,6 +76,8 @@ public struct CardDetailView: View {
         self.valueExchangeRate = valueExchangeRate
         self.presentationStyle = presentationStyle
         self.onSelectPrinting = onSelectPrinting
+        self.isFoilSelected = isFoilSelected
+        self.onSetFoil = onSetFoil
         self.onLoadPrintingThumbnailImage = onLoadPrintingThumbnailImage
         self.onLoadPrintingPreviewImage = onLoadPrintingPreviewImage
         self.onLoadAvailablePrintingPreviewImages = onLoadAvailablePrintingPreviewImages
@@ -254,6 +260,7 @@ public struct CardDetailView: View {
             preferredQuality: .large,
             fallbackImagePath: primaryDetailImagePath(for: card),
             accessibilityHidden: false,
+            isFoil: isFoilSelected(card),
             onVisualOverflowChange: onVisualOverflowChange
         )
             .shadow(color: palette.shadow.color, radius: 10, x: 0, y: 6)
@@ -299,8 +306,12 @@ public struct CardDetailView: View {
             }
 
             let refinementGroups = model.candidateRefinements(for: card)
-            if !refinementGroups.isEmpty {
-                CardRefinementButton(groups: refinementGroups)
+            HStack(alignment: .center, spacing: 12) {
+                if !refinementGroups.isEmpty {
+                    CardRefinementButton(groups: refinementGroups)
+                }
+                Spacer(minLength: 12)
+                foilToggle
             }
 
             if !card.oracleText.isEmpty {
@@ -327,6 +338,27 @@ public struct CardDetailView: View {
                     .padding(.top, 2)
                 }
             }
+        }
+    }
+
+    /// Switch that flips the displayed printing between normal and foil. Always
+    /// present so it reads consistently while swiping versions; disabled when the
+    /// current printing has no foil finish.
+    private var foilToggle: some View {
+        Toggle("Foil", isOn: foilBinding)
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .fixedSize()
+            .disabled(!card.supportsFoil)
+            .accessibilityIdentifier("card-detail-foil-toggle")
+    }
+
+    private var foilBinding: Binding<Bool> {
+        Binding {
+            isFoilSelected(card)
+        } set: { newValue in
+            detailFeedbackTrigger += 1
+            onSetFoil(card, newValue)
         }
     }
 
@@ -748,6 +780,7 @@ public struct CardDetailView: View {
                     preferredQuality: .large,
                     fallbackImagePath: previewedPrinting.detailImagePath,
                     accessibilityHidden: false,
+                    isFoil: isFoilSelected(previewedPrinting),
                     onVisualOverflowChange: updateExpandedPreviewArtworkOverflow
                 )
                 .aspectRatio(0.716, contentMode: .fit)
@@ -865,7 +898,8 @@ public struct CardDetailView: View {
                         cornerRadius: 12,
                         preferredQuality: .large,
                         fallbackImagePath: galleryImagePath(for: printing),
-                        accessibilityHidden: false
+                        accessibilityHidden: false,
+                        isFoil: isFoilSelected(printing)
                     )
                     .aspectRatio(Self.cardAspectRatio, contentMode: .fit)
                     .shadow(color: palette.shadow.color, radius: 10, x: 0, y: 6)
@@ -1767,7 +1801,8 @@ public struct CardDetailView: View {
                     cornerRadius: 12,
                     preferredQuality: .large,
                     fallbackImagePath: galleryImagePath(for: printing),
-                    accessibilityHidden: false
+                    accessibilityHidden: false,
+                    isFoil: isFoilSelected(printing)
                 )
                     .aspectRatio(Self.cardAspectRatio, contentMode: .fit)
                     .padding(.horizontal, 6)
@@ -1925,6 +1960,13 @@ public struct CardDetailView: View {
     }
 
     private func primaryValueEntry(in guide: CardValueGuide) -> CardValueGuideEntry? {
+        // When the user has the card flipped to foil, prefer the foil pricing.
+        // Otherwise (and as a fallback when no foil pricing exists) use the normal
+        // finish ordering.
+        if isFoilSelected(card),
+           let foilEntry = guide.entries.first(where: { $0.finish == .foil }) {
+            return foilEntry
+        }
         for finish in CardValueFinish.allCases {
             if let entry = guide.entries.first(where: { $0.finish == finish }) {
                 return entry

@@ -827,6 +827,7 @@ extension GrimoraAppModel {
   }
 
   public func selectCard(_ card: CardRecord) {
+    sessionFoilPrintingIDs.removeAll()
     setSelectedCard(card, listEntryID: nil)
   }
 
@@ -834,10 +835,12 @@ extension GrimoraAppModel {
     _ card: CardRecord,
     fromListEntryID listEntryID: CardCollectionEntryRecord.ID
   ) {
+    sessionFoilPrintingIDs.removeAll()
     setSelectedCard(card, listEntryID: listEntryID)
   }
 
   public func closeSelectedCard() {
+    sessionFoilPrintingIDs.removeAll()
     setSelectedCard(nil, listEntryID: nil)
   }
 
@@ -858,6 +861,50 @@ extension GrimoraAppModel {
       setSelectedCard(updatedEntry.card ?? printing, listEntryID: updatedEntry.id)
     } catch {
       statusMessage = "Collection update failed."
+    }
+  }
+
+  /// The collection entry currently driving the detail view, if any.
+  private var selectedCardCollectionEntry: CardCollectionEntryRecord? {
+    guard let selectedCardCollectionEntryID else { return nil }
+    return selectedCollectionEntries.first { $0.id == selectedCardCollectionEntryID }
+  }
+
+  /// Whether the given printing is currently shown as foil. Backed by the
+  /// collection entry's persisted finish when this printing is the entry's pinned
+  /// print, otherwise by the transient per-version session set.
+  public func isFoilSelected(for printing: CardRecord) -> Bool {
+    if let entry = selectedCardCollectionEntry, entry.cardID == printing.id {
+      return entry.selectedFinish == .foil
+    }
+    return sessionFoilPrintingIDs.contains(printing.id)
+  }
+
+  /// Flips the given printing between foil and normal. Persists onto the backing
+  /// collection entry (survives close + syncs) when the printing is the entry's
+  /// pinned print; otherwise updates only the transient session state.
+  public func setFoil(_ isFoil: Bool, for printing: CardRecord) {
+    if let entryID = selectedCardCollectionEntryID,
+       let entry = selectedCardCollectionEntry,
+       entry.cardID == printing.id {
+      do {
+        _ = try performListMutation {
+          try database.setCardCollectionEntryFinish(
+            id: entryID,
+            finish: isFoil ? .foil : .normal
+          )
+        }
+        reloadCardCollections(selecting: selectedCollectionID)
+      } catch {
+        statusMessage = "Collection update failed."
+      }
+      return
+    }
+
+    if isFoil {
+      sessionFoilPrintingIDs.insert(printing.id)
+    } else {
+      sessionFoilPrintingIDs.remove(printing.id)
     }
   }
 }

@@ -5793,6 +5793,68 @@ final class GrimoraAppModelTests: XCTestCase {
     return crc ^ 0xffff_ffff
   }
 
+  func testSessionFoilIsPerPrintingAndClearsOnCloseOrNewSelection() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+
+    let cardA = try XCTUnwrap(database.card(id: "forest"))
+    let cardB = try XCTUnwrap(database.card(id: "beta"))
+
+    model.selectCard(cardA)
+    XCTAssertFalse(model.isFoilSelected(for: cardA))
+
+    model.setFoil(true, for: cardA)
+    XCTAssertTrue(model.isFoilSelected(for: cardA))
+    // Per-version: a different printing keeps its own (off) state.
+    XCTAssertFalse(model.isFoilSelected(for: cardB))
+
+    model.setFoil(false, for: cardA)
+    XCTAssertFalse(model.isFoilSelected(for: cardA))
+
+    // Opening a different card forgets the session foil state.
+    model.setFoil(true, for: cardA)
+    model.selectCard(cardB)
+    XCTAssertFalse(model.isFoilSelected(for: cardA))
+
+    // Closing the detail also forgets it.
+    model.selectCard(cardA)
+    model.setFoil(true, for: cardA)
+    model.closeSelectedCard()
+    XCTAssertFalse(model.isFoilSelected(for: cardA))
+  }
+
+  func testCollectionEntryFoilPersistsAcrossReopen() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+
+    let list = try database.createCardCollection(named: "Deck")
+    try database.appendCard("beta", toList: list.id)
+    let entry = try XCTUnwrap(database.cardCollectionEntries(forListID: list.id).first)
+    let card = try XCTUnwrap(database.card(id: "beta"))
+
+    model.reloadCardCollections(selecting: list.id)
+    model.selectCard(card, fromListEntryID: entry.id)
+    XCTAssertFalse(model.isFoilSelected(for: card))
+
+    model.setFoil(true, for: card)
+    XCTAssertTrue(model.isFoilSelected(for: card))
+    XCTAssertEqual(
+      try database.cardCollectionEntries(forListID: list.id).first?.selectedFinish,
+      .foil
+    )
+
+    // Persisted on the entry, so it survives closing and reopening the detail.
+    model.closeSelectedCard()
+    model.reloadCardCollections(selecting: list.id)
+    let reopenedEntry = try XCTUnwrap(database.cardCollectionEntries(forListID: list.id).first)
+    model.selectCard(card, fromListEntryID: reopenedEntry.id)
+    XCTAssertTrue(model.isFoilSelected(for: card))
+  }
+
   private func environment(
     database: CardDatabase,
     network: NetworkClient = BlockingNetworkClient(),

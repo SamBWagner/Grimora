@@ -473,6 +473,11 @@ extension CardDatabase {
       column: "sync_updated_at",
       definition: "sync_updated_at TEXT"
     )
+    try addColumnIfNeeded(
+      "card_list_entries",
+      column: "selected_finish",
+      definition: "selected_finish TEXT"
+    )
     try migrateCardValueMappingTablesIfNeeded()
 
     try database.execute(
