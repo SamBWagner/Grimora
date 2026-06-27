@@ -720,6 +720,11 @@ struct CardCollectionAddMenu: View {
             menu
                 .buttonStyle(GrimoraCapsuleSurfaceButtonStyle(palette: palette))
                 .help("Add to Collection")
+                // The custom button style on a macOS Menu surfaces the label as a
+                // second MenuButton node that also inherits the identifier, yielding
+                // a duplicate `add-card-to-list-<id>`. Collapse the menu's subtree to
+                // a single accessibility element so exactly one node carries the id.
+                .accessibilityElement(children: .combine)
                 .accessibilityLabel("Add to Collection")
                 .accessibilityIdentifier(resolvedAccessibilityIdentifier)
                 .grimoraSuccessFeedback(trigger: addFeedbackTrigger)
