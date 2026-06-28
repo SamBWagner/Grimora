@@ -1015,6 +1015,38 @@ final class GrimoraAppModelTests: XCTestCase {
     )
   }
 
+  func testImagePatchReachesCachedSectionEntries() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck Box", selectAfterCreate: true))
+    model.addCards(["forest"], toListID: list.id)
+    model.selectSearch()
+    await model.drainSelectedListLoadForTesting()
+    model.selectCardCollection(id: list.id)
+    await model.drainSelectedListLoadForTesting()
+
+    // The grid renders its cards out of the cached sections, so a downloaded image (applied via
+    // patchImageUpdate) must reach them — otherwise tiles never show artwork even though the
+    // backing entries were updated.
+    let sectionCard = try XCTUnwrap(
+      model.selectedCollectionSections.flatMap(\.entries).first { $0.cardID == "forest" }?.card
+    )
+    var updatedCard = sectionCard
+    updatedCard.normalImagePath = "/tmp/forest-patched.jpg"
+    XCTAssertNotEqual(sectionCard.normalImagePath, updatedCard.normalImagePath)
+
+    model.patchImageUpdate(updatedCard)
+
+    let patchedSectionCard = model.selectedCollectionSections
+      .flatMap(\.entries)
+      .first { $0.cardID == "forest" }?.card
+    XCTAssertEqual(patchedSectionCard?.normalImagePath, "/tmp/forest-patched.jpg")
+  }
+
   func testSearchAllListsSurfacesOnlyMatchingListsAndReportsSyntax() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())

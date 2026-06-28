@@ -260,6 +260,18 @@ extension GrimoraAppModel {
       }
     }
 
+    // The detail grid renders from the cached sections (built off-main), which hold their own
+    // copies of the entries. Patch those too — otherwise a just-downloaded image is written into
+    // `selectedCollectionEntries` but never reaches the on-screen tile, which reads the section.
+    for sectionIndex in selectedCollectionSections.indices {
+      for entryIndex in selectedCollectionSections[sectionIndex].entries.indices
+      where selectedCollectionSections[sectionIndex].entries[entryIndex].cardID == updatedCard.id {
+        if selectedCollectionSections[sectionIndex].entries[entryIndex].card != updatedCard {
+          selectedCollectionSections[sectionIndex].entries[entryIndex].card = updatedCard
+        }
+      }
+    }
+
     for index in cardCollectionOverviewItems.indices where cardCollectionOverviewItems[index].topCard?.id == updatedCard.id {
       if cardCollectionOverviewItems[index].topCard != updatedCard {
         cardCollectionOverviewItems[index].topCard = updatedCard
