@@ -23,16 +23,19 @@ extension GrimoraAppModel {
   }
 
   public func selectListsOverview() {
+    cancelSelectedListLoad()
     selectedCollectionID = nil
     selectedCollectionCategories = []
     selectedCollectionEntries = []
     selectedCollectionRulesetWarnings = []
     resetSelectedListSearchResults()
+    listLoadPhase = .idle
     sidebarSelection = .listsOverview
     closeSelectedCard()
   }
 
   public func selectSearch() {
+    cancelSelectedListLoad()
     sidebarSelection = .search
     closeSelectedCard()
   }
@@ -56,11 +59,13 @@ extension GrimoraAppModel {
   public func selectCardCollection(id: CardCollectionRecord.ID) {
     guard cardCollections.contains(where: { $0.id == id }) else {
       if selectedCollectionID == id {
+        cancelSelectedListLoad()
         selectedCollectionID = nil
         selectedCollectionCategories = []
         selectedCollectionEntries = []
         selectedCollectionRulesetWarnings = []
         resetSelectedListSearchResults()
+        listLoadPhase = .idle
       }
       if sidebarSelection == .list(id) {
         sidebarSelection = .search
@@ -71,15 +76,17 @@ extension GrimoraAppModel {
     selectedCollectionID = id
     sidebarSelection = .list(id)
     closeSelectedCard()
-    loadSelectedListState()
+    beginLoadingSelectedListState()
   }
 
   public func closeSelectedList() {
+    cancelSelectedListLoad()
     selectedCollectionID = nil
     selectedCollectionCategories = []
     selectedCollectionEntries = []
     selectedCollectionRulesetWarnings = []
     resetSelectedListSearchResults()
+    listLoadPhase = .idle
     sidebarSelection = .listsOverview
     closeSelectedCard()
   }

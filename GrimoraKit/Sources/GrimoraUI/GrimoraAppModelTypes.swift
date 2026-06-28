@@ -8,6 +8,28 @@ public enum GrimoraSidebarSelection: Equatable, Sendable {
   case list(CardCollectionRecord.ID)
 }
 
+/// Tracks where the selected collection's detail state is in its load lifecycle.
+///
+/// The view switch keys off this so tapping a list swaps to the detail view *this*
+/// run-loop tick (showing a skeleton) instead of blocking on a synchronous DB read.
+/// `loading` carries the list ID it is loading so the detail view only shows the
+/// skeleton for the collection currently selected, never a stale one.
+public enum ListLoadPhase: Equatable, Sendable {
+  case idle
+  case loading(CardCollectionRecord.ID)
+  case ready
+}
+
+/// The off-main result of reading a collection's detail state from the database.
+/// Every field is `Sendable`, so the loader can compute it on a background task and
+/// hand it back to the `@MainActor` model to publish.
+struct LoadedSelectedListState: Sendable {
+  var categories: [CardCollectionCategoryRecord]
+  var entries: [CardCollectionEntryRecord]
+  var warnings: [CardCollectionRulesetWarning]
+  var sections: [CardCollectionEntrySection]
+}
+
 public enum LibraryReadinessState: Equatable, Sendable {
   case missing
   case initializing

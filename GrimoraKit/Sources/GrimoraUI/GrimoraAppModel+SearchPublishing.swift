@@ -290,6 +290,13 @@ extension GrimoraAppModel {
     await nextPagePrefetchTask?.value
   }
 
+  /// Waits for the in-flight asynchronous selected-list load (started by
+  /// `selectCardCollection`) to publish, so tests can assert the loaded
+  /// `selectedCollection*` state deterministically.
+  public func drainSelectedListLoadForTesting() async {
+    await listLoadTask?.value
+  }
+
   public func drainSearchHistoryForTesting() async {
     await searchHistoryRecordTask?.value
   }

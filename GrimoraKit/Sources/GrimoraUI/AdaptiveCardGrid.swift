@@ -14,7 +14,6 @@ struct AdaptiveCardGrid<Item, ID: Hashable, Content: View>: View {
     let content: (Item) -> Content
 
     @State private var measuredWidth: CGFloat = 0
-    @State private var measuredHeight: CGFloat = 0
 
     init(
         items: [Item],
@@ -41,44 +40,34 @@ struct AdaptiveCardGrid<Item, ID: Hashable, Content: View>: View {
     }
 
     var body: some View {
-        Color.clear
-            .frame(maxWidth: .infinity, minHeight: max(1, measuredHeight), alignment: .top)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(
-                        key: AdaptiveCardGridWidthPreferenceKey.self,
-                        value: sanitizedAdaptiveCardGridWidth(proxy.size.width)
-                    )
-                }
-            }
-            .overlay(alignment: horizontalAlignment.frameAlignment) {
-                LazyVStack(alignment: horizontalAlignment.stackAlignment, spacing: verticalSpacing) {
-                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                        HStack(alignment: .top, spacing: horizontalSpacing) {
-                            ForEach(row, id: \.id) { entry in
-                                content(entry.item)
-                                    .frame(width: entry.width, alignment: .topLeading)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: horizontalAlignment.frameAlignment)
+        // The LazyVStack is the *direct* content (not an overlay measured by a height-preference
+        // feedback loop) so that, inside the enclosing ScrollView, it only realises the rows that
+        // are actually visible. Width is measured via a background GeometryReader — the stack fills
+        // `maxWidth: .infinity`, so this reports the available column width without forcing the
+        // rows to lay out, keeping the stack lazy.
+        LazyVStack(alignment: horizontalAlignment.stackAlignment, spacing: verticalSpacing) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .top, spacing: horizontalSpacing) {
+                    ForEach(row, id: \.id) { entry in
+                        content(entry.item)
+                            .frame(width: entry.width, alignment: .topLeading)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: horizontalAlignment.frameAlignment)
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: AdaptiveCardGridHeightPreferenceKey.self,
-                            value: sanitizedAdaptiveCardGridWidth(proxy.size.height)
-                        )
-                    }
-                }
             }
-            .onPreferenceChange(AdaptiveCardGridWidthPreferenceKey.self) { width in
-                measuredWidth = width
+        }
+        .frame(maxWidth: .infinity, alignment: horizontalAlignment.frameAlignment)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: AdaptiveCardGridWidthPreferenceKey.self,
+                    value: sanitizedAdaptiveCardGridWidth(proxy.size.width)
+                )
             }
-            .onPreferenceChange(AdaptiveCardGridHeightPreferenceKey.self) { height in
-                measuredHeight = height
-            }
+        }
+        .onPreferenceChange(AdaptiveCardGridWidthPreferenceKey.self) { width in
+            measuredWidth = width
+        }
     }
 
     private var rows: [[AdaptiveCardGridEntry<Item, ID>]] {
@@ -296,17 +285,6 @@ private func adaptiveCardGridItemWidthWeight(
 }
 
 private struct AdaptiveCardGridWidthPreferenceKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        let next = nextValue()
-        if next > 0 {
-            value = next
-        }
-    }
-}
-
-private struct AdaptiveCardGridHeightPreferenceKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {

@@ -340,37 +340,148 @@ extension GrimoraAppModel {
     }
   }
 
+  /// Reads a collection's detail state (categories, entries, ruleset warnings) from the
+  /// database. `nonisolated` so it can run on a background task — the heavy DB read and
+  /// the per-card hydration that `cardCollectionEntries` performs must stay off the main
+  /// thread. Returns `nil` on a DB error so the caller can surface the failure.
+  nonisolated static func loadSelectedListData(
+    listID: CardCollectionRecord.ID,
+    list: CardCollectionRecord?,
+    database: CardDatabase
+  ) -> LoadedSelectedListState? {
+    do {
+      let categories = try database.cardCollectionCategories(forListID: listID)
+      let entries = try database.cardCollectionEntries(forListID: listID)
+      let warnings =
+        list.map { CardCollectionRulesetValidator.warnings(for: $0, entries: entries) } ?? []
+      let sections = CardCollectionEntrySectionBuilder.sections(
+        entries: entries,
+        categories: categories,
+        ruleset: list?.ruleset ?? .none,
+        displaySortMode: list?.displaySortMode,
+        displaySortDirection: list?.displaySortDirection ?? .ascending
+      )
+      return LoadedSelectedListState(
+        categories: categories,
+        entries: entries,
+        warnings: warnings,
+        sections: sections
+      )
+    } catch {
+      return nil
+    }
+  }
+
+  /// Synchronous load used by the non-navigation paths (mutations, `reloadCardCollections`,
+  /// undo, init). These callers may read `selectedCollection*` immediately afterwards, so the
+  /// state must be populated before returning. Navigation uses `beginLoadingSelectedListState`
+  /// instead so the view can swap before the read completes.
   func loadSelectedListState() {
     listVisibleImageWindowTracker.reset()
     resetListVisibleImageRequests()
+    cancelSelectedListLoad()
+    let generation = listLoadGeneration
+
     guard let selectedCollectionID else {
-      selectedCollectionCategories = []
-      selectedCollectionEntries = []
-      selectedCollectionRulesetWarnings = []
-      resetSelectedListSearchResults()
+      clearSelectedListState()
+      listLoadPhase = .idle
       refreshListOverviewItems()
       return
     }
 
-    do {
-      selectedCollectionCategories = try database.cardCollectionCategories(forListID: selectedCollectionID)
-      selectedCollectionEntries = try database.cardCollectionEntries(forListID: selectedCollectionID)
-      if let selectedCollection {
-        selectedCollectionRulesetWarnings = CardCollectionRulesetValidator.warnings(
-          for: selectedCollection,
-          entries: selectedCollectionEntries
-        )
-      } else {
-        selectedCollectionRulesetWarnings = []
+    let loaded = Self.loadSelectedListData(
+      listID: selectedCollectionID,
+      list: selectedCollection,
+      database: database
+    )
+    publishSelectedListState(loaded, generation: generation, refreshesOverview: true)
+  }
+
+  /// Instant navigation: clears stale detail state and flips to `.loading` this run-loop tick
+  /// (so the detail view swaps to a skeleton immediately), then reads the database off-main and
+  /// publishes back on the main actor — guarded by a generation token so rapid list/search
+  /// switching only ever applies the newest selection. Mirrors the async search path.
+  func beginLoadingSelectedListState() {
+    listVisibleImageWindowTracker.reset()
+    resetListVisibleImageRequests()
+    cancelSelectedListLoad()
+    let generation = listLoadGeneration
+
+    guard let selectedCollectionID else {
+      clearSelectedListState()
+      listLoadPhase = .idle
+      refreshListOverviewItems()
+      return
+    }
+
+    clearSelectedListState()
+    listLoadPhase = .loading(selectedCollectionID)
+
+    let database = database
+    let listID = selectedCollectionID
+    let list = selectedCollection
+    listLoadTask = Task { [weak self, database, listID, list, generation] in
+      let loaded = await Task.detached(priority: .userInitiated) {
+        Self.loadSelectedListData(listID: listID, list: list, database: database)
+      }.value
+
+      guard let self else {
+        return
       }
+      guard generation == self.listLoadGeneration, !Task.isCancelled else {
+        return
+      }
+      self.publishSelectedListState(loaded, generation: generation, refreshesOverview: false)
+    }
+  }
+
+  /// Invalidates any in-flight selected-list load. Bumping the generation guarantees a
+  /// background load that has already started can never publish over a newer selection.
+  func cancelSelectedListLoad() {
+    listLoadGeneration &+= 1
+    listLoadTask?.cancel()
+    listLoadTask = nil
+  }
+
+  private func clearSelectedListState() {
+    selectedCollectionCategories = []
+    selectedCollectionEntries = []
+    selectedCollectionSections = []
+    selectedCollectionRulesetWarnings = []
+    resetSelectedListSearchResults()
+  }
+
+  /// Publishes a loaded (or failed) detail state on the main actor, but only if it is still the
+  /// newest load. Shared by the synchronous and asynchronous load paths.
+  ///
+  /// `refreshesOverview` gates the per-list sidebar/overview rebuild (which regroups+sorts every
+  /// list). Mutations change list contents, so the synchronous path refreshes it; pure
+  /// navigation does not change any list's contents, so the async path skips that storm.
+  func publishSelectedListState(
+    _ loaded: LoadedSelectedListState?,
+    generation: UInt64,
+    refreshesOverview: Bool
+  ) {
+    guard generation == listLoadGeneration else {
+      return
+    }
+
+    if let loaded {
+      selectedCollectionCategories = loaded.categories
+      selectedCollectionEntries = loaded.entries
+      selectedCollectionSections = loaded.sections
+      selectedCollectionRulesetWarnings = loaded.warnings
       reloadSelectedListSearch()
-      refreshListOverviewItems()
-    } catch {
-      selectedCollectionCategories = []
-      selectedCollectionEntries = []
-      selectedCollectionRulesetWarnings = []
-      resetSelectedListSearchResults()
-      refreshListOverviewItems()
+      if refreshesOverview {
+        refreshListOverviewItems()
+      }
+      listLoadPhase = .ready
+    } else {
+      clearSelectedListState()
+      if refreshesOverview {
+        refreshListOverviewItems()
+      }
+      listLoadPhase = .ready
       statusMessage = "Collection update failed."
     }
   }

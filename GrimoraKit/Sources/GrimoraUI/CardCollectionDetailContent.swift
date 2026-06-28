@@ -32,7 +32,9 @@ extension CardCollectionDetailView {
                             Divider()
                                 .overlay(palette.hairline.color)
 
-                            if isShowingEmptyListState {
+                            if isLoadingSelectedList {
+                                listDetailSkeleton
+                            } else if isShowingEmptyListState {
                                 ContentUnavailableView("Empty List", systemImage: "list.bullet.rectangle")
                                     .tint(palette.accent.color)
                                     .frame(maxWidth: .infinity, minHeight: 360)
@@ -77,7 +79,12 @@ extension CardCollectionDetailView {
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
 
-                        if isShowingEmptyListState {
+                        if isLoadingSelectedList {
+                            listDetailSkeleton
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                        } else if isShowingEmptyListState {
                             ContentUnavailableView("Empty List", systemImage: "list.bullet.rectangle")
                                 .tint(palette.accent.color)
                                 .frame(maxWidth: .infinity, minHeight: 360)
@@ -132,6 +139,58 @@ extension CardCollectionDetailView {
             && model.selectedCollectionRulesetWarnings.isEmpty
             && !isShowingDescription
     }
+
+    /// True while the selected collection's detail state is still loading off the main thread.
+    /// Gated on the selected ID so a stale `.loading` for a different list never shows here.
+    var isLoadingSelectedList: Bool {
+        if case .loading(let id) = model.listLoadPhase, id == model.selectedCollectionID {
+            return true
+        }
+        return false
+    }
+
+    /// Card-shaped placeholders shown the instant a list is tapped, before its cards have
+    /// been read. Keeps the layout stable (fixed card aspect ratio) so content streams in
+    /// without reflow, per the HIG "show content as soon as possible" guidance.
+    var listDetailSkeleton: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(
+                    .adaptive(
+                        minimum: gridZoom.minimumColumnWidth,
+                        maximum: gridZoom.maximumColumnWidth
+                    ),
+                    spacing: 18,
+                    alignment: .top
+                )
+            ],
+            alignment: .leading,
+            spacing: 14
+        ) {
+            ForEach(0..<12, id: \.self) { _ in
+                VStack(spacing: 0) {
+                    // Artwork well, sized by the same fixed card aspect ratio the real tile
+                    // reserves, so the row height matches once cards stream in.
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(palette.hairline.color.opacity(0.35))
+                        .aspectRatio(cardArtworkAspectRatio, contentMode: .fit)
+                    // Approximates the tile's bottom control bar so the skeleton footprint
+                    // matches a loaded tile and the loading -> ready swap doesn't jump.
+                    Color.clear.frame(height: Self.skeletonBottomBarHeight)
+                }
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(palette.cardSurface.color.opacity(0.5))
+                }
+            }
+        }
+        .padding(24)
+        .accessibilityIdentifier("card-list-detail-skeleton")
+    }
+
+    /// Matches `CardGridItemView`'s minimum bottom-bar height so skeleton tiles reserve the
+    /// same total footprint as loaded tiles.
+    private static let skeletonBottomBarHeight: CGFloat = 60
 
     private func gridDetailSections(snapshot: CardCollectionDetailSnapshot) -> some View {
         LazyVStack(alignment: .leading, spacing: 28) {
@@ -224,8 +283,7 @@ extension CardCollectionDetailView {
                                 AdaptiveCardGrid(
                                     items: section.entries,
                                     id: { $0.id },
-                                    landscapeItemIDs: defaultLandscapeArtworkEntryIDs(for: section.entries)
-                                        .union(landscapeArtworkEntryIDs),
+                                    landscapeItemIDs: defaultLandscapeArtworkEntryIDs(for: section.entries),
                                     minimumColumnWidth: gridZoom.minimumColumnWidth,
                                     maximumColumnWidth: gridZoom.maximumColumnWidth,
                                     horizontalAlignment: listGridHorizontalAlignment,

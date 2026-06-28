@@ -438,8 +438,11 @@ private struct ScryReviewSheet: View {
   @ViewBuilder
   private var cardImage: some View {
     if let path = card.normalImagePath ?? card.largeImagePath,
-       let image = UIImage(contentsOfFile: path) {
-      Image(uiImage: image).resizable().scaledToFit()
+       FileManager.default.fileExists(atPath: path) {
+      // Decode off the main thread (and cache) via LocalCardImage instead of
+      // UIImage(contentsOfFile:) in the body, which blocked the Scry result sheet on the
+      // main thread while the full image decoded.
+      LocalCardImage(path: path, cornerRadius: 12, contentMode: .fit)
     } else if let urlString = card.normalImageURL ?? card.largeImageURL,
               let url = URL(string: urlString) {
       AsyncImage(url: url) { image in

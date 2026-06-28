@@ -298,19 +298,23 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
         return false
       }
       modelB.selectCardCollection(id: favouritesID)
+      await modelB.drainSelectedListLoadForTesting()
       return modelB.selectedCollectionEntries.map(\.cardID) == [card.id]
     }
     XCTAssertTrue(favouriteArrived)
 
     let favouriteEntry = try XCTUnwrap(modelA.favouritesList).id
     modelA.selectCardCollection(id: favouriteEntry)
+    await modelA.drainSelectedListLoadForTesting()
     let favouriteEntryID = try XCTUnwrap(modelA.selectedCollectionEntries.first).id
     modelA.removeCardCollectionEntriesCompletely(ids: [favouriteEntryID])
     let favouriteRemovalArrived = await waitUntil {
-      modelB.favouritesList.map { list in
-        modelB.selectCardCollection(id: list.id)
-        return modelB.selectedCollectionEntries.isEmpty
-      } ?? false
+      guard let list = modelB.favouritesList else {
+        return false
+      }
+      modelB.selectCardCollection(id: list.id)
+      await modelB.drainSelectedListLoadForTesting()
+      return modelB.selectedCollectionEntries.isEmpty
     }
     XCTAssertTrue(favouriteRemovalArrived)
 
@@ -436,15 +440,15 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
 
   private func waitUntil(
     attempts: Int = 100,
-    condition: () -> Bool
+    condition: () async -> Bool
   ) async -> Bool {
     for _ in 0..<attempts {
-      if condition() {
+      if await condition() {
         return true
       }
       try? await Task.sleep(for: .milliseconds(50))
     }
-    return condition()
+    return await condition()
   }
 
   private func testCard() -> CardRecord {

@@ -17,24 +17,58 @@ extension CardCollectionDetailView {
     }
 
     func makeListDetailSnapshot() -> CardCollectionDetailSnapshot {
-        var visibleEntries = model.searchedSelectedListEntries ?? model.selectedCollectionEntries
-        // Scanned defaults to most-recently-scanned first. Entries load oldest-first
-        // (position order); reverse only while no explicit sort is set, so a sort the
-        // user picks still wins.
-        if let list = model.selectedCollection,
-           model.isScannedList(list),
-           list.displaySortMode == nil {
-            visibleEntries.reverse()
-        }
         let totalCount = model.selectedCollectionEntryTotal
+        let collapsed = collapsedListCategoryIDs
+        let list = model.selectedCollection
+
+        // Active collection search: regroup the (small) search-result set in-body — the cached
+        // sections describe the full list, not the filtered matches.
+        if isListSearchActive {
+            let visibleEntries = model.searchedSelectedListEntries ?? model.selectedCollectionEntries
+            let sections = CardCollectionEntrySectionBuilder.sections(
+                entries: visibleEntries,
+                categories: model.selectedCollectionCategories,
+                ruleset: list?.ruleset ?? .none,
+                displaySortMode: list?.displaySortMode,
+                displaySortDirection: list?.displaySortDirection ?? .ascending
+            )
+            return CardCollectionDetailSnapshot(
+                visibleEntries: visibleEntries,
+                builtSections: sections,
+                collapsedSectionIDs: collapsed,
+                isSearchActive: true,
+                totalEntryCount: totalCount
+            )
+        }
+
+        // Scanned defaults to most-recently-scanned first. Entries load oldest-first (position
+        // order); reverse and regroup in-body only while no explicit sort is set, so a sort the
+        // user picks still wins and the cached (oldest-first) sections aren't used here.
+        if let list, model.isScannedList(list), list.displaySortMode == nil {
+            var visibleEntries = model.selectedCollectionEntries
+            visibleEntries.reverse()
+            let sections = CardCollectionEntrySectionBuilder.sections(
+                entries: visibleEntries,
+                categories: model.selectedCollectionCategories,
+                ruleset: list.ruleset,
+                displaySortMode: nil,
+                displaySortDirection: list.displaySortDirection
+            )
+            return CardCollectionDetailSnapshot(
+                visibleEntries: visibleEntries,
+                builtSections: sections,
+                collapsedSectionIDs: collapsed,
+                isSearchActive: false,
+                totalEntryCount: totalCount
+            )
+        }
+
+        // Common path: reuse the sections the loader grouped+sorted off the main thread.
         return CardCollectionDetailSnapshot(
-            entries: visibleEntries,
-            categories: model.selectedCollectionCategories,
-            ruleset: model.selectedCollection?.ruleset ?? .none,
-            displaySortMode: model.selectedCollection?.displaySortMode,
-            displaySortDirection: model.selectedCollection?.displaySortDirection ?? .ascending,
-            collapsedSectionIDs: collapsedListCategoryIDs,
-            isSearchActive: isListSearchActive,
+            visibleEntries: model.selectedCollectionEntries,
+            builtSections: model.selectedCollectionSections,
+            collapsedSectionIDs: collapsed,
+            isSearchActive: false,
             totalEntryCount: totalCount
         )
     }
@@ -181,12 +215,6 @@ extension CardCollectionDetailView {
                     isDragEnabled: !isSelectingListEntries,
                     onArtworkOverflowChange: { isOverflowing in
                         updateRaisedArtworkEntry(entryID: entry.id, isOverflowing: isOverflowing)
-                    },
-                    onArtworkLandscapeLayoutChange: { usesLandscapeLayout in
-                        updateLandscapeArtworkEntry(
-                            entryID: entry.id,
-                            usesLandscapeLayout: usesLandscapeLayout
-                        )
                     }
                 )
             }
@@ -286,21 +314,6 @@ extension CardCollectionDetailView {
         } else if raisedArtworkEntryID == entryID {
             raisedArtworkEntryID = nil
         }
-    }
-
-    func updateLandscapeArtworkEntry(
-        entryID: CardCollectionEntryRecord.ID,
-        usesLandscapeLayout: Bool
-    ) {
-        if usesLandscapeLayout {
-            landscapeArtworkEntryIDs.insert(entryID)
-        } else {
-            landscapeArtworkEntryIDs.remove(entryID)
-        }
-    }
-
-    func keepLandscapeArtworkEntriesVisible() {
-        landscapeArtworkEntryIDs.formIntersection(Set(renderedListEntryIDs))
     }
 
     func isDetailActive(for entry: CardCollectionEntryRecord, card: CardRecord?) -> Bool {

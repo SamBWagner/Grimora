@@ -31,7 +31,6 @@ struct CardCollectionDetailView: View {
     @State var selectionDragLocation: CGPoint?
     @State var pendingListEntryOpenTask: Task<Void, Never>?
     @State var listMoveFeedbackTrigger = 0
-    @State var landscapeArtworkEntryIDs: Set<CardCollectionEntryRecord.ID> = []
     @State var listJumpToTopState = JumpToTopScrollState.top
     @State var renderedListEntryIDs: [CardCollectionEntryRecord.ID] = []
     @State var isConfirmingClearScanned = false
@@ -169,7 +168,6 @@ struct CardCollectionDetailView: View {
         .onChange(of: snapshot.expandedEntryIDs) { _, entryIDs in
             renderedListEntryIDs = entryIDs
             syncListEntrySelectionVisibleIDs(entryIDs)
-            keepLandscapeArtworkEntriesVisible()
         }
         .onDisappear {
             cancelPendingListEntryOpen()

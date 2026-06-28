@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 import AppKit
 #endif
 
-struct CardCollectionEntrySection: Equatable, Identifiable {
+struct CardCollectionEntrySection: Equatable, Identifiable, Sendable {
     static let uncategorizedID = "uncategorized"
 
     var id: String
@@ -32,25 +32,19 @@ struct CardCollectionDetailSnapshot: Equatable {
     var expandedEntryIDs: [CardCollectionEntryRecord.ID]
     var entryCountText: String
 
+    /// Builds the snapshot from sections that were already grouped+sorted (typically off the
+    /// main thread by the app model's list loader). The remaining work — filtering empty
+    /// sections for an active search, applying collapsed-section state, and formatting the
+    /// count — is cheap and stays in the view body.
     init(
-        entries: [CardCollectionEntryRecord],
-        categories: [CardCollectionCategoryRecord],
-        ruleset: CardCollectionRuleset,
-        displaySortMode: SortMode?,
-        displaySortDirection: SearchSortDirection,
+        visibleEntries: [CardCollectionEntryRecord],
+        builtSections: [CardCollectionEntrySection],
         collapsedSectionIDs: Set<CardCollectionEntrySection.ID>,
         isSearchActive: Bool,
         totalEntryCount: Int
     ) {
-        visibleEntries = entries
+        self.visibleEntries = visibleEntries
 
-        let builtSections = CardCollectionEntrySectionBuilder.sections(
-            entries: entries,
-            categories: categories,
-            ruleset: ruleset,
-            displaySortMode: displaySortMode,
-            displaySortDirection: displaySortDirection
-        )
         sections = isSearchActive
             ? builtSections.filter { !$0.entries.isEmpty }
             : builtSections
@@ -59,7 +53,7 @@ struct CardCollectionDetailSnapshot: Equatable {
         }
         expandedEntryIDs = expandedEntries.map(\.id)
 
-        let visibleEntryCount = entries.reduce(0) { $0 + $1.quantity }
+        let visibleEntryCount = visibleEntries.reduce(0) { $0 + $1.quantity }
         if isSearchActive {
             entryCountText = "\(Self.cardCountText(visibleEntryCount)) of \(Self.cardCountText(totalEntryCount))"
         } else {

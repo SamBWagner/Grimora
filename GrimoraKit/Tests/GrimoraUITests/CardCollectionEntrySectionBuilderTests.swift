@@ -185,12 +185,16 @@ final class CardCollectionEntrySectionBuilderTests: XCTestCase {
       entry(id: "core-1", categoryID: "core", position: 2),
     ]
 
-    let snapshot = CardCollectionDetailSnapshot(
+    let builtSections = CardCollectionEntrySectionBuilder.sections(
       entries: entries,
       categories: categories,
       ruleset: .none,
       displaySortMode: nil,
-      displaySortDirection: .ascending,
+      displaySortDirection: .ascending
+    )
+    let snapshot = CardCollectionDetailSnapshot(
+      visibleEntries: entries,
+      builtSections: builtSections,
       collapsedSectionIDs: ["core"],
       isSearchActive: false,
       totalEntryCount: 3

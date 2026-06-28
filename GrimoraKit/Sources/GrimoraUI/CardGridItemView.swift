@@ -10,7 +10,6 @@ struct CardGridItemView: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var hasOverflowingArtwork = false
-    @State private var usesLandscapeArtworkLayout = false
     @State private var measuredTileWidth: CGFloat = 0
     @State private var isHovered = false
     @State private var openFeedbackTrigger = 0
@@ -56,7 +55,6 @@ struct CardGridItemView: View {
     var dragItemCount: Int?
     var isDragEnabled = true
     var onArtworkOverflowChange: (Bool) -> Void = { _ in }
-    var onArtworkLandscapeLayoutChange: (Bool) -> Void = { _ in }
 
     var body: some View {
         tileContent
@@ -99,11 +97,17 @@ struct CardGridItemView: View {
                 .fill(tileFillColor)
         }
         .background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: CardGridItemWidthPreferenceKey.self,
-                    value: sanitizedCardGridItemWidth(proxy.size.width)
-                )
+            // Only landscape tiles need their measured width (to balance the bottom bar height
+            // against the rotated artwork). Portrait tiles — the overwhelming majority — return a
+            // fixed bottom-bar height, so they skip this per-tile GeometryReader entirely and
+            // don't pay a measurement pass on every scroll.
+            if usesLandscapeArtworkLayout {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: CardGridItemWidthPreferenceKey.self,
+                        value: sanitizedCardGridItemWidth(proxy.size.width)
+                    )
+                }
             }
         }
         .onPreferenceChange(CardGridItemWidthPreferenceKey.self) { width in
@@ -148,8 +152,7 @@ struct CardGridItemView: View {
             cornerRadius: Self.tileCornerRadius,
             showsPreviewLoadingIndicator: showsPreviewLoadingIndicator,
             maximumVisualWidthExpansion: Self.rotatedArtworkGridOverflowAllowance,
-            onVisualOverflowChange: updateArtworkOverflow,
-            onLandscapeLayoutChange: updateArtworkLandscapeLayout
+            onVisualOverflowChange: updateArtworkOverflow
         )
             .shadow(
                 color: palette.shadow.color.opacity(isHovered ? 0.95 : 0.75),
@@ -298,11 +301,11 @@ struct CardGridItemView: View {
         onArtworkOverflowChange(isOverflowing)
     }
 
-    private func updateArtworkLandscapeLayout(_ usesLandscapeLayout: Bool) {
-        if usesLandscapeArtworkLayout != usesLandscapeLayout {
-            usesLandscapeArtworkLayout = usesLandscapeLayout
-        }
-        onArtworkLandscapeLayoutChange(usesLandscapeLayout)
+    /// Whether this tile reserves the wider landscape footprint. Derived statically from the
+    /// card record (its default artwork orientation) rather than from the decoded image size,
+    /// so the grid never relayouts in response to an image finishing decoding mid-scroll.
+    private var usesLandscapeArtworkLayout: Bool {
+        cardUsesDefaultLandscapeArtworkLayout(card)
     }
 
     private var cardAccessibilityModifier: CardGridItemAccessibilityModifier {

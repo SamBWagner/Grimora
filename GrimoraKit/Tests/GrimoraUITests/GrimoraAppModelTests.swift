@@ -962,6 +962,59 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.statusMessage, "Added 2 cards to Deck Box.")
   }
 
+  func testSelectingCollectionDefersLoadOffTheCallingThread() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck Box", selectAfterCreate: true))
+    model.addCards(["forest", "beta"], toListID: list.id)
+    model.selectSearch()
+    await model.drainSelectedListLoadForTesting()
+
+    // Tapping the list swaps the view immediately: selection + load phase update on the
+    // calling thread, but the database read (entries) is deferred to a background task so
+    // the tap never blocks.
+    model.selectCardCollection(id: list.id)
+    XCTAssertEqual(model.sidebarSelection, .list(list.id))
+    XCTAssertEqual(model.listLoadPhase, .loading(list.id))
+    XCTAssertTrue(
+      model.selectedCollectionEntries.isEmpty,
+      "Selecting a collection must not read its entries synchronously."
+    )
+
+    await model.drainSelectedListLoadForTesting()
+    XCTAssertEqual(model.listLoadPhase, .ready)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest", "beta"])
+  }
+
+  func testRapidListThenSearchNeverPublishesCancelledListLoad() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck Box", selectAfterCreate: true))
+    model.addCards(["forest", "beta"], toListID: list.id)
+    model.selectSearch()
+    await model.drainSelectedListLoadForTesting()
+
+    // Spam list -> search in the same run-loop tick. The generation token must cancel the
+    // list's in-flight load so it can never publish its entries over the search selection.
+    model.selectCardCollection(id: list.id)
+    model.selectSearch()
+    await model.drainSelectedListLoadForTesting()
+
+    XCTAssertEqual(model.sidebarSelection, .search)
+    XCTAssertTrue(
+      model.selectedCollectionEntries.isEmpty,
+      "A cancelled list load must not publish its entries after navigating to search."
+    )
+  }
+
   func testSearchAllListsSurfacesOnlyMatchingListsAndReportsSyntax() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
@@ -3849,6 +3902,7 @@ final class GrimoraAppModelTests: XCTestCase {
       ))
     await model.drainSearchForTesting()
     model.selectCardCollection(id: list.id)
+    await model.drainSelectedListLoadForTesting()
 
     let entry = try XCTUnwrap(model.selectedCollectionEntries.first)
     await model.cacheVisibleListEntryImages(around: entry.id)
@@ -4076,6 +4130,7 @@ final class GrimoraAppModelTests: XCTestCase {
       ))
     await model.drainSearchForTesting()
     model.selectCardCollection(id: list.id)
+    await model.drainSelectedListLoadForTesting()
 
     await model.cacheVisibleListEntryImages(around: model.selectedCollectionEntries[0].id)
     await resolver.waitForStartedCount(1)
@@ -4145,6 +4200,7 @@ final class GrimoraAppModelTests: XCTestCase {
       ))
     await model.drainSearchForTesting()
     model.selectCardCollection(id: list.id)
+    await model.drainSelectedListLoadForTesting()
 
     let displayedEntries = model.selectedCollectionEntries.filter {
       $0.categoryID == visibleCategory.id
@@ -4208,6 +4264,7 @@ final class GrimoraAppModelTests: XCTestCase {
       ))
     await model.drainSearchForTesting()
     model.selectCardCollection(id: list.id)
+    await model.drainSelectedListLoadForTesting()
 
     await model.cacheVisibleListEntryImages(around: model.selectedCollectionEntries[0].id)
     await resolver.waitForStartedCount(1)
@@ -5037,6 +5094,7 @@ final class GrimoraAppModelTests: XCTestCase {
 
     XCTAssertEqual(model.cardCollections.map(\.name), ["Favourites", "Archive"])
     model.selectCardCollection(id: list.id)
+    await model.drainSelectedListLoadForTesting()
     XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["missing-print"])
     XCTAssertNil(model.selectedCollectionEntries.first?.card)
 
@@ -5327,6 +5385,7 @@ final class GrimoraAppModelTests: XCTestCase {
     model.setCardCollectionDisplaySort(id: list.id, mode: .edhrecRank, direction: .descending)
     model.setCardCollectionViewMode(id: list.id, mode: .list)
     model.selectCardCollection(id: list.id)
+    await model.drainSelectedListLoadForTesting()
 
     let sourceList = try XCTUnwrap(model.selectedCollection)
     let export = CardCollectionExporter.export(
@@ -5981,6 +6040,7 @@ final class GrimoraAppModelTests: XCTestCase {
     _ = try database.appendCard("forest", toList: list.id, quantity: 3)
     _ = try database.appendCard("beta", toList: list.id, quantity: 2)
     model.selectCardCollection(id: list.id)
+    await model.drainSelectedListLoadForTesting()
 
     // The detail-header total reads the summed quantities of the loaded entries (3 + 2),
     // matching the sum of the on-screen section counts rather than a cached value.

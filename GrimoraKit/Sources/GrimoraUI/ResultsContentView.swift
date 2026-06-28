@@ -13,7 +13,6 @@ struct ResultsContentView: View {
     @State private var searchJumpToTopState = JumpToTopScrollState.top
     @State private var searchResultSelection = CardGridSelectionState<CardRecord.ID>()
     @State private var raisedSearchArtworkCardID: CardRecord.ID?
-    @State private var landscapeSearchArtworkCardIDs: Set<CardRecord.ID> = []
     @State private var searchResultBulkSelection = SearchResultBulkSelection()
     var showsSearchLoadingOverlay = true
     var searchHeaderTopInset: CGFloat = 0
@@ -73,7 +72,6 @@ struct ResultsContentView: View {
         .onChange(of: model.cards.map(\.id)) { _, _ in
             syncSearchResultSelectionVisibleIDs()
             keepRaisedSearchArtworkVisible()
-            keepLandscapeSearchArtworkVisible()
         }
         .onChange(of: searchSelectionResetKey) { _, _ in
             clearSearchResultSelection()
@@ -275,7 +273,7 @@ struct ResultsContentView: View {
                             AdaptiveCardGrid(
                                 items: Array(model.cards.enumerated()),
                                 id: { $0.element.id },
-                                landscapeItemIDs: defaultLandscapeSearchArtworkCardIDs.union(landscapeSearchArtworkCardIDs),
+                                landscapeItemIDs: defaultLandscapeSearchArtworkCardIDs,
                                 minimumColumnWidth: gridZoom.minimumColumnWidth,
                                 maximumColumnWidth: gridZoom.maximumColumnWidth,
                                 fillsSingleColumn: resultsGridFillsSingleColumn
@@ -320,12 +318,6 @@ struct ResultsContentView: View {
                                         onToggleFavourite: { model.toggleFavourite($0) },
                                         onArtworkOverflowChange: { isOverflowing in
                                             updateRaisedSearchArtwork(cardID: card.id, isOverflowing: isOverflowing)
-                                        },
-                                        onArtworkLandscapeLayoutChange: { usesLandscapeLayout in
-                                            updateLandscapeSearchArtwork(
-                                                cardID: card.id,
-                                                usesLandscapeLayout: usesLandscapeLayout
-                                            )
                                         }
                                     )
                                 }
@@ -466,17 +458,6 @@ struct ResultsContentView: View {
         }
     }
 
-    private func updateLandscapeSearchArtwork(
-        cardID: CardRecord.ID,
-        usesLandscapeLayout: Bool
-    ) {
-        if usesLandscapeLayout {
-            landscapeSearchArtworkCardIDs.insert(cardID)
-        } else {
-            landscapeSearchArtworkCardIDs.remove(cardID)
-        }
-    }
-
     private func keepRaisedSearchArtworkVisible() {
         guard let raisedSearchArtworkCardID else {
             return
@@ -485,10 +466,6 @@ struct ResultsContentView: View {
         if !model.cards.contains(where: { $0.id == raisedSearchArtworkCardID }) {
             self.raisedSearchArtworkCardID = nil
         }
-    }
-
-    private func keepLandscapeSearchArtworkVisible() {
-        landscapeSearchArtworkCardIDs.formIntersection(Set(model.cards.map(\.id)))
     }
 
 }

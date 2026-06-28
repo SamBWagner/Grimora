@@ -94,6 +94,11 @@ public final class GrimoraAppModel {
   public internal(set) var selectedCollectionID: CardCollectionRecord.ID?
   public internal(set) var selectedCollectionCategories: [CardCollectionCategoryRecord] = []
   public internal(set) var selectedCollectionEntries: [CardCollectionEntryRecord] = []
+  /// The selected collection's entries grouped into display sections, built off the main
+  /// thread by the list loader so the detail view doesn't regroup+sort on every body pass.
+  /// Reflects the full list; the detail view rebuilds in-body only for the small
+  /// collection-search result set and the Scanned newest-first reversal.
+  var selectedCollectionSections: [CardCollectionEntrySection] = []
   public internal(set) var selectedCollectionSearchText = ""
   public internal(set) var searchedSelectedListEntries: [CardCollectionEntryRecord]?
   public internal(set) var selectedCollectionSearchUnsupportedMessage: String?
@@ -102,6 +107,10 @@ public final class GrimoraAppModel {
   public internal(set) var dashboardListMatches: [CardCollectionRecord.ID: CrossListSearchMatch] = [:]
   public internal(set) var dashboardSearchUnsupportedMessage: String?
   public internal(set) var selectedCollectionRulesetWarnings: [CardCollectionRulesetWarning] = []
+  /// Where the selected collection's detail state is in its load lifecycle. The detail
+  /// view renders a skeleton while this is `.loading(selectedCollectionID)` so navigation
+  /// swaps instantly and the DB read happens off the main thread.
+  public internal(set) var listLoadPhase: ListLoadPhase = .idle
   public internal(set) var selectedCardCollectionEntryID: CardCollectionEntryRecord.ID?
   /// Printing IDs the user has flicked to foil during the *current* detail session
   /// when there is no backing collection entry (e.g. browsing from search). Per
@@ -146,12 +155,19 @@ public final class GrimoraAppModel {
     cardCollections.first { isProtectedFavouritesList($0) }
   }
 
+  /// The built-in "system" lists, in their pinned-to-top order: Favourites, then
+  /// Scanned (when it exists). These lead the sidebar as a headerless group and
+  /// are excluded from the pinned/unpinned user sections below.
+  public var systemCardCollections: [CardCollectionRecord] {
+    [favouritesList, scannedList].compactMap { $0 }
+  }
+
   public var pinnedCardCollections: [CardCollectionRecord] {
-    sortedCardCollections(cardCollections.filter { $0.isPinned && !isProtectedFavouritesList($0) })
+    sortedCardCollections(cardCollections.filter { $0.isPinned && !isSystemList($0) })
   }
 
   public var unpinnedCardCollections: [CardCollectionRecord] {
-    sortedCardCollections(cardCollections.filter { !$0.isPinned && !isProtectedFavouritesList($0) })
+    sortedCardCollections(cardCollections.filter { !$0.isPinned && !isSystemList($0) })
   }
 
   func sortedCardCollections(_ lists: [CardCollectionRecord]) -> [CardCollectionRecord] {
@@ -278,6 +294,11 @@ public final class GrimoraAppModel {
   var visibleImageRetryTasks: [VisibleImageRequestKey: Task<Void, Never>] = [:]
   var searchHistoryImageWarmTask: Task<Void, Never>?
   var listUndoStack: [CardCollectionUndoState] = []
+  /// Generation token + in-flight task for asynchronous selected-list loads. Mirrors the
+  /// search path's `searchGeneration`/`searchTask`: every load bumps the generation and
+  /// cancels the prior task so a stale background load can never publish over a newer one.
+  var listLoadGeneration: UInt64 = 0
+  var listLoadTask: Task<Void, Never>?
 
   public init(
     environment: GrimoraEnvironment,
