@@ -341,15 +341,15 @@ public struct CardDetailView: View {
         }
     }
 
-    /// Switch that flips the displayed printing between normal and foil. Always
-    /// present so it reads consistently while swiping versions; disabled when the
-    /// current printing has no foil finish.
+    /// Switch that flips the displayed printing between normal and foil. Always present so it
+    /// reads consistently while swiping versions; disabled when the printing offers only one
+    /// finish — a foil-only printing stays locked on, a non-foil-only printing locked off.
     private var foilToggle: some View {
         Toggle("Foil", isOn: foilBinding)
             .toggleStyle(.switch)
             .controlSize(.small)
             .fixedSize()
-            .disabled(!card.supportsFoil)
+            .disabled(!(card.supportsFoil && card.supportsNonfoil))
             .accessibilityIdentifier("card-detail-foil-toggle")
     }
 

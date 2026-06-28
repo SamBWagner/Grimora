@@ -291,6 +291,20 @@ public struct CardRecord: Identifiable, Codable, Equatable, Sendable {
         isFoil || finishes.contains("foil")
     }
 
+    /// Whether this printing can exist as a non-foil. Mirror of `supportsFoil` for the
+    /// `nonfoil` finish so callers can tell a foil-only printing from a both-finishes one.
+    public var supportsNonfoil: Bool {
+        isNonfoil || finishes.contains("nonfoil")
+    }
+
+    /// Whether this printing exists *only* as a foil — it supports foil and offers no
+    /// non-foil finish. Such a printing is inherently foil: it should default to foil and the
+    /// foil toggle should be locked on. (An empty/unknown `finishes` with both legacy flags
+    /// false is treated as not foil-only.)
+    public var isFoilOnly: Bool {
+        supportsFoil && !supportsNonfoil
+    }
+
     public var displayImagePath: String? {
         firstPath([
             normalImagePath,

@@ -870,10 +870,14 @@ extension GrimoraAppModel {
     return selectedCollectionEntries.first { $0.id == selectedCardCollectionEntryID }
   }
 
-  /// Whether the given printing is currently shown as foil. Backed by the
-  /// collection entry's persisted finish when this printing is the entry's pinned
-  /// print, otherwise by the transient per-version session set.
+  /// Whether the given printing is currently shown as foil. Foil-only printings are
+  /// inherently foil (no non-foil exists), so they always read as foil. Otherwise backed by
+  /// the collection entry's persisted finish when this printing is the entry's pinned print,
+  /// else by the transient per-version session set.
   public func isFoilSelected(for printing: CardRecord) -> Bool {
+    if printing.isFoilOnly {
+      return true
+    }
     if let entry = selectedCardCollectionEntry, entry.cardID == printing.id {
       return entry.selectedFinish == .foil
     }

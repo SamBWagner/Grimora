@@ -77,8 +77,11 @@ struct CardArtworkView: View {
     var accessibilityHidden = true
     var showsControls = true
     var showsPreviewLoadingIndicator = false
-    /// When true, a synthetic holographic foil sheen is drawn over the artwork.
+    /// When true, the self-animating holographic foil shimmer is drawn over the artwork.
     var isFoil = false
+    /// Sheen strength for the foil shimmer. Defaults to the full detail-pane look; grids pass
+    /// a restrained value so a dense wall of foils doesn't read as noisy.
+    var foilIntensity: Double = 1.0
     var maximumVisualWidthExpansion: CGFloat?
     var onVisualOverflowChange: (Bool) -> Void = { _ in }
     var onLandscapeLayoutChange: (Bool) -> Void = { _ in }
@@ -193,9 +196,13 @@ struct CardArtworkView: View {
     @ViewBuilder
     private var foilOverlay: some View {
         if isFoil {
-            CardFoilOverlay(cornerRadius: cornerRadius)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
+            CardFoilShimmerOverlay(
+                cornerRadius: cornerRadius,
+                seed: card.foilSeed,
+                intensity: foilIntensity
+            )
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 

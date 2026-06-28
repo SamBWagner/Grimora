@@ -4,6 +4,9 @@ import SwiftUI
 
 struct CardGridItemView: View {
     private static let tileCornerRadius: CGFloat = 8
+    /// Foil sheen is dialled back in the grid (vs the full-strength detail pane) so a dense
+    /// wall of foil thumbnails reads as tasteful rather than noisy.
+    private static let gridFoilIntensity: Double = 0.6
     private static let rotatedArtworkGridOverflowAllowance: CGFloat = 12
     private static let bottomBarMinimumHeight: CGFloat = 60
     private static let selectionChromeHorizontalInset = CardGridSelectionChrome.horizontalContentInset
@@ -54,6 +57,10 @@ struct CardGridItemView: View {
     var dragPayload: String?
     var dragItemCount: Int?
     var isDragEnabled = true
+    /// When true, the tile draws the self-animating grid foil shimmer over the artwork.
+    /// Collection tiles set this from the entry's selected finish; search tiles from whether
+    /// the printing comes in foil at all.
+    var isFoil = false
     var onArtworkOverflowChange: (Bool) -> Void = { _ in }
 
     var body: some View {
@@ -151,6 +158,8 @@ struct CardGridItemView: View {
             card: card,
             cornerRadius: Self.tileCornerRadius,
             showsPreviewLoadingIndicator: showsPreviewLoadingIndicator,
+            isFoil: isFoil,
+            foilIntensity: Self.gridFoilIntensity,
             maximumVisualWidthExpansion: Self.rotatedArtworkGridOverflowAllowance,
             onVisualOverflowChange: updateArtworkOverflow
         )
