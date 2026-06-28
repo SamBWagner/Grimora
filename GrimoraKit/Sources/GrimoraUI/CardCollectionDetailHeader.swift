@@ -64,11 +64,86 @@ extension CardCollectionDetailView {
         }
     }
 
+    /// Primary action for the Scanned list: **move** every scanned card into one of
+    /// the user's other collections, emptying Scanned. Scanned is non-permanent
+    /// storage — you scan a batch, then file it somewhere.
+    @ViewBuilder
+    func scannedAddToCollectionMenu(from list: CardCollectionRecord) -> some View {
+        Menu {
+            let targets = model.cardCollections.filter { $0.id != list.id }
+            if targets.isEmpty {
+                Text("No other collections yet")
+            } else {
+                ForEach(targets) { target in
+                    Button(target.name) {
+                        let entries = model.selectedCollectionEntries
+                        let cardIDs = entries.flatMap {
+                            Array(repeating: $0.cardID, count: max(1, $0.quantity))
+                        }
+                        model.addCards(cardIDs, toListID: target.id)
+                        model.removeCardCollectionEntriesCompletely(ids: entries.map(\.id))
+                    }
+                }
+            }
+        } label: {
+            Label("Add to Collection", systemImage: "plus")
+        }
+        .help("Move all scanned cards into another collection")
+        .accessibilityIdentifier("scanned-add-to-collection-menu")
+    }
+
+    /// Clears the Scanned list (deletes it; it returns on the next scan), with a
+    /// confirmation handled by the detail view.
+    @ViewBuilder
+    func scannedClearButton(for list: CardCollectionRecord) -> some View {
+        Button(role: .destructive) {
+            isConfirmingClearScanned = true
+        } label: {
+            Label("Clear Scanned", systemImage: "minus")
+                .labelStyle(.iconOnly)
+        }
+        .help("Clear Scanned")
+        .accessibilityIdentifier("scanned-clear-button")
+    }
+
     #if os(macOS)
     @ToolbarContentBuilder
     func macListToolbar(snapshot: CardCollectionDetailSnapshot) -> some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             if let selectedCollection = model.selectedCollection {
+                if model.isScannedList(selectedCollection) {
+                    scannedAddToCollectionMenu(from: selectedCollection)
+                    scannedClearButton(for: selectedCollection)
+                    listSortMenu(for: selectedCollection)
+                    Button {
+                        model.setCardCollectionDashboardVisibility(
+                            id: selectedCollection.id,
+                            showsDashboard: !selectedCollection.showsDashboard
+                        )
+                    } label: {
+                        Label(
+                            selectedCollection.showsDashboard ? "Hide Stats" : "Show Stats",
+                            systemImage: "chart.bar.xaxis"
+                        )
+                        .labelStyle(.iconOnly)
+                    }
+                    .help(selectedCollection.showsDashboard ? "Hide Stats" : "Show Stats")
+                    Menu {
+                        Button {
+                            importMode = .append(selectedCollection.id)
+                        } label: {
+                            Text("Import")
+                        }
+                        Button {
+                            isShowingExportSheet = true
+                        } label: {
+                            Text("Export Collection")
+                        }
+                    } label: {
+                        Label("Transfer", systemImage: "square.and.arrow.up")
+                            .labelStyle(.iconOnly)
+                    }
+                } else {
                 listViewModePicker(for: selectedCollection)
                 rulesetMenu(for: selectedCollection)
                 listSortMenu(for: selectedCollection)
@@ -112,6 +187,7 @@ extension CardCollectionDetailView {
                 .accessibilityIdentifier("create-list-category-button")
 
                 macListMoreMenu(for: selectedCollection, snapshot: snapshot)
+                }
             }
         }
     }
@@ -202,17 +278,36 @@ extension CardCollectionDetailView {
     // menu is open.
     @ToolbarContentBuilder
     func touchListToolbar(snapshot: CardCollectionDetailSnapshot) -> some ToolbarContent {
-        if let selectedCollection = model.selectedCollection {
+        if let selectedCollection = model.selectedCollection, model.isScannedList(selectedCollection) {
+            // Scanned is a scanning inbox: two primary actions only — add the whole
+            // list to another collection, and a slim more-menu (Sort, Export).
             ToolbarItem(placement: .topBarTrailing) {
-                listViewModePicker(for: selectedCollection)
-                    #if os(iOS)
-                    .fixedSize(horizontal: true, vertical: false)
-                    #endif
+                scannedAddToCollectionMenu(from: selectedCollection)
             }
-        }
+            ToolbarItem(placement: .topBarTrailing) {
+                scannedClearButton(for: selectedCollection)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    scannedMoreMenuContent(for: selectedCollection)
+                } label: {
+                    listActionsMenuLabel
+                }
+                .accessibilityIdentifier("list-detail-actions-menu")
+            }
+        } else {
+            if let selectedCollection = model.selectedCollection {
+                ToolbarItem(placement: .topBarTrailing) {
+                    listViewModePicker(for: selectedCollection)
+                        #if os(iOS)
+                        .fixedSize(horizontal: true, vertical: false)
+                        #endif
+                }
+            }
 
-        ToolbarItem(placement: .topBarTrailing) {
-            touchListActionsMenu(snapshot: snapshot)
+            ToolbarItem(placement: .topBarTrailing) {
+                touchListActionsMenu(snapshot: snapshot)
+            }
         }
     }
 
@@ -243,6 +338,46 @@ extension CardCollectionDetailView {
         Label("Collection Actions", systemImage: "ellipsis")
             .labelStyle(.iconOnly)
             .imageScale(.large)
+    }
+
+    // MARK: - Scanned (special list) — stripped-down chrome
+
+    /// The slim "more" menu for the Scanned list — Sort, Show Stats, and Transfer
+    /// (Import + Export). No rename/undo/description/organize/ruleset.
+    @ViewBuilder
+    func scannedMoreMenuContent(for list: CardCollectionRecord) -> some View {
+        Menu {
+            listSortButtons(for: list)
+        } label: {
+            Text("Sort")
+        }
+        .accessibilityIdentifier("list-sort-menu")
+
+        Button {
+            model.setCardCollectionDashboardVisibility(
+                id: list.id,
+                showsDashboard: !list.showsDashboard
+            )
+        } label: {
+            Text(list.showsDashboard ? "Hide Stats" : "Show Stats")
+        }
+        .accessibilityIdentifier("toggle-list-dashboard-button")
+
+        Section("Transfer") {
+            Button {
+                importMode = .append(list.id)
+            } label: {
+                Text("Import")
+            }
+            .accessibilityIdentifier("import-list-detail-button")
+
+            Button {
+                isShowingExportSheet = true
+            } label: {
+                Text("Export Collection")
+            }
+            .accessibilityIdentifier("export-list-button")
+        }
     }
 
     #if os(visionOS)

@@ -625,6 +625,31 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.cards.first?.name, "Beta Mage")
   }
 
+  func testScannedCollectionIsCreatedLazilyAndReused() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    // The Scanned collection doesn't exist until the first card is kept.
+    XCTAssertNil(model.scannedList)
+
+    let first = try XCTUnwrap(model.cards.first)
+    XCTAssertTrue(model.addCardToScanned(first))
+
+    let scanned = try XCTUnwrap(model.scannedList)
+    XCTAssertEqual(scanned.name, GrimoraAppModel.scannedListName)
+
+    // A second add reuses the same special collection rather than making another.
+    let second = try XCTUnwrap(model.cards.dropFirst().first)
+    XCTAssertTrue(model.addCardToScanned(second))
+    XCTAssertEqual(
+      model.cardCollections.filter { GrimoraAppModel.isScannedListName($0.name) }.count,
+      1
+    )
+  }
+
   func testModelWaitsForExplicitScryfallSubmit() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())

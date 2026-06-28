@@ -155,6 +155,9 @@ struct CardGridMoreMenu: View {
     var onEditQuantity: (() -> Void)?
     var onRemoveCompletely: (() -> Void)?
     var quantity = 1
+    /// The Scanned special list has no categories or zones, so those actions are
+    /// hidden there (and only there).
+    var hidesCategoryAndZone: Bool = false
     var accessibilityIdentifier: String
 
     var body: some View {
@@ -188,7 +191,8 @@ struct CardGridMoreMenu: View {
             .accessibilityIdentifier("\(accessibilityIdentifier)-add-to-list")
         }
 
-        if let categoryEntry, onCreateCategory != nil || !categories.isEmpty || categoryEntry.categoryID != nil {
+        if !hidesCategoryAndZone, let categoryEntry,
+           onCreateCategory != nil || !categories.isEmpty || categoryEntry.categoryID != nil {
             Menu("Move to Category") {
                 CardCollectionMoveCategoryMenuContent(
                     entry: categoryEntry,
@@ -201,7 +205,7 @@ struct CardGridMoreMenu: View {
             .accessibilityIdentifier("move-list-entry-\(categoryEntry.id)-category")
         }
 
-        if let categoryEntry {
+        if !hidesCategoryAndZone, let categoryEntry {
             Menu("Move to Zone") {
                 CardCollectionMoveZoneMenuContent(
                     entry: categoryEntry,

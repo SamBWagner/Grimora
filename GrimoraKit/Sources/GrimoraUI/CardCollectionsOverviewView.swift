@@ -4,6 +4,9 @@ import SwiftUI
 struct CardCollectionsOverviewView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(GrimoraAppModel.self) private var model
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     var gridZoom: GridZoomController
     var onCreateList: () -> Void
@@ -31,35 +34,7 @@ struct CardCollectionsOverviewView: View {
                         searchText: model.dashboardSearchText
                     )
                 } else {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
-                        ForEach(items) { item in
-                            CardCollectionOverviewTile(
-                                item: item,
-                                palette: palette,
-                                isSystemList: model.isProtectedFavouritesList(item.list),
-                                matchPreview: matchPreview(for: item.list.id)
-                            ) {
-                                model.selectCardCollection(id: item.list.id)
-                                onSelectList(item.list.id)
-                            }
-                            .task(id: overviewImageTaskID(for: item)) {
-                                guard let card = item.topCard else {
-                                    return
-                                }
-                                await model.cacheVisibleImages(for: card, quality: .artCrop)
-                            }
-                            // Tiles live in a LazyVGrid, so `.swipeActions` (List-only) doesn't
-                            // apply here — the context menu is the dashboard's action affordance
-                            // (long-press on iOS/visionOS, right-click on macOS).
-                            .contextMenu {
-                                CardCollectionOverviewActions(
-                                    model: model,
-                                    item: item,
-                                    onRenameList: onRenameList
-                                )
-                            }
-                        }
-                    }
+                    collectionsLayout(items: items)
                 }
             }
             .padding(.horizontal, horizontalPadding)
@@ -98,6 +73,78 @@ struct CardCollectionsOverviewView: View {
         } set: { newValue in
             model.setDashboardSearchDraft(newValue)
         }
+    }
+
+    // System lists (Favourites, Scanned) lead and are set apart from user
+    // collections. On a two-column phone grid a full-width rule reads cleanly; on
+    // wider grids that would leave an awkward empty row, so the lists flow
+    // continuously and the last system tile carries a subtle trailing rule.
+    @ViewBuilder
+    private func collectionsLayout(items: [CardCollectionOverviewItem]) -> some View {
+        let systemItems = items.filter { model.isSystemList($0.list) }
+        let normalItems = items.filter { !model.isSystemList($0.list) }
+
+        if systemItems.isEmpty {
+            tilesGrid(items, lastSystemID: nil)
+        } else if isNarrowTwoColumn {
+            VStack(alignment: .leading, spacing: verticalSpacing) {
+                tilesGrid(systemItems, lastSystemID: nil)
+                Divider().overlay(palette.hairline.color)
+                tilesGrid(normalItems, lastSystemID: nil)
+            }
+        } else {
+            tilesGrid(items, lastSystemID: systemItems.last?.id)
+        }
+    }
+
+    @ViewBuilder
+    private func tilesGrid(
+        _ items: [CardCollectionOverviewItem],
+        lastSystemID: CardCollectionRecord.ID?
+    ) -> some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
+            ForEach(items) { item in
+                CardCollectionOverviewTile(
+                    item: item,
+                    palette: palette,
+                    isSystemList: model.isSystemList(item.list),
+                    systemSymbol: systemSymbol(for: item.list),
+                    showsTrailingSeparator: item.id == lastSystemID,
+                    matchPreview: matchPreview(for: item.list.id)
+                ) {
+                    model.selectCardCollection(id: item.list.id)
+                    onSelectList(item.list.id)
+                }
+                .task(id: overviewImageTaskID(for: item)) {
+                    guard let card = item.topCard else { return }
+                    await model.cacheVisibleImages(for: card, quality: .artCrop)
+                }
+                // Tiles live in a LazyVGrid, so `.swipeActions` (List-only) doesn't
+                // apply here — the context menu is the dashboard's action affordance
+                // (long-press on iOS/visionOS, right-click on macOS).
+                .contextMenu {
+                    CardCollectionOverviewActions(
+                        model: model,
+                        item: item,
+                        onRenameList: onRenameList
+                    )
+                }
+            }
+        }
+    }
+
+    private func systemSymbol(for list: CardCollectionRecord) -> String? {
+        if model.isProtectedFavouritesList(list) { return "star.fill" }
+        if model.isScannedList(list) { return "tray.and.arrow.down.fill" }
+        return nil
+    }
+
+    private var isNarrowTwoColumn: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
     }
 
     private var columns: [GridItem] {
@@ -219,6 +266,12 @@ private struct CardCollectionOverviewTile: View {
     var item: CardCollectionOverviewItem
     var palette: GrimoraPalette
     var isSystemList: Bool
+    /// SF Symbol shown next to the name for a system list (star for Favourites,
+    /// tray for Scanned); `nil` for normal collections.
+    var systemSymbol: String? = nil
+    /// Draws a subtle accent rule on the trailing edge — used (on wide layouts)
+    /// to mark the boundary between the system lists and normal collections.
+    var showsTrailingSeparator: Bool = false
     var matchPreview: MatchPreview? = nil
     var onSelect: () -> Void
 
@@ -249,8 +302,8 @@ private struct CardCollectionOverviewTile: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        if isSystemList {
-                            Image(systemName: "star.fill")
+                        if let systemSymbol {
+                            Image(systemName: systemSymbol)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(palette.accent.color)
                                 .accessibilityHidden(true)
@@ -282,6 +335,15 @@ private struct CardCollectionOverviewTile: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .overlay(alignment: .trailing) {
+            if showsTrailingSeparator {
+                Capsule()
+                    .fill(palette.accent.color.opacity(0.5))
+                    .frame(width: 2.5)
+                    .padding(.vertical, 14)
+                    .accessibilityHidden(true)
+            }
+        }
         #if os(macOS)
         .scaleEffect(isHovered && !reduceMotion ? 1.05 : 1)
         .zIndex(isHovered ? 1 : 0)

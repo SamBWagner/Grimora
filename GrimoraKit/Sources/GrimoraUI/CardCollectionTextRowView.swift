@@ -157,8 +157,17 @@ struct CardCollectionTextRowView: View {
         }
         .accessibilityIdentifier("remove-all-list-entry-\(entry.id)")
 
-        moveCategoryMenu
-        moveZoneMenu
+        // The Scanned special list has no categories or zones — those actions
+        // don't apply, so they're hidden there (and only there).
+        if !isScannedList {
+            moveCategoryMenu
+            moveZoneMenu
+        }
+    }
+
+    private var isScannedList: Bool {
+        guard let list = model.selectedCollection else { return false }
+        return model.isScannedList(list)
     }
 
     @ViewBuilder

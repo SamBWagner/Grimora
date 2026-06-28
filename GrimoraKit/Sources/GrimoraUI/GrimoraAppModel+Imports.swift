@@ -210,8 +210,21 @@ extension GrimoraAppModel {
         return lhs.id < rhs.id
       }
 
-    let userLists = lists.filter { !Self.isFavouritesListName($0.name) }
+    // Scanned sits right after Favourites, ahead of user collections.
+    let scannedLists = lists
+      .filter { Self.isScannedListName($0.name) }
+      .sorted { lhs, rhs in
+        if lhs.createdAt != rhs.createdAt {
+          return lhs.createdAt < rhs.createdAt
+        }
+        return lhs.id < rhs.id
+      }
+
+    let userLists = lists.filter {
+      !Self.isFavouritesListName($0.name) && !Self.isScannedListName($0.name)
+    }
     return favouritesLists
+      + scannedLists
       + sortedCardCollections(userLists.filter(\.isPinned))
       + sortedCardCollections(userLists.filter { !$0.isPinned })
   }

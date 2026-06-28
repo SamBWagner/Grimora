@@ -32,6 +32,7 @@ struct CardGridItemView: View {
     var quantityAccessibilityIdentifier: String?
     var categoryEntry: CardCollectionEntryRecord?
     var categories: [CardCollectionCategoryRecord] = []
+    var hidesCategoryAndZone: Bool = false
     var isSelectionEnabled = false
     var isSelectedInSelection = false
     var isActiveDetail = false
@@ -250,6 +251,7 @@ struct CardGridItemView: View {
                 onEditQuantity: onEditQuantity,
                 onRemoveCompletely: onRemoveCompletely,
                 quantity: quantity,
+                hidesCategoryAndZone: hidesCategoryAndZone,
                 accessibilityIdentifier: "more-list-entry-\(categoryEntry?.id ?? card.id)"
             )
         } else {

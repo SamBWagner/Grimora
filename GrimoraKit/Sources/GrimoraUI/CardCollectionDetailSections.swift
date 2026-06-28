@@ -11,8 +11,21 @@ extension CardCollectionDetailView {
         GrimoraPalette(colorScheme: colorScheme)
     }
 
+    /// The Scanned special list hides category/zone affordances on its cards.
+    var isScannedCollection: Bool {
+        model.selectedCollection.map { model.isScannedList($0) } ?? false
+    }
+
     func makeListDetailSnapshot() -> CardCollectionDetailSnapshot {
-        let visibleEntries = model.searchedSelectedListEntries ?? model.selectedCollectionEntries
+        var visibleEntries = model.searchedSelectedListEntries ?? model.selectedCollectionEntries
+        // Scanned defaults to most-recently-scanned first. Entries load oldest-first
+        // (position order); reverse only while no explicit sort is set, so a sort the
+        // user picks still wins.
+        if let list = model.selectedCollection,
+           model.isScannedList(list),
+           list.displaySortMode == nil {
+            visibleEntries.reverse()
+        }
         let totalCount = model.selectedCollectionEntryTotal
         return CardCollectionDetailSnapshot(
             entries: visibleEntries,
@@ -137,6 +150,7 @@ extension CardCollectionDetailView {
                     quantityAccessibilityIdentifier: "quantity-list-entry-\(entry.id)",
                     categoryEntry: entry,
                     categories: model.selectedCollectionCategories,
+                    hidesCategoryAndZone: isScannedCollection,
                     isSelectionEnabled: true,
                     isSelectedInSelection: listEntrySelection.selectedIDs.contains(entry.id),
                     isActiveDetail: isDetailActive(for: entry, card: card),
@@ -189,6 +203,7 @@ extension CardCollectionDetailView {
             MissingCardCollectionEntryView(
                 entry: entry,
                 categories: model.selectedCollectionCategories,
+                hidesCategoryAndZone: isScannedCollection,
                 palette: palette,
                 onIncrementQuantity: { incrementEntries(triggeredBy: entry) },
                 onRemove: { decreaseEntries(triggeredBy: entry) },

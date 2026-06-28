@@ -1,0 +1,74 @@
+{
+  "entries": [
+    {
+      "image": "eroded-canyon-otj-256.jpg",
+      "name": "Eroded Canyon",
+      "setCode": "otj",
+      "collectorNumber": "256",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "Clean black background, near-flat."
+    },
+    {
+      "image": "training-center-cmm-665.jpg",
+      "name": "Training Center",
+      "setCode": "cmm",
+      "collectorNumber": "665",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "Borderless reprint."
+    },
+    {
+      "image": "botanical-sanctum-otj-267.jpg",
+      "name": "Botanical Sanctum",
+      "setCode": "otj",
+      "collectorNumber": "267",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "Slight angle, mild sheen."
+    },
+    {
+      "image": "hollow-marauder-otj-90-foil.jpg",
+      "name": "Hollow Marauder",
+      "setCode": "otj",
+      "collectorNumber": "90",
+      "foil": true,
+      "sleeved": false,
+      "background": "wood",
+      "notes": "Foil (star in collector line). Messy wood-desk background with cables. Real number is 90 (the eyeball read 0060 was wrong; OCR read 90 correctly)."
+    },
+    {
+      "image": "beyond-the-quiet-eoe-303-sleeved.jpg",
+      "name": "Beyond the Quiet",
+      "setCode": "eoe",
+      "collectorNumber": "303",
+      "foil": false,
+      "sleeved": true,
+      "background": "black",
+      "notes": "In a penny sleeve (plastic glare). Borderless."
+    },
+    {
+      "image": "esoteric-duplicator-big-5.jpg",
+      "name": "Esoteric Duplicator",
+      "setCode": "big",
+      "collectorNumber": "5",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "Mythic, leading-zero collector number printed as 0005."
+    },
+    {
+      "image": "sandstorm-verge-otj-263-foil.jpg",
+      "name": "Sandstorm Verge",
+      "setCode": "otj",
+      "collectorNumber": "263",
+      "foil": true,
+      "sleeved": false,
+      "background": "black",
+      "notes": "Foil (star in collector line), strong rainbow sheen across art."
+    }
+  ]
+}

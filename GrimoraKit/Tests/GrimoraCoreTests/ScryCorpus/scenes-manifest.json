@@ -1,0 +1,54 @@
+{
+  "entries": [
+    {
+      "image": "IMG_0719.jpg",
+      "name": "Eroded Canyon",
+      "setCode": "otj",
+      "collectorNumber": "256",
+      "notes": "Subject fully in frame; partial Siphon Insight at right edge and a keyboard to ignore."
+    },
+    {
+      "image": "IMG_0720.jpg",
+      "name": "Siphon Insight",
+      "setCode": "otp",
+      "collectorNumber": "54",
+      "notes": "Borderless; partial Goblin card bottom-right, cables/laptop above."
+    },
+    {
+      "image": "IMG_0721.jpg",
+      "name": "Goblin Glasswright",
+      "setCode": "sos",
+      "collectorNumber": "117",
+      "foil": true,
+      "notes": "Foil; partial Izzet Boilerworks at right edge."
+    },
+    {
+      "image": "IMG_0722.jpg",
+      "name": "Izzet Boilerworks",
+      "setCode": "cmd",
+      "collectorNumber": "278",
+      "notes": "Old pre-2015 frame: collector number 278/318 printed but NO set code. Name + number case."
+    },
+    {
+      "image": "IMG_0723.jpg",
+      "name": "Luxurious Locomotive",
+      "setCode": "otj",
+      "collectorNumber": "244",
+      "notes": "Mouse and keyboard in frame to ignore."
+    },
+    {
+      "image": "IMG_0724.jpg",
+      "name": "Forlorn Flats",
+      "setCode": "otj",
+      "collectorNumber": "258",
+      "notes": "UPSIDE DOWN and tilted, glare, power adapter and earbuds in frame."
+    },
+    {
+      "image": "izzet-boilerworks-cmd-278.jpg",
+      "name": "Izzet Boilerworks",
+      "setCode": "cmd",
+      "collectorNumber": "278",
+      "notes": "On-device failure case: old frame read 'Land' (type line) as the name. After the type-line fix it must not auto-accept a wrong card; correct printing must be in the picker. 24 reprints exist."
+    }
+  ]
+}

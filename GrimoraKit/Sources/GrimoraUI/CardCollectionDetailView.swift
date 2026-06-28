@@ -34,6 +34,7 @@ struct CardCollectionDetailView: View {
     @State var landscapeArtworkEntryIDs: Set<CardCollectionEntryRecord.ID> = []
     @State var listJumpToTopState = JumpToTopScrollState.top
     @State var renderedListEntryIDs: [CardCollectionEntryRecord.ID] = []
+    @State var isConfirmingClearScanned = false
 
     var onSelect: (CardRecord) -> Void
     var onCreateListForCard: (CardRecord) -> Void
@@ -107,6 +108,16 @@ struct CardCollectionDetailView: View {
                 quantityEditEntry = nil
                 quantityDraft = ""
             }
+        }
+        .alert("Clear Scanned?", isPresented: $isConfirmingClearScanned) {
+            Button("Clear", role: .destructive) {
+                if let id = model.selectedCollection?.id {
+                    model.deleteCardCollection(id: id)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes every scanned card. They won't be added to any collection.")
         }
         .onAppear {
             syncDescriptionDraftIfNeeded()

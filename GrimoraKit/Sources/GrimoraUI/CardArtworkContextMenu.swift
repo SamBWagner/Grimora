@@ -238,7 +238,9 @@ private struct CardArtworkContextMenuContent: View {
 
     @ViewBuilder
     private var moveCategoryMenu: some View {
-        if let categoryEntry,
+        let isScanned = model.selectedCollection.map { model.isScannedList($0) } ?? false
+        if !isScanned,
+           let categoryEntry,
            onCreateCategory != nil || !categories.isEmpty || categoryEntry.categoryID != nil {
             Divider()
 

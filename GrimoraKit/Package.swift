@@ -96,7 +96,10 @@ let package = Package(
         ),
         .testTarget(
             name: "GrimoraCoreTests",
-            dependencies: ["GrimoraCore"]
+            dependencies: ["GrimoraCore"],
+            resources: [
+                .copy("ScryCorpus")
+            ]
         ),
         .testTarget(
             name: "GrimoraDataPipelineTests",

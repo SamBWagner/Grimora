@@ -179,6 +179,10 @@ struct SearchViewOptionsMenu: View {
 enum TouchRootTab: String, CaseIterable, Identifiable {
     case search
     case lists
+    // Live camera card recognition. Only surfaced on iOS (iPhone/iPad); the
+    // case exists on visionOS too so switches stay exhaustive, but no tab is
+    // added there (consumer apps can't read the Vision Pro camera feed).
+    case scry
 
     var id: String { rawValue }
 
@@ -188,6 +192,8 @@ enum TouchRootTab: String, CaseIterable, Identifiable {
             "Cards"
         case .lists:
             "Collections"
+        case .scry:
+            "Scry"
         }
     }
 
@@ -197,6 +203,8 @@ enum TouchRootTab: String, CaseIterable, Identifiable {
             "magnifyingglass"
         case .lists:
             "list.bullet.rectangle"
+        case .scry:
+            "eye"
         }
     }
 }

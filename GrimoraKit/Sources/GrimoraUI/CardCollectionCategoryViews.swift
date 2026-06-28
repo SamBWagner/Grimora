@@ -672,6 +672,7 @@ struct MissingCardCollectionEntryView: View {
 
     var entry: CardCollectionEntryRecord
     var categories: [CardCollectionCategoryRecord] = []
+    var hidesCategoryAndZone: Bool = false
     var palette: GrimoraPalette
     var onIncrementQuantity: () -> Void
     var onRemove: () -> Void
@@ -866,6 +867,7 @@ struct MissingCardCollectionEntryView: View {
                 onEditQuantity: onEditQuantity,
                 onRemoveCompletely: onRemoveCompletely,
                 quantity: entry.quantity,
+                hidesCategoryAndZone: hidesCategoryAndZone,
                 accessibilityIdentifier: "more-list-entry-\(entry.id)"
             )
         }

@@ -61,6 +61,16 @@ struct TouchRootView: View {
             ) {
                 listsTab
             }
+
+            #if os(iOS)
+            Tab(
+                TouchRootTab.scry.title,
+                systemImage: TouchRootTab.scry.systemImage,
+                value: TouchRootTab.scry
+            ) {
+                scryTab
+            }
+            #endif
         }
         .adaptiveTouchTabViewStyle()
         .accessibilityIdentifier("touch-root-tab-view")
@@ -73,6 +83,7 @@ struct TouchRootView: View {
                 listNavigationPath = []
                 model.selectListsOverview()
             }
+            // `.scry` drives its own camera lifecycle from the tab view.
         }
         .onChange(of: model.selectedCollectionID) { _, selectedCollectionID in
             guard selectedTab == .lists, let selectedCollectionID else {
@@ -131,6 +142,12 @@ struct TouchRootView: View {
     private var palette: GrimoraPalette {
         GrimoraPalette(colorScheme: colorScheme)
     }
+
+    #if os(iOS)
+    private var scryTab: some View {
+        ScryTabView(isActive: selectedTab == .scry)
+    }
+    #endif
 
     private var searchTab: some View {
         NavigationStack {
