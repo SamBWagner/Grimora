@@ -277,7 +277,8 @@ struct ResultsContentView: View {
                                 id: { $0.element.id },
                                 landscapeItemIDs: defaultLandscapeSearchArtworkCardIDs.union(landscapeSearchArtworkCardIDs),
                                 minimumColumnWidth: gridZoom.minimumColumnWidth,
-                                maximumColumnWidth: gridZoom.maximumColumnWidth
+                                maximumColumnWidth: gridZoom.maximumColumnWidth,
+                                fillsSingleColumn: resultsGridFillsSingleColumn
                             ) { indexedCard in
                                 let index = indexedCard.offset
                                 let card = indexedCard.element
@@ -429,6 +430,14 @@ struct ResultsContentView: View {
                 scroll()
             }
         }
+    }
+
+    private var resultsGridFillsSingleColumn: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
     }
 
     private var searchResultsBlankSpaceTapTarget: some View {
