@@ -87,11 +87,14 @@ struct CardCollectionSidebarRow: View {
     @State private var selectionFeedbackTrigger = 0
 
     var body: some View {
-        let isProtected = model.isProtectedFavouritesList(list)
+        // System lists (Favourites, Scanned) are not user-mutable: no drag,
+        // rename, pin toggle, or reorder menu. Each shows its own glyph instead
+        // of a pin control.
+        let isSystem = model.isSystemList(list)
 
         HStack(spacing: 8) {
-            if isProtected {
-                Image(systemName: "star.fill")
+            if let systemSymbol {
+                Image(systemName: systemSymbol)
                     .foregroundStyle(pinColor)
                     .frame(width: 16, height: 16)
             } else if list.isPinned {
@@ -142,7 +145,7 @@ struct CardCollectionSidebarRow: View {
                 )
             )
             .contextMenu {
-                if !isProtected {
+                if !isSystem {
                     listActionMenuContent
                 }
             }
@@ -163,7 +166,7 @@ struct CardCollectionSidebarRow: View {
         .grimoraSidebarRowHover(isHovered: $isRowHovered, palette: palette, isSelected: isSelected)
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onTapGesture(count: 2) {
-            if !isProtected {
+            if !isSystem {
                 onRename()
             }
         }
@@ -177,7 +180,7 @@ struct CardCollectionSidebarRow: View {
         .accessibilityValue(entryCountText)
         .grimoraSelectionFeedback(trigger: selectionFeedbackTrigger)
         #if os(macOS)
-        .draggableList(if: !isProtected, draggedListID: $draggedListID, listID: list.id)
+        .draggableList(if: !isSystem, draggedListID: $draggedListID, listID: list.id)
         .onDrop(
             of: CardCollectionDropDelegate.supportedContentTypes,
             delegate: CardCollectionDropDelegate(
@@ -189,7 +192,7 @@ struct CardCollectionSidebarRow: View {
             )
         )
         .contextMenu {
-            if !isProtected {
+            if !isSystem {
                 listActionMenuContent
             }
         }
@@ -213,6 +216,14 @@ struct CardCollectionSidebarRow: View {
         Image(systemName: "pin.fill")
             .foregroundStyle(pinColor)
             .frame(width: 16, height: 16)
+    }
+
+    /// The leading glyph for a system list (distinct per list so Scanned doesn't
+    /// read as a favourite); `nil` for normal collections, which show a pin.
+    private var systemSymbol: String? {
+        if model.isProtectedFavouritesList(list) { return "star.fill" }
+        if model.isScannedList(list) { return "tray.and.arrow.down.fill" }
+        return nil
     }
 
     private var pinColor: Color {
@@ -358,7 +369,7 @@ private struct CardCollectionDropDelegate: DropDelegate {
         guard let draggedListID else {
             return
         }
-        if let targetList, model.isProtectedFavouritesList(targetList) {
+        if let targetList, model.isSystemList(targetList) {
             return
         }
 

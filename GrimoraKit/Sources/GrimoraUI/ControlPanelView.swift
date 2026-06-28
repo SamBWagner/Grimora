@@ -51,18 +51,21 @@ struct ControlPanelView: View {
 
             SidebarDivider(palette: palette)
 
-            if let favourites = model.favouritesList {
-                SidebarSection("Favourites", palette: palette) {
-                    CardCollectionsSidebarContent(
-                        lists: [favourites],
-                        isPinnedSection: false,
-                        emptyTitle: "No Favourites",
-                        emptyAccessibilityIdentifier: "empty-favourites-sidebar",
-                        palette: palette,
-                        draggedListID: $draggedListID,
-                        onRenameList: onRenameList
-                    )
-                }
+            // Favourites + Scanned lead the sidebar as a headerless group: each
+            // carries a distinct, self-evident icon (star / tray), so a section
+            // header would only repeat the row name. Mirrors how Apple's own
+            // sidebars (Reminders smart lists, Music) present top-level system
+            // items without a label.
+            if !model.systemCardCollections.isEmpty {
+                CardCollectionsSidebarContent(
+                    lists: model.systemCardCollections,
+                    isPinnedSection: false,
+                    emptyTitle: "",
+                    emptyAccessibilityIdentifier: "empty-system-lists-sidebar",
+                    palette: palette,
+                    draggedListID: $draggedListID,
+                    onRenameList: onRenameList
+                )
 
                 SidebarDivider(palette: palette)
             }
