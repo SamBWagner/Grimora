@@ -8,8 +8,6 @@ import Foundation
 /// bytes, **not** Swift's `Hasher`/`hashValue` (which is seeded randomly per process), so a
 /// given card always catches the light the same way across launches and across devices.
 public struct FoilSeed: Equatable, Sendable {
-    /// Base seed in `0..<1`.
-    public let unit: Double
     /// Where this card sits in the shimmer cycle, `0..<1`.
     public let phaseOffset: Double
     /// Animation-rate multiplier, roughly `0.7...1.3` of the base rate.
@@ -31,7 +29,6 @@ public struct FoilSeed: Equatable, Sendable {
         let b = Double((hash >> 16) & 0xFFFF) / Double(0xFFFF)
         let c = Double((hash >> 32) & 0xFFFF) / Double(0xFFFF)
 
-        unit = a
         phaseOffset = a
         speed = 0.7 + 0.6 * b
         angle = (c - 0.5) * (.pi / 6) // ±π/12
