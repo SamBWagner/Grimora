@@ -58,8 +58,9 @@ struct CardGridItemView: View {
     var dragItemCount: Int?
     var isDragEnabled = true
     /// When true, the tile draws the self-animating grid foil shimmer over the artwork.
-    /// Collection tiles set this from the entry's selected finish; search tiles from whether
-    /// the printing comes in foil at all.
+    /// Collection tiles set this from the entry's selected finish (or a foil-only printing);
+    /// search tiles have no user-chosen finish, so they shimmer only when the displayed
+    /// printing is foil-only.
     var isFoil = false
     var onArtworkOverflowChange: (Bool) -> Void = { _ in }
 
