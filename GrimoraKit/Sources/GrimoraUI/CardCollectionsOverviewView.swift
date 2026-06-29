@@ -42,6 +42,7 @@ struct CardCollectionsOverviewView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .gridZoomPinch(gridZoom)
+        .cloudSyncRefreshable(model)
         .background {
             GrimoraAppBackground(palette: palette)
         }

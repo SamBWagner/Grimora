@@ -47,6 +47,7 @@ extension CardCollectionDetailView {
                         .frame(maxWidth: .infinity, alignment: .topLeading)
                     }
                     .cardArtworkViewport()
+                    .cloudSyncRefreshable(model, active: !isSelectingListEntries)
                     .coordinateSpace(name: Self.entrySelectionCoordinateSpace)
                     .accessibilityIdentifier("card-list-detail-scroll")
                     .simultaneousGesture(isSelectingListEntries ? selectionDragGesture : nil)
@@ -98,6 +99,7 @@ extension CardCollectionDetailView {
                     }
                     .listStyle(.inset)
                     .scrollContentBackground(.hidden)
+                    .cloudSyncRefreshable(model, active: !isSelectingListEntries)
                     .coordinateSpace(name: Self.entrySelectionCoordinateSpace)
                     .accessibilityIdentifier("card-list-detail-scroll")
                     .simultaneousGesture(isSelectingListEntries ? selectionDragGesture : nil)

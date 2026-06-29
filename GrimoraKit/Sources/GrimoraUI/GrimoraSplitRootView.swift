@@ -118,6 +118,22 @@ private struct SplitRootView: View {
                         min: centerColumnMinimumWidth,
                         ideal: Self.centerColumnIdealWidth
                     )
+                    // iCloud sync is global, so this lives at the detail-column level —
+                    // present in the window toolbar across the dashboard, search, and any
+                    // open collection alike (joining the per-collection Undo button).
+                    .toolbar {
+                        ToolbarItem(placement: .primaryAction) {
+                            Button {
+                                Task { await model.syncWithCloudNow() }
+                            } label: {
+                                Label("Sync with iCloud", systemImage: "arrow.triangle.2.circlepath")
+                                    .labelStyle(.iconOnly)
+                            }
+                            .disabled(!model.canSyncWithCloudNow)
+                            .help("Sync with iCloud")
+                            .accessibilityIdentifier("sync-with-icloud-button")
+                        }
+                    }
             }
 
             if model.selectedCard != nil {

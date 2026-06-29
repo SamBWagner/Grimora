@@ -29,6 +29,7 @@ struct GrimoraApp: App {
             GrimoraGridZoomCommands()
             GrimoraLibraryCommands()
             #if os(macOS)
+            GrimoraSyncCommands()
             GrimoraSearchCommands()
             GrimoraListCommands()
             InspectorCommands()

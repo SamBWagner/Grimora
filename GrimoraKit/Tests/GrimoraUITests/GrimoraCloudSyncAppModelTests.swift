@@ -438,6 +438,134 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
     XCTAssertEqual(model.cardCollections.first { $0.id == list.id }?.name, "Picks")
   }
 
+  func testCanSyncWithCloudNowReflectsModeAndStatus() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let model = GrimoraAppModel(
+      environment: environment(database: database),
+      initialCloudSyncMode: .undecided
+    )
+
+    // Sync switched off is never actionable, whatever the status happens to be.
+    model.cloudSyncMode = .disabled
+    for status in manualSyncActionableStatuses + manualSyncNonActionableStatuses {
+      model.cloudSyncStatus = status
+      XCTAssertFalse(
+        model.canSyncWithCloudNow,
+        "A manual sync must never be offered while sync is off (status: \(status))."
+      )
+    }
+
+    // Sync on: actionable only once the engine has settled (ready / applied a snapshot),
+    // plus `.failed` so the control can retry a transient failure.
+    model.cloudSyncMode = .enabled
+    for status in manualSyncActionableStatuses {
+      model.cloudSyncStatus = status
+      XCTAssertTrue(
+        model.canSyncWithCloudNow,
+        "A manual sync should be actionable in \(status)."
+      )
+    }
+    for status in manualSyncNonActionableStatuses {
+      model.cloudSyncStatus = status
+      XCTAssertFalse(
+        model.canSyncWithCloudNow,
+        "A manual sync should not be offered while \(status)."
+      )
+    }
+  }
+
+  func testSyncWithCloudNowIsANoOpWhenNotActionable() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let model = GrimoraAppModel(
+      environment: environment(database: database),
+      initialCloudSyncMode: .undecided
+    )
+
+    // Sync off: the call does nothing and leaves the status untouched.
+    model.cloudSyncMode = .disabled
+    model.cloudSyncStatus = .disabled
+    await model.syncWithCloudNow()
+    XCTAssertEqual(model.cloudSyncStatus, .disabled)
+
+    // Enabled but still bootstrapping: a manual sync must not barge in mid-preparation.
+    model.cloudSyncMode = .enabled
+    model.cloudSyncStatus = .preparing
+    await model.syncWithCloudNow()
+    XCTAssertEqual(model.cloudSyncStatus, .preparing)
+  }
+
+  func testSyncWithCloudNowPullsRemoteChangesWhenReady() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards([testCard()])
+    let list = try database.createCardCollection(named: "Picks", now: Date(timeIntervalSince1970: 10))
+    try database.markCloudSyncBootstrapResolved(true)
+
+    // Another device already renamed the same list on the server (newer timestamp wins).
+    let transport = MemoryCloudSyncTransport(
+      state: CloudRemoteState(
+        snapshots: [
+          deviceSnapshot(
+            id: "other-device",
+            deviceName: "iPad",
+            listID: list.id,
+            listName: "Renamed remotely"
+          )
+        ]
+      )
+    )
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        cloudSyncCoordinator: CloudSyncCoordinator(database: database, transport: transport)
+      ),
+      cloudSyncDeviceID: "device-a",
+      cloudSyncDeviceName: "Device A",
+      initialCloudSyncSearchSettingsUpdatedAt: .distantPast
+    )
+    model.cloudSyncMode = .enabled
+    model.cloudSyncStatus = .ready
+    model.hasCompletedInitialCloudSync = true
+
+    XCTAssertTrue(model.canSyncWithCloudNow)
+
+    // The user triggers a manual sync: push local state, then fetch + apply the newer
+    // remote copy.
+    await model.syncWithCloudNow()
+
+    XCTAssertEqual(
+      model.cardCollections.first { $0.id == list.id }?.name,
+      "Renamed remotely",
+      "syncWithCloudNow should fetch and apply the newer remote rename."
+    )
+  }
+
+  /// Statuses in which a settled engine can act on a manual "Sync with iCloud".
+  private var manualSyncActionableStatuses: [CloudSyncStatus] {
+    [
+      .ready,
+      .appliedRemoteSnapshot(
+        deviceSnapshot(id: "ipad", deviceName: "iPad", listID: "list", listName: "List")
+      ),
+      .failed("transient failure"),
+    ]
+  }
+
+  /// Statuses in which a manual sync must stay disabled.
+  private var manualSyncNonActionableStatuses: [CloudSyncStatus] {
+    [
+      .disabled,
+      .unavailable("iCloud sync is unavailable right now."),
+      .preparing,
+      .syncing,
+      .needsAppUpdate(
+        requiredSyncSchemaVersion: GrimoraCloudSyncConstants.currentSyncSchemaVersion + 1
+      ),
+      .accountChangeRequiresResolution(
+        CloudSyncAccountChange(previousAccountIdentifier: "a", currentAccountIdentifier: "b")
+      ),
+    ]
+  }
+
   private func waitUntil(
     attempts: Int = 100,
     condition: () async -> Bool

@@ -176,6 +176,35 @@ extension GrimoraAppModel {
     }
   }
 
+  /// Whether a user-triggered "Sync with iCloud" is currently actionable. Drives the
+  /// enabled state of the macOS menu command and toolbar button, and whether the
+  /// touch pull-to-refresh does any work.
+  public var canSyncWithCloudNow: Bool {
+    guard cloudSyncMode == .enabled else {
+      return false
+    }
+    switch cloudSyncStatus {
+    case .ready, .appliedRemoteSnapshot, .failed:
+      // `.failed` is included so the manual control can retry a transient failure.
+      return true
+    case .disabled, .unavailable, .preparing, .syncing, .needsAppUpdate,
+      .accountChangeRequiresResolution:
+      return false
+    }
+  }
+
+  /// User-triggered two-way sync: push any pending local edits immediately, then
+  /// force-fetch remote changes. Unlike `refreshCloudSyncWhenActive()` (fire-and-forget)
+  /// this is awaitable, so a pull-to-refresh spinner or toolbar progress reflects the
+  /// real fetch.
+  public func syncWithCloudNow() async {
+    guard canSyncWithCloudNow else {
+      return
+    }
+    await pushCloudSyncChanges()
+    await refreshCloudSync(requestTransportRefresh: true)
+  }
+
   public func reloadCloudSyncRecoverySnapshots() {
     do {
       cloudSyncRecoverySnapshots = try database.cloudSyncRecoverySnapshots()
