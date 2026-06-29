@@ -149,6 +149,12 @@ public struct CardDetailView: View {
             #endif
             #if os(macOS)
             .frame(minWidth: usesExpandedPrintingsBrowser ? Self.expandedDetailMinimumWidth : nil)
+            // Tell the resizable detail column how wide the content needs to be so
+            // the pane can grow for the wide "Show All" expanded printings browser.
+            .preference(
+                key: CardDetailContentMinWidthKey.self,
+                value: usesExpandedPrintingsBrowser ? Self.expandedDetailMinimumWidth : nil
+            )
             .overlay(alignment: .topTrailing) {
                 closeButton
             }
@@ -2146,7 +2152,10 @@ public struct CardDetailView: View {
     private static let collapsedDetailArtworkWidth: CGFloat = 340
     private static let rotatedArtworkGridOverflowAllowance: CGFloat = 12
     private static let compactGalleryMaximumWidth: CGFloat = 420
-    private static let inspectorArtworkMaximumWidth: CGFloat = 360
+    // The card art fills the detail pane's width; the pane itself is clamped so
+    // this never exceeds the source resolution (~672pt at Scryfall "large"), so
+    // this cap is just a guard against upscaling/blur.
+    private static let inspectorArtworkMaximumWidth: CGFloat = 672
     private static let compactThumbnailMinimumWidth: CGFloat = 118
     private static let compactGalleryExpandMagnification = 0.82
     private static let compactGalleryCollapseMagnification = 1.12

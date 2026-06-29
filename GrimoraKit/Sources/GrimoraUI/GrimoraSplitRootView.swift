@@ -39,12 +39,25 @@ private struct SplitRootView: View {
     @State private var previousSidebarSelection: GrimoraSidebarSelection = .search
     @State private var listNameDraft = ""
 
+    /// Resting width of the detail pane — drag-adjustable and persisted. The pane
+    /// opens at this width; double-clicking the divider grows it to the maximized
+    /// "fit the card" width and back.
+    @AppStorage("cardDetailPaneNormalWidth") private var detailPaneNormalWidth: Double = 440
+    @State private var isDetailPaneMaximized = false
+    @State private var windowSize: CGSize = .zero
+    @State private var detailContentMinWidth: CGFloat = 0
+
     private static let sidebarMinimumWidth: CGFloat = 160
     private static let sidebarIdealWidth: CGFloat = 190
     private static let centerColumnIdealWidth: CGFloat = 320
     private static let inspectorMinimumWidth: CGFloat = 320
-    private static let inspectorIdealWidth: CGFloat = 380
-    private static let inspectorMaximumWidth: CGFloat = 600
+    // Card art renders at Scryfall "large" (~672pt); cap the pane so the artwork
+    // fills it without upscaling past the source resolution.
+    private static let inspectorNativeArtworkWidth: CGFloat = 672
+    // Chrome around the artwork inside the scrolling layout: the `.padding()` on
+    // `detailLayout` horizontally, plus breathing room above/below vertically.
+    private static let inspectorArtworkHorizontalInsets: CGFloat = 32
+    private static let inspectorArtworkVerticalInsets: CGFloat = 48
 
     var body: some View {
         navigationContent
@@ -59,6 +72,11 @@ private struct SplitRootView: View {
         }
         .onChange(of: searchFocus.focusRequestID) { _, _ in
             model.selectSearch()
+        }
+        .onChange(of: model.selectedCard?.id) { _, _ in
+            // Each newly opened card starts at the resting width so double-clicking
+            // the divider grows it.
+            isDetailPaneMaximized = false
         }
         .onChange(of: listCommands.renameRequest?.id) { _, _ in
             guard let list = listCommands.consumeRenameRequest() else {
@@ -80,34 +98,95 @@ private struct SplitRootView: View {
     }
 
     private var navigationContent: some View {
-        NavigationSplitView {
-            ControlPanelView(
-                onCreateList: {
-                    presentCreateListDestination()
+        HStack(spacing: 0) {
+            NavigationSplitView {
+                ControlPanelView(
+                    onCreateList: {
+                        presentCreateListDestination()
+                    },
+                    onRenameList: { list in
+                        presentRenameListPrompt(list)
+                    }
+                )
+                    .navigationSplitViewColumnWidth(
+                        min: Self.sidebarMinimumWidth,
+                        ideal: Self.sidebarIdealWidth
+                    )
+            } detail: {
+                detailContent
+                    .navigationSplitViewColumnWidth(
+                        min: centerColumnMinimumWidth,
+                        ideal: Self.centerColumnIdealWidth
+                    )
+            }
+
+            if model.selectedCard != nil {
+                detailPaneColumn
+                    .transition(.move(edge: .trailing))
+            }
+        }
+        .animation(.snappy, value: model.selectedCard?.id)
+        // Read the window content size without wrapping the NavigationSplitView in
+        // a GeometryReader (which can disturb toolbar plumbing). The background's
+        // size equals the HStack's, and is independent of the pane width, so this
+        // can't form a layout loop.
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { windowSize = proxy.size }
+                    .onChange(of: proxy.size) { _, newValue in
+                        windowSize = newValue
+                    }
+            }
+        }
+    }
+
+    private var detailPaneColumn: some View {
+        let width = effectiveDetailWidth(for: windowSize)
+        return HStack(spacing: 0) {
+            CardDetailPaneDivider(
+                currentWidth: width,
+                minWidth: Self.inspectorMinimumWidth,
+                maxWidth: maximizedDetailWidth(for: windowSize),
+                onResize: { newWidth in
+                    isDetailPaneMaximized = false
+                    detailPaneNormalWidth = Double(newWidth)
                 },
-                onRenameList: { list in
-                    presentRenameListPrompt(list)
+                onToggleMaximized: {
+                    withAnimation(.snappy) {
+                        isDetailPaneMaximized.toggle()
+                    }
                 }
             )
-                .navigationSplitViewColumnWidth(
-                    min: Self.sidebarMinimumWidth,
-                    ideal: Self.sidebarIdealWidth
-                )
-        } detail: {
-            detailContent
-                .navigationSplitViewColumnWidth(
-                    min: centerColumnMinimumWidth,
-                    ideal: Self.centerColumnIdealWidth
-                )
-        }
-        .inspector(isPresented: detailSheetBinding) {
             cardDetailInspector
-                .inspectorColumnWidth(
-                    min: Self.inspectorMinimumWidth,
-                    ideal: Self.inspectorIdealWidth,
-                    max: Self.inspectorMaximumWidth
-                )
+                .frame(width: width)
+                .frame(maxHeight: .infinity)
+                .onPreferenceChange(CardDetailContentMinWidthKey.self) { value in
+                    detailContentMinWidth = value ?? 0
+                }
         }
+    }
+
+    /// The width that makes the card art as big as the window height allows.
+    private func maximizedDetailWidth(for size: CGSize) -> CGFloat {
+        cardDetailMaximizedPaneWidth(
+            paneHeight: size.height,
+            windowWidth: size.width,
+            minWidth: Self.inspectorMinimumWidth,
+            nativeCardWidth: Self.inspectorNativeArtworkWidth,
+            reservedLeadingWidth: Self.sidebarMinimumWidth + centerColumnMinimumWidth,
+            horizontalInsets: Self.inspectorArtworkHorizontalInsets,
+            verticalInsets: Self.inspectorArtworkVerticalInsets
+        )
+    }
+
+    private func effectiveDetailWidth(for size: CGSize) -> CGFloat {
+        let maxWidth = maximizedDetailWidth(for: size)
+        let resting = min(max(CGFloat(detailPaneNormalWidth), Self.inspectorMinimumWidth), maxWidth)
+        let base = isDetailPaneMaximized ? maxWidth : resting
+        // Honour content that needs more room than the pane currently offers
+        // (the wide "Show All" expanded printings browser).
+        return max(base, detailContentMinWidth)
     }
 
     private var centerColumnMinimumWidth: CGFloat {
@@ -260,16 +339,6 @@ private struct SplitRootView: View {
             content.toolbar(removing: .title)
         } else {
             content.navigationTitle("")
-        }
-    }
-
-    private var detailSheetBinding: Binding<Bool> {
-        Binding {
-            model.selectedCard != nil
-        } set: { isPresented in
-            if !isPresented {
-                model.closeSelectedCard()
-            }
         }
     }
 
