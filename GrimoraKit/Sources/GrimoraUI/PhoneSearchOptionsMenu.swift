@@ -91,7 +91,7 @@ struct SearchViewOptionsMenu: View {
                 }
             }
         } label: {
-            Label("View Options", systemImage: "square.grid.2x2")
+            Label("View Options", systemImage: "arrow.up.arrow.down")
         }
         .accessibilityIdentifier("search-view-options-menu")
         .help("View Options")
