@@ -650,6 +650,24 @@ final class GrimoraAppModelTests: XCTestCase {
     )
   }
 
+  func testSystemSymbolMapsFavouritesScannedAndUserLists() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let favourites = try XCTUnwrap(model.favouritesList)
+    XCTAssertEqual(model.systemSymbol(for: favourites), "star.fill")
+
+    XCTAssertTrue(model.addCardToScanned(try XCTUnwrap(model.cards.first)))
+    let scanned = try XCTUnwrap(model.scannedList)
+    XCTAssertEqual(model.systemSymbol(for: scanned), "tray.and.arrow.down.fill")
+
+    let userList = try XCTUnwrap(model.createCardCollection(named: "Deck Box"))
+    XCTAssertNil(model.systemSymbol(for: userList))
+  }
+
   func testModelWaitsForExplicitScryfallSubmit() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())

@@ -93,7 +93,7 @@ struct CardCollectionSidebarRow: View {
         let isSystem = model.isSystemList(list)
 
         HStack(spacing: 8) {
-            if let systemSymbol {
+            if let systemSymbol = model.systemSymbol(for: list) {
                 Image(systemName: systemSymbol)
                     .foregroundStyle(pinColor)
                     .frame(width: 16, height: 16)
@@ -216,14 +216,6 @@ struct CardCollectionSidebarRow: View {
         Image(systemName: "pin.fill")
             .foregroundStyle(pinColor)
             .frame(width: 16, height: 16)
-    }
-
-    /// The leading glyph for a system list (distinct per list so Scanned doesn't
-    /// read as a favourite); `nil` for normal collections, which show a pin.
-    private var systemSymbol: String? {
-        if model.isProtectedFavouritesList(list) { return "star.fill" }
-        if model.isScannedList(list) { return "tray.and.arrow.down.fill" }
-        return nil
     }
 
     private var pinColor: Color {

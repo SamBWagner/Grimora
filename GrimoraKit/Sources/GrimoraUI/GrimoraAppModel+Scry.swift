@@ -27,6 +27,15 @@ extension GrimoraAppModel {
     isProtectedFavouritesList(list) || isScannedList(list)
   }
 
+  /// The leading SF Symbol for a system list (Favourites star, Scanned tray); `nil`
+  /// for normal collections. Shared by the sidebar and the collections overview so the
+  /// two never drift.
+  public func systemSymbol(for list: CardCollectionRecord) -> String? {
+    if isProtectedFavouritesList(list) { return "star.fill" }
+    if isScannedList(list) { return "tray.and.arrow.down.fill" }
+    return nil
+  }
+
   @discardableResult
   func ensureScannedList() throws -> CardCollectionRecord {
     let lists = try database.cardCollections()

@@ -109,7 +109,7 @@ struct CardCollectionsOverviewView: View {
                     item: item,
                     palette: palette,
                     isSystemList: model.isSystemList(item.list),
-                    systemSymbol: systemSymbol(for: item.list),
+                    systemSymbol: model.systemSymbol(for: item.list),
                     showsTrailingSeparator: item.id == lastSystemID,
                     matchPreview: matchPreview(for: item.list.id)
                 ) {
@@ -132,12 +132,6 @@ struct CardCollectionsOverviewView: View {
                 }
             }
         }
-    }
-
-    private func systemSymbol(for list: CardCollectionRecord) -> String? {
-        if model.isProtectedFavouritesList(list) { return "star.fill" }
-        if model.isScannedList(list) { return "tray.and.arrow.down.fill" }
-        return nil
     }
 
     private var isNarrowTwoColumn: Bool {
