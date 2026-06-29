@@ -305,19 +305,25 @@ struct ScryTabView: View {
   /// is never scanned twice — and a swap/duplicate is picked up immediately.
   private func trackMovement(_ cards: [ScryDetectedCard]) {
     guard mode == .bulk, !armed else { return }
-    let centroid = subjectCentroid(cards)
-    let moved: Bool
-    if let centroid, let committed = committedCentroid {
-      moved = distance(centroid, committed) > movementThreshold
-    } else {
-      moved = true  // no card in frame, or nothing committed → treat as moved
-    }
-    if moved {
+    switch ScryBulkPlacement.movement(
+      detectedCentroid: subjectCentroid(cards),
+      committedCentroid: committedCentroid,
+      hasCommittedCard: committedCardID != nil,
+      threshold: movementThreshold
+    ) {
+    case .adoptBaseline(let centroid):
+      // Commit didn't capture a baseline; lock onto the card now in frame instead of
+      // re-arming, so it isn't rescanned. A genuine swap is still caught by
+      // considerForBulk (a different confident card re-arms regardless).
+      committedCentroid = centroid
+    case .rearm:
       armed = true
       committedCentroid = nil
       rejectedIDs = []
       stableKey = nil
       stableCount = 0
+    case .hold:
+      break
     }
   }
 
@@ -348,10 +354,6 @@ struct ScryTabView: View {
     guard let corners = cards.first?.normalizedCorners, !corners.isEmpty else { return nil }
     let sum = corners.reduce(CGPoint.zero) { CGPoint(x: $0.x + $1.x, y: $0.y + $1.y) }
     return CGPoint(x: sum.x / CGFloat(corners.count), y: sum.y / CGFloat(corners.count))
-  }
-
-  private func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
-    hypot(a.x - b.x, a.y - b.y)
   }
 
   // MARK: - Lifecycle / focus
