@@ -58,9 +58,13 @@ public enum ScryCollectorLineParser {
         if let number = slashCollectorNumber(token) { return number }
       }
     }
-    // 2. The zero-padded form modern cards print (e.g. "0256", "0005").
+    // 2. The zero-padded form modern cards print (e.g. "0256", "0005"). The slash form
+    //    is rule 1's job; excluding it here keeps a 0-power creature's "0/4" toughness
+    //    from being read as collector number "0" (it slips past rule 1 because its total
+    //    is < 20, and the P/T line typically sits above the real collector line).
     for line in lines {
-      for token in tokenize(line) where token.count >= 2 && token.first == "0" {
+      for token in tokenize(line)
+      where token.count >= 2 && token.first == "0" && !token.contains("/") {
         if let number = number(fromToken: token) { return number }
       }
     }

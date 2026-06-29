@@ -84,6 +84,19 @@ final class ScryRecognitionTests: XCTestCase {
     XCTAssertNil(parsed.collectorNumber)
   }
 
+  func testZeroPowerToughnessIsNotReadAsCollectorNumber() {
+    // A 0-power creature (e.g. a Wall) prints "0/4" power/toughness, which the OCR
+    // surfaces above the real collector line. It must not be read as "0".
+    let alone = ScryCollectorLineParser.parse(lines: ["0/4", "Creature — Wall"])
+    XCTAssertNil(alone.collectorNumber)
+
+    // The genuine zero-padded collector number must still win over the "0/4" toughness
+    // that precedes it (the toughness line sorts above the collector line).
+    let withCollector = ScryCollectorLineParser.parse(lines: ["0/4", "0256", "OTJ • EN"])
+    XCTAssertEqual(withCollector.collectorNumber, "256")
+    XCTAssertEqual(withCollector.setCode, "otj")
+  }
+
   // MARK: - Name heuristics (don't read the type line as the name)
 
   func testTypeLinesAreNotAcceptedAsNames() {
