@@ -1873,6 +1873,45 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.statusMessage, "Library is current.")
   }
 
+  func testSearchPullToRefreshOutcomeOffersDownloadWhenUpdateAvailable() async throws {
+    // No local library yet, so the catalog check reports data is available to import.
+    let database = try CardDatabase(storage: .inMemory)
+    let downloadURL = URL(string: "https://example.test/default.json")!
+    let network = ModelTestNetworkClient(dataResponses: [
+      BulkDataClient.bulkDataURL: manifestListJSON(downloadURL: downloadURL)
+    ])
+    let model = GrimoraAppModel(environment: environment(database: database, network: network))
+    await model.drainSearchForTesting()
+
+    await model.checkForUpdates()
+
+    let manifest = try XCTUnwrap(model.updateManifest)
+    XCTAssertEqual(
+      catalogUpdateRefreshOutcome(wasWorking: false, updateManifest: model.updateManifest),
+      .updateAvailable(manifest)
+    )
+  }
+
+  func testSearchPullToRefreshOutcomeIsUpToDateWhenLibraryIsCurrent() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let downloadURL = URL(string: "https://example.test/default.json")!
+    let network = ModelTestNetworkClient(dataResponses: [
+      BulkDataClient.bulkDataURL: manifestListJSON(downloadURL: downloadURL)
+    ])
+    let model = GrimoraAppModel(environment: environment(database: database, network: network))
+    await model.drainSearchForTesting()
+
+    await model.checkForUpdates()
+
+    XCTAssertNil(model.updateManifest)
+    XCTAssertEqual(
+      catalogUpdateRefreshOutcome(wasWorking: false, updateManifest: model.updateManifest),
+      .upToDate
+    )
+  }
+
   func testRefreshCardDatabasePreservesUserLists() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())

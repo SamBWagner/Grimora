@@ -370,6 +370,7 @@ struct ResultsContentView: View {
                     }
                     .accessibilityIdentifier("search-results-scroll")
                     .gridZoomPinch(gridZoom)
+                    .catalogUpdateRefreshable()
                 )
             }
             .jumpToTopButtonInset(
