@@ -1,0 +1,15 @@
+{
+  "meta": {
+    "date": "2026-06-14",
+    "version": "5.3.0"
+  },
+  "data": {
+    "GLD": {
+      "cards": [
+        {"uuid": "uuid-golden-llanowar", "identifiers": {"scryfallId": "golden-llanowar"}},
+        {"uuid": "uuid-golden-counterspell", "identifiers": {"scryfallId": "golden-counterspell"}},
+        {"uuid": "uuid-golden-legend", "identifiers": {"scryfallId": "golden-legend"}}
+      ]
+    }
+  }
+}

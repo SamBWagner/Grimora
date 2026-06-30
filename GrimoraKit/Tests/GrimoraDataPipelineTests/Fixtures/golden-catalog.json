@@ -1,0 +1,135 @@
+{
+  "cardCount" : 5,
+  "cards" : [
+    {
+      "colorIdentity" : [
+        "g"
+      ],
+      "colors" : [
+        "g"
+      ],
+      "currentPrice" : 0.25,
+      "faces" : [
+
+      ],
+      "id" : "golden-llanowar",
+      "layout" : "normal",
+      "manaCost" : "",
+      "manaValue" : 1,
+      "name" : "Golden Llanowar Elves",
+      "oracleText" : "{T}: Add {G}.",
+      "power" : "1",
+      "producedMana" : [
+        "g"
+      ],
+      "toughness" : "1",
+      "typeLine" : "Creature — Elf Druid"
+    },
+    {
+      "colorIdentity" : [
+        "u"
+      ],
+      "colors" : [
+        "u"
+      ],
+      "currentPrice" : 1.5,
+      "faces" : [
+
+      ],
+      "id" : "golden-counterspell",
+      "layout" : "normal",
+      "manaCost" : "",
+      "manaValue" : 2,
+      "name" : "Golden Counterspell",
+      "oracleText" : "Counter target spell.",
+      "producedMana" : [
+
+      ],
+      "typeLine" : "Instant"
+    },
+    {
+      "colorIdentity" : [
+
+      ],
+      "colors" : [
+
+      ],
+      "faces" : [
+
+      ],
+      "id" : "golden-relic",
+      "layout" : "normal",
+      "manaCost" : "",
+      "manaValue" : 3,
+      "name" : "Golden Mana Relic",
+      "oracleText" : "{T}: Add one mana of any color.",
+      "producedMana" : [
+        "b",
+        "g",
+        "r",
+        "u",
+        "w"
+      ],
+      "typeLine" : "Artifact"
+    },
+    {
+      "colorIdentity" : [
+        "b",
+        "w"
+      ],
+      "colors" : [
+        "b",
+        "w"
+      ],
+      "faces" : [
+        {
+          "name" : "Golden Dawn",
+          "oracleText" : "Return target creature card from your graveyard to the battlefield.",
+          "typeLine" : "Sorcery"
+        },
+        {
+          "name" : "Golden Dusk",
+          "oracleText" : "Destroy target creature.",
+          "typeLine" : "Instant"
+        }
+      ],
+      "id" : "golden-dfc",
+      "layout" : "modal_dfc",
+      "manaCost" : "",
+      "manaValue" : 3,
+      "name" : "Golden Dawn // Golden Dusk",
+      "oracleText" : "",
+      "producedMana" : [
+
+      ],
+      "typeLine" : ""
+    },
+    {
+      "colorIdentity" : [
+        "b",
+        "w"
+      ],
+      "colors" : [
+        "b",
+        "w"
+      ],
+      "currentPrice" : 4,
+      "faces" : [
+
+      ],
+      "id" : "golden-legend",
+      "layout" : "normal",
+      "manaCost" : "",
+      "manaValue" : 4,
+      "name" : "Golden Twin Commander",
+      "oracleText" : "Partner",
+      "power" : "3",
+      "producedMana" : [
+
+      ],
+      "toughness" : "4",
+      "typeLine" : "Legendary Creature — Human Wizard"
+    }
+  ],
+  "priceSeriesCount" : 3
+}

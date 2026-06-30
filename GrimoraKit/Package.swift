@@ -103,7 +103,10 @@ let package = Package(
         ),
         .testTarget(
             name: "GrimoraDataPipelineTests",
-            dependencies: ["GrimoraCore", "GrimoraDataPipeline"]
+            dependencies: ["GrimoraCore", "GrimoraDataPipeline"],
+            resources: [
+                .copy("Fixtures")
+            ]
         ),
         .testTarget(
             name: "GrimoraDataAPITests",
