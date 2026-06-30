@@ -3,9 +3,10 @@ import SwiftUI
 @main
 struct GrimoraEngineApp: App {
   @State private var model = EngineDashboardModel(controller: EngineController())
+  @State private var loginItem = LoginItemController()
 
   var body: some Scene {
-    WindowGroup {
+    Window("Grimora Engine", id: "dashboard") {
       EngineRootView(model: model)
         .frame(minWidth: 720, minHeight: 480)
     }
@@ -40,5 +41,12 @@ struct GrimoraEngineApp: App {
         .disabled(model.isChecking)
       }
     }
+
+    MenuBarExtra {
+      MenuBarStatusView(model: model, loginItem: loginItem)
+    } label: {
+      MenuBarLabel(model: model, loginItem: loginItem)
+    }
+    .menuBarExtraStyle(.menu)
   }
 }
