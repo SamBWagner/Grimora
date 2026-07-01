@@ -30,29 +30,52 @@ struct CardFoilShimmerOverlay: View {
     /// the card rather than tucked into a corner.
     static let restingPhase = 0.35
 
-    /// Self-animation rate (hue cycles per second, before the per-card speed multiplier) for
-    /// the looping drift on macOS / visionOS, where there's no device to tilt. iOS is gyro-only
-    /// and doesn't use this.
-    static let driftRate: Double = 0.15
+    /// Base rate at which the shared-clock `phase` advances, per second, before the per-card
+    /// speed multiplier. The per-treatment shaders were tuned in real-time canvas prototypes, so
+    /// this is ~1.0 to make one unit of `phase` ≈ one second — much lower (the old 0.15, sized for
+    /// the original ultra-subtle standard shimmer) reads as "incredibly slow" for the new effects.
+    /// Drives the self-animating drift on all platforms; iOS layers device-tilt phase on top.
+    static let driftRate: Double = 1.0
 
     var cornerRadius: CGFloat = 8
     var seed: FoilSeed
+    /// Which foil treatment to render. Selects the GPU shader (plain foil, etched, or a special
+    /// promo treatment); the motion/clock/static tiering below is identical for all of them.
+    var treatment: CardFoilTreatment = .standard
     /// Sheen strength. 1.0 is the full detail-pane look; grids pass a restrained value.
     var intensity: Double = 1.0
 
     var body: some View {
+        if treatment == .invisibleInk {
+            // Invisible ink is a hidden foil scrawl, not a rainbow sheen — render only its layer.
+            InvisibleInkOverlay(cornerRadius: cornerRadius, intensity: intensity)
+        } else {
+            ZStack {
+                sheen
+                // Mana foil is the one treatment whose identity is the stamped symbols themselves —
+                // drawn as a SwiftUI layer (the app's SF Symbol mana glyphs) over the gradient sheen.
+                if treatment == .mana {
+                    ManaFoilStampOverlay(cornerRadius: cornerRadius, intensity: intensity)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var sheen: some View {
         if reduceMotion {
             ShaderFoilSheen(
                 phase: Self.restingPhase + seed.phaseOffset,
                 seed: seed,
+                treatment: treatment,
                 intensity: intensity,
                 cornerRadius: cornerRadius
             )
         } else {
             #if os(iOS)
-            MotionShaderFoilSheen(seed: seed, intensity: intensity, cornerRadius: cornerRadius)
+            MotionShaderFoilSheen(seed: seed, treatment: treatment, intensity: intensity, cornerRadius: cornerRadius)
             #else
-            ClockShaderFoilSheen(seed: seed, intensity: intensity, cornerRadius: cornerRadius)
+            ClockShaderFoilSheen(seed: seed, treatment: treatment, intensity: intensity, cornerRadius: cornerRadius)
             #endif
         }
     }
@@ -63,6 +86,7 @@ struct CardFoilShimmerOverlay: View {
 private struct ShaderFoilSheen: View {
     var phase: Double
     var seed: FoilSeed
+    var treatment: CardFoilTreatment
     var intensity: Double
     var cornerRadius: CGFloat
 
@@ -71,14 +95,7 @@ private struct ShaderFoilSheen: View {
         GeometryReader { proxy in
             Rectangle()
                 .fill(.black)
-                .colorEffect(
-                    ShaderLibrary.bundle(.module).grimoraFoil(
-                        .float2(proxy.size),
-                        .float(Float(phase)),
-                        .float(Float(seed.angle)),
-                        .float(Float(intensity))
-                    )
-                )
+                .colorEffect(foilShader(size: proxy.size))
         }
         .blendMode(.plusLighter)
         .clipShape(shape)
@@ -86,28 +103,73 @@ private struct ShaderFoilSheen: View {
             shape.strokeBorder(.white.opacity(0.10), lineWidth: 0.5)
         }
     }
+
+    private func foilShader(size: CGSize) -> Shader {
+        let function = ShaderFunction(library: .bundle(.module), name: Self.shaderName(for: treatment))
+        return Shader(function: function, arguments: [
+            .float2(size),
+            .float(Float(phase)),
+            .float(Float(seed.angle)),
+            .float(Float(intensity))
+        ])
+    }
+
+    /// The single dispatch point from treatment → Metal function. Treatments without a bespoke
+    /// shader yet fall back to the plain `grimoraFoil` sheen; a follow-up adds a case here plus a
+    /// matching `[[stitchable]]` function in `Foil.metal`.
+    private static func shaderName(for treatment: CardFoilTreatment) -> String {
+        switch treatment {
+        case .etched: "grimoraFoilEtched"
+        case .surge: "grimoraFoilSurge"
+        case .halo: "grimoraFoilHalo"
+        case .galaxy: "grimoraFoilGalaxy"
+        case .oilSlick: "grimoraFoilOilSlick"
+        case .confetti: "grimoraFoilConfetti"
+        case .ripple: "grimoraFoilRipple"
+        case .fracture: "grimoraFoilFracture"
+        case .mana: "grimoraFoilManaGradient"
+        case .neonInk: "grimoraFoilNeonInk"
+        case .stepAndCompleat: "grimoraFoilStepCompleat"
+        case .rainbow: "grimoraFoilRainbow"
+        case .doubleRainbow: "grimoraFoilDoubleRainbow"
+        case .silver: "grimoraFoilSilver"
+        case .glossy: "grimoraFoilGlossy"
+        case .gilded: "grimoraFoilGilded"
+        case .textured: "grimoraFoilTextured"
+        case .embossed: "grimoraFoilEmbossed"
+        case .raised: "grimoraFoilRaised"
+        default: "grimoraFoil"
+        }
+    }
 }
 
 #if os(iOS)
-/// iOS foil: driven purely by the device gyro/accelerometer (shared stream), offset and scaled
-/// per card so a grid never shimmers in lockstep. There's no self-animating drift here — on a
-/// handheld device, moving the device *is* the animation, which reads cleaner than a loop.
+/// iOS foil: a self-animating drift from the shared `FoilClock` *plus* device-tilt modulation
+/// from the gyro (shared stream), both offset/scaled per card so a grid never shimmers in
+/// lockstep. The clock keeps the per-treatment effects (surge fire, neon darting, drifting
+/// sparkles) alive when the phone is held still or running in a simulator with no gyro; tilting
+/// then pushes the phase further so the card also "catches the light" as you angle it.
 private struct MotionShaderFoilSheen: View {
     @ObservedObject private var motion = FoilMotionCenter.shared
+    @ObservedObject private var clock = FoilClock.shared
 
     var seed: FoilSeed
+    var treatment: CardFoilTreatment
     var intensity: Double
     var cornerRadius: CGFloat
 
     var body: some View {
         ShaderFoilSheen(
-            phase: motion.phase * seed.speed + seed.phaseOffset,
+            phase: clock.time * CardFoilShimmerOverlay.driftRate * seed.speed
+                + motion.phase * seed.speed
+                + seed.phaseOffset,
             seed: seed,
+            treatment: treatment,
             intensity: intensity,
             cornerRadius: cornerRadius
         )
-        .onAppear { motion.subscribe() }
-        .onDisappear { motion.unsubscribe() }
+        .onAppear { motion.subscribe(); clock.subscribe() }
+        .onDisappear { motion.unsubscribe(); clock.unsubscribe() }
     }
 }
 
@@ -154,6 +216,7 @@ private struct ClockShaderFoilSheen: View {
     @ObservedObject private var clock = FoilClock.shared
 
     var seed: FoilSeed
+    var treatment: CardFoilTreatment
     var intensity: Double
     var cornerRadius: CGFloat
 
@@ -161,6 +224,7 @@ private struct ClockShaderFoilSheen: View {
         ShaderFoilSheen(
             phase: clock.time * CardFoilShimmerOverlay.driftRate * seed.speed + seed.phaseOffset,
             seed: seed,
+            treatment: treatment,
             intensity: intensity,
             cornerRadius: cornerRadius
         )

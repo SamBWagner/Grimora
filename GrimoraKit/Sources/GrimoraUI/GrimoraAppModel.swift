@@ -112,12 +112,12 @@ public final class GrimoraAppModel {
   /// swaps instantly and the DB read happens off the main thread.
   public internal(set) var listLoadPhase: ListLoadPhase = .idle
   public internal(set) var selectedCardCollectionEntryID: CardCollectionEntryRecord.ID?
-  /// Printing IDs the user has flicked to foil during the *current* detail session
-  /// when there is no backing collection entry (e.g. browsing from search). Per
-  /// printing, so each version remembers its own foil state while swiping; cleared
-  /// when a different card is opened or the detail view is closed. Collection
-  /// entries persist their finish via `CardCollectionEntryRecord.selectedFinish`.
-  internal var sessionFoilPrintingIDs: Set<CardRecord.ID> = []
+  /// The finish the user has chosen per printing during the *current* detail session when
+  /// there is no backing collection entry (e.g. browsing from search). Per printing, so each
+  /// version remembers its own finish while swiping; cleared when a different card is opened or
+  /// the detail view is closed. Only non-default finishes are stored. Collection entries persist
+  /// their finish via `CardCollectionEntryRecord.selectedFinish`.
+  internal var sessionSelectedFinish: [CardRecord.ID: CardValueFinish] = [:]
   public internal(set) var canUndoListAction = false
   public internal(set) var cloudSyncMode: GrimoraCloudSyncMode = .undecided
   public internal(set) var cloudSyncStatus: CloudSyncStatus = .disabled

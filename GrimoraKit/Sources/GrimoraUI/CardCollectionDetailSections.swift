@@ -213,7 +213,7 @@ extension CardCollectionDetailView {
                     dragPayload: CardCollectionEntryDragToken.token(for: dragEntryIDs),
                     dragItemCount: dragEntryIDs.count,
                     isDragEnabled: !isSelectingListEntries,
-                    isFoil: entry.selectedFinish == .foil || card.isFoilOnly,
+                    foilTreatment: card.foilTreatment(for: entry.selectedFinish ?? card.defaultFinish),
                     onArtworkOverflowChange: { isOverflowing in
                         updateRaisedArtworkEntry(entryID: entry.id, isOverflowing: isOverflowing)
                     }

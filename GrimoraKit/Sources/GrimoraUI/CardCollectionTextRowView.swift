@@ -54,6 +54,10 @@ struct CardCollectionTextRowView: View {
                         .foregroundStyle(palette.primaryText.color)
                         .lineLimit(1)
                         .truncationMode(.middle)
+
+                    if foilTreatment != .none {
+                        FoilTreatmentBadge(treatment: foilTreatment)
+                    }
                 }
 
                 Text(secondaryText)
@@ -243,6 +247,13 @@ struct CardCollectionTextRowView: View {
 
     private var primaryName: String {
         card?.name ?? entry.cardID
+    }
+
+    /// The finish chip shown beside the name — the text row has no shimmer, so the badge is the
+    /// only finish signal here. Reflects the entry's chosen finish (or the printing's default).
+    private var foilTreatment: CardFoilTreatment {
+        guard let card else { return .none }
+        return card.foilTreatment(for: entry.selectedFinish ?? card.defaultFinish)
     }
 
     private var secondaryText: String {

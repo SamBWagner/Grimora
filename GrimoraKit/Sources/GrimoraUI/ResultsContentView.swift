@@ -316,7 +316,7 @@ struct ResultsContentView: View {
                                         onPrepareAddMenu: prepareLiveSelectedSearchCardsMenu,
                                         isFavourite: model.isFavourite(card),
                                         onToggleFavourite: { model.toggleFavourite($0) },
-                                        isFoil: card.isFoilOnly,
+                                        foilTreatment: card.isFoilOnly ? card.foilTreatment(for: .foil) : .none,
                                         onArtworkOverflowChange: { isOverflowing in
                                             updateRaisedSearchArtwork(cardID: card.id, isOverflowing: isOverflowing)
                                         }

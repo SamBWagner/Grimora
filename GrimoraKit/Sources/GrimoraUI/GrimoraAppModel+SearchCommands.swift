@@ -827,7 +827,7 @@ extension GrimoraAppModel {
   }
 
   public func selectCard(_ card: CardRecord) {
-    sessionFoilPrintingIDs.removeAll()
+    sessionSelectedFinish.removeAll()
     setSelectedCard(card, listEntryID: nil)
   }
 
@@ -835,12 +835,12 @@ extension GrimoraAppModel {
     _ card: CardRecord,
     fromListEntryID listEntryID: CardCollectionEntryRecord.ID
   ) {
-    sessionFoilPrintingIDs.removeAll()
+    sessionSelectedFinish.removeAll()
     setSelectedCard(card, listEntryID: listEntryID)
   }
 
   public func closeSelectedCard() {
-    sessionFoilPrintingIDs.removeAll()
+    sessionSelectedFinish.removeAll()
     setSelectedCard(nil, listEntryID: nil)
   }
 
@@ -870,33 +870,39 @@ extension GrimoraAppModel {
     return selectedCollectionEntries.first { $0.id == selectedCardCollectionEntryID }
   }
 
-  /// Whether the given printing is currently shown as foil. Foil-only printings are
-  /// inherently foil (no non-foil exists), so they always read as foil. Otherwise backed by
-  /// the collection entry's persisted finish when this printing is the entry's pinned print,
-  /// else by the transient per-version session set.
-  public func isFoilSelected(for printing: CardRecord) -> Bool {
-    if printing.isFoilOnly {
-      return true
-    }
+  /// The finish (normal / foil / etched) the given printing is currently shown as. A printing
+  /// that offers only one finish is inherently that finish (e.g. a foil-only printing reads as
+  /// foil). Otherwise backed by the collection entry's persisted finish when this printing is the
+  /// entry's pinned print, else by the transient per-version session map, falling back to the
+  /// printing's default finish.
+  public func selectedFinish(for printing: CardRecord) -> CardValueFinish {
     if let entry = selectedCardCollectionEntry, entry.cardID == printing.id {
-      return entry.selectedFinish == .foil
+      return entry.selectedFinish ?? printing.defaultFinish
     }
-    return sessionFoilPrintingIDs.contains(printing.id)
+    return sessionSelectedFinish[printing.id] ?? printing.defaultFinish
   }
 
-  /// Flips the given printing between foil and normal. Persists onto the backing
-  /// collection entry (survives close + syncs) when the printing is the entry's
-  /// pinned print; otherwise updates only the transient session state.
+  /// Whether the given printing is currently shown as plain or special foil. Thin wrapper over
+  /// `selectedFinish(for:)` for callers that only care about foil vs not (e.g. legacy toggles).
+  public func isFoilSelected(for printing: CardRecord) -> Bool {
+    selectedFinish(for: printing) == .foil
+  }
+
+  /// Flips the given printing between foil and normal. Thin wrapper over `setFinish(_:for:)`.
   public func setFoil(_ isFoil: Bool, for printing: CardRecord) {
+    setFinish(isFoil ? .foil : .normal, for: printing)
+  }
+
+  /// Sets the finish for the given printing. Persists onto the backing collection entry (survives
+  /// close + syncs) when the printing is the entry's pinned print; otherwise updates only the
+  /// transient session map (default finishes aren't stored).
+  public func setFinish(_ finish: CardValueFinish, for printing: CardRecord) {
     if let entryID = selectedCardCollectionEntryID,
        let entry = selectedCardCollectionEntry,
        entry.cardID == printing.id {
       do {
         _ = try performListMutation {
-          try database.setCardCollectionEntryFinish(
-            id: entryID,
-            finish: isFoil ? .foil : .normal
-          )
+          try database.setCardCollectionEntryFinish(id: entryID, finish: finish)
         }
         reloadCardCollections(selecting: selectedCollectionID)
       } catch {
@@ -905,10 +911,10 @@ extension GrimoraAppModel {
       return
     }
 
-    if isFoil {
-      sessionFoilPrintingIDs.insert(printing.id)
+    if finish == printing.defaultFinish {
+      sessionSelectedFinish.removeValue(forKey: printing.id)
     } else {
-      sessionFoilPrintingIDs.remove(printing.id)
+      sessionSelectedFinish[printing.id] = finish
     }
   }
 }

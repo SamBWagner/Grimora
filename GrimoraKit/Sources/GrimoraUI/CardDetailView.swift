@@ -41,8 +41,8 @@ public struct CardDetailView: View {
     public var valueExchangeRate: CurrencyExchangeRate?
     public var presentationStyle: CardDetailPresentationStyle
     public var onSelectPrinting: (CardRecord) -> Void
-    public var isFoilSelected: (CardRecord) -> Bool
-    public var onSetFoil: (CardRecord, Bool) -> Void
+    public var selectedFinish: (CardRecord) -> CardValueFinish
+    public var onSetFinish: (CardRecord, CardValueFinish) -> Void
     public var onLoadPrintingThumbnailImage: (CardRecord) async -> Void
     public var onLoadPrintingPreviewImage: (CardRecord) async -> Void
     public var onLoadAvailablePrintingPreviewImages: ([CardRecord]) async -> Void
@@ -59,8 +59,8 @@ public struct CardDetailView: View {
         valueExchangeRate: CurrencyExchangeRate? = nil,
         presentationStyle: CardDetailPresentationStyle = .automatic,
         onSelectPrinting: @escaping (CardRecord) -> Void = { _ in },
-        isFoilSelected: @escaping (CardRecord) -> Bool = { _ in false },
-        onSetFoil: @escaping (CardRecord, Bool) -> Void = { _, _ in },
+        selectedFinish: @escaping (CardRecord) -> CardValueFinish = { _ in .normal },
+        onSetFinish: @escaping (CardRecord, CardValueFinish) -> Void = { _, _ in },
         onLoadPrintingThumbnailImage: @escaping (CardRecord) async -> Void = { _ in },
         onLoadPrintingPreviewImage: @escaping (CardRecord) async -> Void = { _ in },
         onLoadAvailablePrintingPreviewImages: @escaping ([CardRecord]) async -> Void = { _ in },
@@ -76,8 +76,8 @@ public struct CardDetailView: View {
         self.valueExchangeRate = valueExchangeRate
         self.presentationStyle = presentationStyle
         self.onSelectPrinting = onSelectPrinting
-        self.isFoilSelected = isFoilSelected
-        self.onSetFoil = onSetFoil
+        self.selectedFinish = selectedFinish
+        self.onSetFinish = onSetFinish
         self.onLoadPrintingThumbnailImage = onLoadPrintingThumbnailImage
         self.onLoadPrintingPreviewImage = onLoadPrintingPreviewImage
         self.onLoadAvailablePrintingPreviewImages = onLoadAvailablePrintingPreviewImages
@@ -266,7 +266,7 @@ public struct CardDetailView: View {
             preferredQuality: .large,
             fallbackImagePath: primaryDetailImagePath(for: card),
             accessibilityHidden: false,
-            isFoil: isFoilSelected(card),
+            foilTreatment: card.foilTreatment(for: selectedFinish(card)),
             onVisualOverflowChange: onVisualOverflowChange
         )
             .shadow(color: palette.shadow.color, radius: 10, x: 0, y: 6)
@@ -317,7 +317,7 @@ public struct CardDetailView: View {
                     CardRefinementButton(groups: refinementGroups)
                 }
                 Spacer(minLength: 12)
-                foilToggle
+                finishControl
             }
 
             if !card.oracleText.isEmpty {
@@ -347,24 +347,37 @@ public struct CardDetailView: View {
         }
     }
 
-    /// Switch that flips the displayed printing between normal and foil. Always present so it
-    /// reads consistently while swiping versions; disabled when the printing offers only one
-    /// finish — a foil-only printing stays locked on, a non-foil-only printing locked off.
-    private var foilToggle: some View {
-        Toggle("Foil", isOn: foilBinding)
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .fixedSize()
-            .disabled(!(card.supportsFoil && card.supportsNonfoil))
-            .accessibilityIdentifier("card-detail-foil-toggle")
+    /// Lets the user choose which finish of the displayed printing they're looking at. A printing
+    /// that offers more than one finish (e.g. MH2 #271 Wonder = Normal / Foil / Etched) shows a
+    /// segmented picker; a single-finish printing shows a static treatment badge instead (so a
+    /// halo-foil or etched-only printing still reads as such without an inert one-option control).
+    @ViewBuilder
+    private var finishControl: some View {
+        if card.availableFinishes.count > 1 {
+            finishPicker
+        } else {
+            FoilTreatmentBadge(treatment: card.foilTreatment(for: card.defaultFinish))
+        }
     }
 
-    private var foilBinding: Binding<Bool> {
+    private var finishPicker: some View {
+        Picker("Finish", selection: finishBinding) {
+            ForEach(card.availableFinishes, id: \.self) { finish in
+                Text(finish.title).tag(finish)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityIdentifier("card-detail-finish-picker")
+    }
+
+    private var finishBinding: Binding<CardValueFinish> {
         Binding {
-            isFoilSelected(card)
+            selectedFinish(card)
         } set: { newValue in
             detailFeedbackTrigger += 1
-            onSetFoil(card, newValue)
+            onSetFinish(card, newValue)
         }
     }
 
@@ -786,7 +799,7 @@ public struct CardDetailView: View {
                     preferredQuality: .large,
                     fallbackImagePath: previewedPrinting.detailImagePath,
                     accessibilityHidden: false,
-                    isFoil: isFoilSelected(previewedPrinting),
+                    foilTreatment: previewedPrinting.foilTreatment(for: selectedFinish(previewedPrinting)),
                     onVisualOverflowChange: updateExpandedPreviewArtworkOverflow
                 )
                 .aspectRatio(0.716, contentMode: .fit)
@@ -905,7 +918,7 @@ public struct CardDetailView: View {
                         preferredQuality: .large,
                         fallbackImagePath: galleryImagePath(for: printing),
                         accessibilityHidden: false,
-                        isFoil: isFoilSelected(printing)
+                        foilTreatment: printing.foilTreatment(for: selectedFinish(printing))
                     )
                     .aspectRatio(Self.cardAspectRatio, contentMode: .fit)
                     .shadow(color: palette.shadow.color, radius: 10, x: 0, y: 6)
@@ -1808,7 +1821,7 @@ public struct CardDetailView: View {
                     preferredQuality: .large,
                     fallbackImagePath: galleryImagePath(for: printing),
                     accessibilityHidden: false,
-                    isFoil: isFoilSelected(printing)
+                    foilTreatment: printing.foilTreatment(for: selectedFinish(printing))
                 )
                     .aspectRatio(Self.cardAspectRatio, contentMode: .fit)
                     .padding(.horizontal, 6)
@@ -1966,12 +1979,11 @@ public struct CardDetailView: View {
     }
 
     private func primaryValueEntry(in guide: CardValueGuide) -> CardValueGuideEntry? {
-        // When the user has the card flipped to foil, prefer the foil pricing.
-        // Otherwise (and as a fallback when no foil pricing exists) use the normal
+        // Prefer the pricing for the finish the user has the card set to (foil, etched, …).
+        // Otherwise (and as a fallback when that finish has no pricing) use the normal
         // finish ordering.
-        if isFoilSelected(card),
-           let foilEntry = guide.entries.first(where: { $0.finish == .foil }) {
-            return foilEntry
+        if let selectedEntry = guide.entries.first(where: { $0.finish == selectedFinish(card) }) {
+            return selectedEntry
         }
         for finish in CardValueFinish.allCases {
             if let entry = guide.entries.first(where: { $0.finish == finish }) {

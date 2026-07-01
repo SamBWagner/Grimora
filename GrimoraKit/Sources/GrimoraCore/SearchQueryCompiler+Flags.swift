@@ -100,6 +100,9 @@ extension Compiler {
             return CompiledClause(sql: "finishes_key LIKE '%|etched|%' OR frame_effects_key LIKE '%|etched|%'")
         case "glossy":
             return compileListContains(column: "finishes_key", value: "glossy")
+        case let token where CardFoilTreatment.promoTypeTokens.contains(token):
+            // Special foil treatments (surgefoil, halofoil, galaxyfoil, …) live in promo_types.
+            return compileListContains(column: "promo_types_key", value: token)
         case "hires":
             return CompiledClause(sql: "is_high_resolution = 1")
         case "universesbeyond", "ub":

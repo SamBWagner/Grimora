@@ -305,6 +305,51 @@ public struct CardRecord: Identifiable, Codable, Equatable, Sendable {
         supportsFoil && !supportsNonfoil
     }
 
+    /// Whether this printing can exist as an etched foil. Scryfall reports etched in the
+    /// `finishes` array on the *same* card object as the normal/foil version (e.g. MH2 #271
+    /// Wonder), but some sets carry it as a frame effect instead — accept either.
+    public var supportsEtched: Bool {
+        finishes.contains("etched") || frameEffects.contains("etched")
+    }
+
+    /// The selectable finishes this printing offers, in display order (Normal → Foil → Etched),
+    /// derived from `finishes` plus the legacy booleans. Drives the detail-view finish picker.
+    public var availableFinishes: [CardValueFinish] {
+        var result: [CardValueFinish] = []
+        if supportsNonfoil { result.append(.normal) }
+        if supportsFoil { result.append(.foil) }
+        if supportsEtched { result.append(.etched) }
+        return result
+    }
+
+    /// The finish a printing should default to when the user hasn't chosen one. A printing that
+    /// offers exactly one finish (foil-only, etched-only, or plain non-foil) is inherently that
+    /// finish; anything else defaults to non-foil. Unknown/empty finish data defaults to normal.
+    public var defaultFinish: CardValueFinish {
+        let available = availableFinishes
+        return available.count == 1 ? available[0] : .normal
+    }
+
+    /// The special promo-type foil treatment intrinsic to this printing (halo, surge, galaxy, …),
+    /// if any. Independent of the selected finish — it's a property of the printing itself.
+    public var specialFoilTreatment: CardFoilTreatment? {
+        CardFoilTreatment.from(promoTypes: promoTypes)
+    }
+
+    /// Resolves the foil treatment to *render* for a chosen finish. Non-foil shows nothing;
+    /// etched shows the etched treatment; foil shows this printing's special treatment if it has
+    /// one (a halo-foil printing is always foil), otherwise plain `.standard` foil.
+    public func foilTreatment(for finish: CardValueFinish) -> CardFoilTreatment {
+        switch finish {
+        case .normal:
+            return .none
+        case .etched:
+            return .etched
+        case .foil:
+            return specialFoilTreatment ?? .standard
+        }
+    }
+
     public var displayImagePath: String? {
         firstPath([
             normalImagePath,

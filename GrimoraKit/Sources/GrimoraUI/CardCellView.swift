@@ -77,8 +77,9 @@ struct CardArtworkView: View {
     var accessibilityHidden = true
     var showsControls = true
     var showsPreviewLoadingIndicator = false
-    /// When true, the self-animating holographic foil shimmer is drawn over the artwork.
-    var isFoil = false
+    /// The foil treatment to draw over the artwork. `.none` draws nothing; any other value draws
+    /// the matching synthetic shimmer (plain foil, etched, or a special promo treatment).
+    var foilTreatment: CardFoilTreatment = .none
     /// Sheen strength for the foil shimmer. Defaults to the full detail-pane look; grids pass
     /// a restrained value so a dense wall of foils doesn't read as noisy.
     var foilIntensity: Double = 1.0
@@ -195,10 +196,11 @@ struct CardArtworkView: View {
 
     @ViewBuilder
     private var foilOverlay: some View {
-        if isFoil {
+        if foilTreatment != .none {
             CardFoilShimmerOverlay(
                 cornerRadius: cornerRadius,
                 seed: card.foilSeed,
+                treatment: foilTreatment,
                 intensity: foilIntensity
             )
             .allowsHitTesting(false)

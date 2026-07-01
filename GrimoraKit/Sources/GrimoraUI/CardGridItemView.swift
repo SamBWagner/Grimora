@@ -57,11 +57,11 @@ struct CardGridItemView: View {
     var dragPayload: String?
     var dragItemCount: Int?
     var isDragEnabled = true
-    /// When true, the tile draws the self-animating grid foil shimmer over the artwork.
-    /// Collection tiles set this from the entry's selected finish (or a foil-only printing);
-    /// search tiles have no user-chosen finish, so they shimmer only when the displayed
-    /// printing is foil-only.
-    var isFoil = false
+    /// The foil treatment the tile draws over the artwork (`.none` draws nothing). Collection
+    /// tiles resolve this from the entry's selected finish (or a foil-only printing); search
+    /// tiles have no user-chosen finish, so they shimmer only when the displayed printing is
+    /// inherently foil.
+    var foilTreatment: CardFoilTreatment = .none
     var onArtworkOverflowChange: (Bool) -> Void = { _ in }
 
     var body: some View {
@@ -159,7 +159,7 @@ struct CardGridItemView: View {
             card: card,
             cornerRadius: Self.tileCornerRadius,
             showsPreviewLoadingIndicator: showsPreviewLoadingIndicator,
-            isFoil: isFoil,
+            foilTreatment: foilTreatment,
             foilIntensity: Self.gridFoilIntensity,
             maximumVisualWidthExpansion: Self.rotatedArtworkGridOverflowAllowance,
             onVisualOverflowChange: updateArtworkOverflow
@@ -172,6 +172,15 @@ struct CardGridItemView: View {
             )
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
+            .overlay(alignment: .bottomLeading) {
+                // Plain foil already reads from the shimmer; name the distinctive treatments
+                // (etched + special promo foils) so a halo/surge/galaxy tile is identifiable.
+                if foilTreatment.isSpecial || foilTreatment == .etched {
+                    FoilTreatmentBadge(treatment: foilTreatment)
+                        .padding(6)
+                        .allowsHitTesting(false)
+                }
+            }
             .cardArtworkContextMenu(
                 card: card,
                 selectedCardIDs: selectedCardIDsForBulkActions,
