@@ -6,14 +6,26 @@ import UIKit
 
 /// The live camera preview with an overlay that draws a "lock" around each
 /// detected fully-in-frame card.
-struct ScryCameraPreviewView: UIViewRepresentable {
+public struct ScryCameraPreviewView: UIViewRepresentable {
   let session: AVCaptureSession
   let detectedCards: [ScryDetectedCard]
   var lockColor: UIColor
   /// Tap-to-focus callback, given a point in the camera's device coordinate space.
   var onFocusTap: ((CGPoint) -> Void)? = nil
 
-  func makeUIView(context: Context) -> ScryPreviewUIView {
+  public init(
+    session: AVCaptureSession,
+    detectedCards: [ScryDetectedCard],
+    lockColor: UIColor = .scryLock,
+    onFocusTap: ((CGPoint) -> Void)? = nil
+  ) {
+    self.session = session
+    self.detectedCards = detectedCards
+    self.lockColor = lockColor
+    self.onFocusTap = onFocusTap
+  }
+
+  public func makeUIView(context: Context) -> ScryPreviewUIView {
     let view = ScryPreviewUIView()
     view.previewLayer.session = session
     view.lockColor = lockColor
@@ -21,7 +33,7 @@ struct ScryCameraPreviewView: UIViewRepresentable {
     return view
   }
 
-  func updateUIView(_ uiView: ScryPreviewUIView, context: Context) {
+  public func updateUIView(_ uiView: ScryPreviewUIView, context: Context) {
     uiView.lockColor = lockColor
     uiView.onFocusTap = onFocusTap
     uiView.update(cards: detectedCards)
@@ -30,8 +42,8 @@ struct ScryCameraPreviewView: UIViewRepresentable {
 
 /// A view backed by `AVCaptureVideoPreviewLayer`, with a shape layer that draws
 /// the detected card quads (Vision normalized corners → preview-layer points).
-final class ScryPreviewUIView: UIView {
-  override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
+public final class ScryPreviewUIView: UIView {
+  public override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
 
   var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
 
@@ -42,7 +54,7 @@ final class ScryPreviewUIView: UIView {
   private let overlayLayer = CAShapeLayer()
   private var cards: [ScryDetectedCard] = []
 
-  override init(frame: CGRect) {
+  public override init(frame: CGRect) {
     super.init(frame: frame)
     previewLayer.videoGravity = .resizeAspectFill
     overlayLayer.fillColor = UIColor.clear.cgColor
@@ -94,14 +106,14 @@ final class ScryPreviewUIView: UIView {
   }
 
   @available(*, unavailable)
-  required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
+  public required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
   func update(cards: [ScryDetectedCard]) {
     self.cards = cards
     redraw()
   }
 
-  override func layoutSublayers(of layer: CALayer) {
+  public override func layoutSublayers(of layer: CALayer) {
     super.layoutSublayers(of: layer)
     overlayLayer.frame = bounds
     redraw()
@@ -139,6 +151,6 @@ final class ScryPreviewUIView: UIView {
 extension UIColor {
   /// Pale grimoire purple — the app's dark-mode accent (GrimoraPalette), used for
   /// the Scry lock overlay over the camera feed.
-  static let scryLock = UIColor(red: 0.735, green: 0.610, blue: 0.820, alpha: 1.0)
+  public static let scryLock = UIColor(red: 0.735, green: 0.610, blue: 0.820, alpha: 1.0)
 }
 #endif

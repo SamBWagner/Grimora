@@ -12,6 +12,13 @@ public struct ScrySignals: Equatable, Sendable {
   public var setCode: String?
   /// Collector number as printed (e.g. `"123"`, `"123a"`), leading zeros stripped, if read.
   public var collectorNumber: String?
+  /// The set-size denominator of an old-frame `6/249` collector line, if read.
+  /// Identifies the set on pre-2015 frames, which print no set code.
+  public var setTotal: Int?
+  /// The later year of the copyright line (`© 1993–2009 Wizards…` → 2009), if read.
+  /// Approximates the printing's release year — a strong printing-ranking signal
+  /// on old frames.
+  public var copyrightYear: Int?
   /// Colors inferred from the frame / mana pips (WUBRG letters). Corroboration only.
   public var colors: [String]
   /// Every text line Vision recognized, retained for diagnostics and the AI fallback.
@@ -21,12 +28,16 @@ public struct ScrySignals: Equatable, Sendable {
     name: String? = nil,
     setCode: String? = nil,
     collectorNumber: String? = nil,
+    setTotal: Int? = nil,
+    copyrightYear: Int? = nil,
     colors: [String] = [],
     rawTextLines: [String] = []
   ) {
     self.name = name
     self.setCode = setCode
     self.collectorNumber = collectorNumber
+    self.setTotal = setTotal
+    self.copyrightYear = copyrightYear
     self.colors = colors
     self.rawTextLines = rawTextLines
   }
@@ -39,7 +50,10 @@ public struct ScrySignals: Equatable, Sendable {
 
   /// True when there is nothing worth resolving.
   public var isEmpty: Bool {
-    (name?.isEmpty ?? true) && !hasExactKey && colors.isEmpty
+    (name?.isEmpty ?? true)
+      && !hasExactKey
+      && (collectorNumber?.isEmpty ?? true)
+      && colors.isEmpty
   }
 }
 
@@ -59,7 +73,11 @@ public enum ScryMatchMethod: String, Equatable, Sendable {
   case exactKey
   /// Name + collector number pinned a single printing (set code missing/mis-read).
   case nameAndNumber
-  /// Name and art embedding agreed (Phase 3).
+  /// Collector number + printed set total, with no readable name (a clipped or
+  /// glared title). Never auto-accepts — surfaces a year-ranked printing picker.
+  case numberAndTotal
+  /// Set-symbol visual match against candidate printings' reference images
+  /// (`ScrySymbolMatcher`) settled a printing picker.
   case nameAndVisual
   /// Resolved by name to a single printing.
   case nameOnly

@@ -24,14 +24,23 @@ public struct ScryCardResolver: Sendable {
   /// Maximum number of candidates returned for disambiguation.
   public var candidateLimit: Int
 
+  /// Minimum name similarity a first-letter-repaired search batch must reach to
+  /// be used at all. Without a floor, OCR garbage ("gold foil glare" lines) can
+  /// conjure a plausible-looking batch of a completely unrelated card and put a
+  /// wrong picker in front of the user — observed on device as a foil legend
+  /// offering printings of an unrelated common.
+  public var repairedNameSimilarityFloor: Double
+
   public init(
     database: CardDatabase,
     autoAcceptNameSimilarity: Double = 0.82,
-    candidateLimit: Int = 6
+    candidateLimit: Int = 6,
+    repairedNameSimilarityFloor: Double = 0.72
   ) {
     self.database = database
     self.autoAcceptNameSimilarity = autoAcceptNameSimilarity
     self.candidateLimit = candidateLimit
+    self.repairedNameSimilarityFloor = repairedNameSimilarityFloor
   }
 
   public func resolve(_ signals: ScrySignals) throws -> ScryResolution {
@@ -54,7 +63,7 @@ public struct ScryCardResolver: Sendable {
         )
       }
 
-      if ScryStringSimilarity.nameSimilarity(keyed.name, name) >= autoAcceptNameSimilarity {
+      if ScryStringSimilarity.multifaceNameSimilarity(keyed.name, name) >= autoAcceptNameSimilarity {
         return ScryResolution(
           card: keyed,
           candidates: [keyed],
@@ -72,7 +81,7 @@ public struct ScryCardResolver: Sendable {
       //    likely mis-read — that's a real conflict, so disambiguate.
       let nameMatches = try nameCandidates(for: name)
       let conflicting = nameMatches.filter {
-        $0.id != keyed.id && ScryStringSimilarity.nameSimilarity($0.name, name) >= autoAcceptNameSimilarity
+        $0.id != keyed.id && ScryStringSimilarity.multifaceNameSimilarity($0.name, name) >= autoAcceptNameSimilarity
       }
       if conflicting.isEmpty {
         return ScryResolution(
@@ -99,7 +108,30 @@ public struct ScryCardResolver: Sendable {
     // would have lost.
     if let name = signals.name, !name.isEmpty,
        let number = signals.collectorNumber, !number.isEmpty {
-      let matches = try nameCandidates(for: name).filter { $0.collectorNumber == number }
+      // Filter by number IN the query, not after: a basic land has 800+
+      // printings and the right one won't sit inside a post-hoc search window.
+      // Then corroborate the name — this tier's whole premise is a reliably-read
+      // title, and the prefix search happily matches a garbage fragment: a real
+      // scene read "AL" + collector 7 and auto-accepted Alibou, Ancient Witness
+      // [c21 7], the only #7 among "AL…" names. An uncorroborated name never
+      // auto-accepts and never fills a picker here; the scan falls through to
+      // the tiers that treat the name honestly.
+      func corroborated(_ cards: [CardRecord]) -> [CardRecord] {
+        cards.filter {
+          $0.collectorNumber == number
+            && ScryStringSimilarity.multifaceNameSimilarity($0.name, name) >= autoAcceptNameSimilarity
+        }
+      }
+      var matches = corroborated(try nameCandidates(for: name, collectorNumber: number))
+      if matches.isEmpty {
+        // The word-prefix name search can't survive mid-word OCR damage
+        // ("Beamfown Beafstick" never prefix-matches "Beamtown Beatstick"), and
+        // first-letter repair only fixes the first letter. Search the collector
+        // number instead and let similarity do the matching: number + a
+        // strongly-corroborating name is the same key this tier already trusts,
+        // just found from the other end.
+        matches = corroborated(try numberCandidates(for: number))
+      }
       if matches.count == 1 {
         return ScryResolution(
           card: matches[0],
@@ -121,9 +153,26 @@ public struct ScryCardResolver: Sendable {
             signals: signals
           )
         }
+        // Old frames print no set code but do print the set total ("8/249"), and
+        // that total names the set as surely as a set code does — it was read from
+        // the same token as the collector number, so if one is trustworthy both
+        // are. A unique set-size match is an exact printing key (this is what
+        // separates M13's "8/249" from Game Night's #8 of the same card).
+        if let total = signals.setTotal {
+          let sized = try matches.filter { try database.setSize(setCode: $0.setCode) == total }
+          if sized.count == 1 {
+            return ScryResolution(
+              card: sized[0],
+              candidates: matches,
+              confidence: .auto,
+              method: .nameAndNumber,
+              signals: signals
+            )
+          }
+        }
         return ScryResolution(
           card: nil,
-          candidates: matches,
+          candidates: rankedForDisambiguation(matches, setCode: signals.setCode, copyrightYear: signals.copyrightYear),
           confidence: .ambiguous,
           method: .nameAndNumber,
           signals: signals
@@ -131,11 +180,40 @@ public struct ScryCardResolver: Sendable {
       }
     }
 
+    // Tier A″ — collector number + set total, no readable name (a clipped or
+    // glared title). "114/249" alone names a set-size family: every set of 249
+    // cards has exactly one #114. Without a name to corroborate, this NEVER
+    // auto-accepts — a single digit misread would silently pick a sibling — but
+    // the year-ranked picker it produces almost always has the right card on top.
+    if signals.name?.isEmpty ?? true,
+       let number = signals.collectorNumber, !number.isEmpty,
+       let total = signals.setTotal {
+      let response = try database.search(
+        CardSearchRequest(
+          text: "cn:" + number.filter { $0.isLetter || $0.isNumber },
+          printingDisplayMode: .all,
+          limit: max(candidateLimit * 10, 80)
+        )
+      )
+      if case .results(let cards, _) = response {
+        let sized = try cards.filter { try database.setSize(setCode: $0.setCode) == total }
+        if !sized.isEmpty {
+          return ScryResolution(
+            card: nil,
+            candidates: rankedForDisambiguation(sized, setCode: signals.setCode, copyrightYear: signals.copyrightYear),
+            confidence: .ambiguous,
+            method: .numberAndTotal,
+            signals: signals
+          )
+        }
+      }
+    }
+
     // Tier B — name (printing-level).
     if let name = signals.name, !name.isEmpty {
       let candidates = try nameCandidates(for: name)
       let strong = candidates.filter {
-        ScryStringSimilarity.nameSimilarity($0.name, name) >= autoAcceptNameSimilarity
+        ScryStringSimilarity.multifaceNameSimilarity($0.name, name) >= autoAcceptNameSimilarity
       }
       // Only auto-accept when the name pins down exactly one printing; multiple
       // printings of the same card can't be separated by name alone.
@@ -153,7 +231,7 @@ public struct ScryCardResolver: Sendable {
         // disambiguation UI is a printing picker (the user matches art/set).
         return ScryResolution(
           card: nil,
-          candidates: candidates,
+          candidates: rankedForDisambiguation(candidates, setCode: signals.setCode, copyrightYear: signals.copyrightYear),
           confidence: .ambiguous,
           method: .nameOnly,
           signals: signals
@@ -164,19 +242,130 @@ public struct ScryCardResolver: Sendable {
     return .none(signals: signals)
   }
 
+  /// Orders picker candidates by the printed signals that can't settle the match
+  /// outright: candidates from the OCR'd **set code**'s set come first (the set
+  /// code is printed on the card, so an exact read is the strongest picker
+  /// signal there is — a real Sram scan read `cmr` cleanly and still buried the
+  /// CMR printings mid-list); behind those, printings whose release year matches
+  /// the OCR'd copyright year; then printings released **by** that year (± a
+  /// year of printing lag) beat later reprints — the vintage rule: a card whose
+  /// copyright line ends in 1995 cannot be a 2021 reprint. Original order is
+  /// preserved within each band.
+  ///
+  /// Neither signal is ever an auto-accept key on its own: OCR misreads year
+  /// digits under blur (a real "2009" once read as "2000") and set codes
+  /// routinely ("otj" → "ots", "cmm" → "imm"), and a misread that happens to
+  /// name a sibling printing would auto-accept the wrong card. Ranking first
+  /// costs nothing when the read is right and is harmless when it's wrong.
+  func rankedForDisambiguation(
+    _ cards: [CardRecord],
+    setCode: String? = nil,
+    copyrightYear: Int?
+  ) -> [CardRecord] {
+    let setCode = setCode?.lowercased()
+    guard setCode != nil || copyrightYear != nil else { return cards }
+    let yearPrefix = copyrightYear.map(String.init)
+
+    func releasedYear(_ card: CardRecord) -> Int? {
+      card.releasedAt.flatMap { Int($0.prefix(4)) }
+    }
+
+    return cards.enumerated().sorted { lhs, rhs in
+      if let setCode {
+        let lhsSet = lhs.element.setCode.lowercased() == setCode
+        let rhsSet = rhs.element.setCode.lowercased() == setCode
+        if lhsSet != rhsSet { return lhsSet }
+      }
+      if let yearPrefix, let copyrightYear {
+        let lhsMatches = lhs.element.releasedAt?.hasPrefix(yearPrefix) ?? false
+        let rhsMatches = rhs.element.releasedAt?.hasPrefix(yearPrefix) ?? false
+        if lhsMatches != rhsMatches { return lhsMatches }
+        let lhsInEra = releasedYear(lhs.element).map { $0 <= copyrightYear + 1 } ?? false
+        let rhsInEra = releasedYear(rhs.element).map { $0 <= copyrightYear + 1 } ?? false
+        if lhsInEra != rhsInEra { return lhsInEra }
+      }
+      return lhs.offset < rhs.offset
+    }.map(\.element)
+  }
+
   /// Database printings whose name matches the OCR'd name, ranked by similarity.
-  func nameCandidates(for rawName: String) throws -> [CardRecord] {
+  ///
+  /// The word-prefix search can't survive a damaged *first* letter — stylized
+  /// retro and showcase capitals OCR wrong ("Ajani's Pridemate" → "Hjani's
+  /// Dridemate"), and no prefix of a damaged word matches the true word. So when
+  /// the raw query comes back empty, retry the longest word with every possible
+  /// first letter ("?ridemate" → "Pridemate"): at most 25 cheap indexed
+  /// searches, only on the already-failed path. Precision is unaffected: every
+  /// caller still gates on name similarity against the OCR'd text before
+  /// trusting a candidate.
+  ///
+  /// `collectorNumber`, when known, is compiled into the query so the right
+  /// printing of a many-printing name (a basic land) can't fall outside the
+  /// search window.
+  /// Every printing with this collector number, for the fuzzy fallback when the
+  /// word-prefix name search can't survive mid-word OCR damage. Wide limit: a
+  /// low number appears once in nearly every set, and the caller's similarity
+  /// filter is what narrows it.
+  func numberCandidates(for number: String) throws -> [CardRecord] {
+    let sanitized = number.filter { $0.isLetter || $0.isNumber }
+    guard !sanitized.isEmpty else { return [] }
+    let response = try database.search(
+      CardSearchRequest(text: "cn:" + sanitized, printingDisplayMode: .all, limit: 800)
+    )
+    guard case .results(let cards, _) = response else { return [] }
+    return cards
+  }
+
+  func nameCandidates(for rawName: String, collectorNumber: String? = nil) throws -> [CardRecord] {
     let query = Self.sanitizeNameQuery(rawName)
     guard !query.isEmpty else { return [] }
 
+    let numberFilter = collectorNumber.map { number in
+      " cn:" + number.filter { $0.isLetter || $0.isNumber }
+    } ?? ""
+
+    if let cards = try searchCandidates(query: query + numberFilter, rawName: rawName), !cards.isEmpty {
+      return cards
+    }
+
+    guard let longest = query.split(separator: " ").max(by: { $0.count < $1.count }),
+          longest.count >= 5 else { return [] }
+    let stem = String(longest.dropFirst())
+    var bestBatch: [CardRecord] = []
+    var bestScore = 0.0
+    // The longest word as-is first (maybe a *shorter* word was the damaged one),
+    // then every alternate first letter.
+    let attempts = [String(longest)] + "abcdefghijklmnopqrstuvwxyz".compactMap { letter in
+      String(letter) == String(longest.first!).lowercased() ? nil : String(letter) + stem
+    }
+    for repaired in attempts {
+      guard let cards = try searchCandidates(query: repaired + numberFilter, rawName: rawName),
+            let top = cards.first else { continue }
+      // `searchCandidates` sorts by similarity, so the first card scores the batch.
+      let score = ScryStringSimilarity.multifaceNameSimilarity(top.name, rawName)
+      if score > bestScore {
+        bestScore = score
+        bestBatch = cards
+      }
+      if score >= autoAcceptNameSimilarity {
+        break  // unambiguously the intended name — no need to try further letters
+      }
+    }
+    // A repaired batch that doesn't strongly resemble what was read is noise,
+    // not a repair — better no candidates than a confidently-wrong picker.
+    guard bestScore >= repairedNameSimilarityFloor else { return [] }
+    return bestBatch
+  }
+
+  private func searchCandidates(query: String, rawName: String) throws -> [CardRecord]? {
     let response = try database.search(
       CardSearchRequest(text: query, printingDisplayMode: .all, limit: max(candidateLimit * 10, 80))
     )
-    guard case .results(let cards, _) = response else { return [] }
+    guard case .results(let cards, _) = response else { return nil }
 
     return cards.sorted { lhs, rhs in
-      let lhsScore = ScryStringSimilarity.nameSimilarity(lhs.name, rawName)
-      let rhsScore = ScryStringSimilarity.nameSimilarity(rhs.name, rawName)
+      let lhsScore = ScryStringSimilarity.multifaceNameSimilarity(lhs.name, rawName)
+      let rhsScore = ScryStringSimilarity.multifaceNameSimilarity(rhs.name, rawName)
       if lhsScore != rhsScore { return lhsScore > rhsScore }
       if lhs.name != rhs.name { return lhs.name < rhs.name }
       return lhs.id < rhs.id

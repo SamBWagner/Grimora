@@ -24,16 +24,37 @@ public enum ScryNameHeuristics {
 
   /// True when the line is a type line or bare type word rather than a card name.
   public static func looksLikeTypeLine(_ text: String) -> Bool {
-    let normalized = text.normalizedQueryKey.trimmingCharacters(in: .whitespaces)
+    // Strip stray punctuation so "creature." (rules-text fragment with OCR
+    // noise) is judged by its words, not its period.
+    let normalized = text.normalizedQueryKey
+      .trimmingCharacters(in: .whitespaces)
+      .trimmingCharacters(in: .punctuationCharacters)
     guard !normalized.isEmpty else { return false }
 
     if typeWords.contains(normalized) {
       return true  // a bare "Land" / "Artifact"
     }
 
+    let firstWord = normalized.split(separator: " ").first.map(String.init) ?? normalized
+
+    // An aura's "Enchant creature" / "Enchant land" ability line sits directly
+    // under the type line and reads like a name when the title is lost (a real
+    // clipped-crop failure). No Magic card's name starts with the word
+    // "enchant", so the first word alone is decisive.
+    if firstWord == "enchant" {
+      return true
+    }
+
+    // Same trap on equipment: a crop that clipped the title reads the keyword
+    // cost line "Equip 2 (2: Attach to target creature…)" as the name (a real
+    // Beamtown Beatstick capture). No card name's first word is bare "equip"
+    // ("Equipoise" is one word, so it survives this check).
+    if firstWord == "equip" {
+      return true
+    }
+
     // A type line like "Land — Desert" or "Creature — Goblin Sorcerer".
     if text.contains("—") || text.contains("–") || text.contains(" - ") {
-      let firstWord = normalized.split(separator: " ").first.map(String.init) ?? normalized
       if typeWords.contains(firstWord) { return true }
     }
 

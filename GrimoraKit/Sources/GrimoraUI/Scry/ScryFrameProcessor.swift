@@ -16,6 +16,11 @@ final class ScryFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferDe
   private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
   private let lock = NSLock()
   private var latestPixelBuffer: CVPixelBuffer?
+  /// The buffer the most recent live detection ran on, with its results — kept
+  /// as a pair so `latestFrame()` can hand out quads that are geometrically
+  /// consistent with the image (at most one detection interval stale).
+  private var latestDetectedBuffer: CVPixelBuffer?
+  private var latestDetectedCards: [ScryDetectedCard] = []
   private var lastDetection = Date.distantPast
 
   /// Minimum gap between live-detection passes (the preview doesn't need 30fps).
@@ -53,16 +58,23 @@ final class ScryFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferDe
       orientation: orientation,
       includeDocumentSegmentation: false
     )) ?? []
+    lock.lock()
+    latestDetectedBuffer = pixelBuffer
+    latestDetectedCards = cards
+    lock.unlock()
     onCards?(cards)
   }
 
-  /// A still from the most recent frame, for the actual scan.
-  func latestFrame() -> (image: CGImage, orientation: CGImagePropertyOrientation)? {
+  /// The most recent frame, preferring the one whose live detections are known
+  /// so callers can reuse the quads without re-detecting. `cards` is empty when
+  /// only an undetected (newer) frame is available.
+  func latestFrame() -> (image: CGImage, orientation: CGImagePropertyOrientation, cards: [ScryDetectedCard])? {
     lock.lock()
-    let buffer = latestPixelBuffer
+    let buffer = latestDetectedBuffer ?? latestPixelBuffer
+    let cards = latestDetectedBuffer != nil ? latestDetectedCards : []
     lock.unlock()
     guard let buffer, let image = cgImage(from: buffer) else { return nil }
-    return (image, orientation)
+    return (image, orientation, cards)
   }
 
   private func cgImage(from pixelBuffer: CVPixelBuffer) -> CGImage? {

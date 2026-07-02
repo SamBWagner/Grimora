@@ -4,7 +4,11 @@ import SwiftUI
 import UIKit
 
 /// The Scry tab. Two modes, both funnelling into the **Scanned** collection:
-/// - **Single:** tap to scan → a confirmation card with "Add to Scanned".
+/// - **Single:** passive — the pipeline continuously identifies the card in
+///   view and offers it as a tappable chip (`ScrySingleFlow` owns the rules);
+///   tapping the chip opens the review sheet. Tapping anywhere on the preview
+///   focuses the camera there and forces a scan, with explicit success/failure
+///   feedback. There is no shutter button.
 /// - **Bulk:** mount the phone over a fixed spot; confident cards fire straight
 ///   into Scanned, uncertain ones pause for a Correct/Incorrect call. A card is
 ///   only scanned once per placement — you must *move* it (swap/remove) before the
@@ -18,8 +22,10 @@ struct ScryTabView: View {
   @State private var controller = ScryCameraController()
   @State private var mode: Mode = .single
 
-  // Single-mode.
-  @State private var phase: Phase = .idle
+  // Single-mode passive flow (reducer-driven).
+  @State private var flow: ScrySingleFlow.Phase = .idle
+  @State private var singleCommittedCentroid: CGPoint?
+  @State private var showNoCardFlash = false
   @State private var picker: PickerItem?
 
   // Shared review sheet (single "Add to Scanned" + bulk Correct/Incorrect).
@@ -37,7 +43,6 @@ struct ScryTabView: View {
   @State private var rejectedIDs: Set<CardRecord.ID> = []
 
   private enum Mode: String { case single, bulk }
-  private enum Phase: Equatable { case idle, scanning, noCard }
 
   private struct Review: Identifiable {
     let id = UUID()
@@ -65,23 +70,51 @@ struct ScryTabView: View {
     // looking at a card, not the viewfinder, so there's no reason to keep the
     // capture session and Vision running under load.
     .onChange(of: model.selectedCard?.id) { _, _ in syncCamera() }
-    .onChange(of: mode) { _, m in applyFocus(for: m); resetBulk() }
-    // Drive bulk stability off the per-cycle generation, not previewGuess —
+    .onChange(of: mode) { _, m in applyFocus(for: m); resetBulk(); resetSingle() }
+    // Drive stability off the per-cycle generation, not previewGuess —
     // a stably-recognized card produces an unchanged guess, so onChange(of:
     // previewGuess) would never fire the follow-up cycles and never commit.
-    .onChange(of: controller.previewGeneration) { _, _ in considerForBulk(controller.previewGuess) }
-    .onChange(of: controller.detectedCards) { _, cards in trackMovement(cards) }
-    .sheet(item: $picker) { item in
+    .onChange(of: controller.previewGeneration) { _, _ in
+      switch mode {
+      case .single: applySingle(previewTickEvent())
+      case .bulk: considerForBulk(controller.previewGuess)
+      }
+    }
+    .onChange(of: controller.detectedCards) { _, cards in
+      switch mode {
+      case .single: trackSingleMovement(cards)
+      case .bulk: trackMovement(cards)
+      }
+    }
+    .sheet(
+      item: $picker,
+      onDismiss: {
+        // A pick opens the review sheet; a dismissal without one is a cancel.
+        if mode == .single, review == nil {
+          applySingle(.pickerCancelled)
+        }
+      }
+    ) { item in
       ScryDisambiguationSheet(candidates: item.candidates) { card in
         picker = nil
         review = Review(kind: .single, card: card)
       }
     }
-    .sheet(item: $review) { item in
+    .sheet(
+      item: $review,
+      onDismiss: {
+        // Swipe-dismiss without a decision counts as "not added". Decisions the
+        // buttons already reported moved the flow past `.offer`, where this
+        // event is a no-op — so sending it unconditionally is safe.
+        if mode == .single {
+          applySingle(.reviewClosed(added: false))
+        }
+      }
+    ) { item in
       ScryReviewSheet(
         card: item.card,
         kind: item.kind,
-        onAddToScanned: { addToScanned(item.card); review = nil },
+        onAddToScanned: { acceptSingle(item.card) },
         onFullDetails: { review = nil; model.selectCard(item.card) },
         onCorrect: { commit(item.card); review = nil },
         onIncorrect: { rejectAndResume(item.card) },
@@ -101,6 +134,11 @@ struct ScryTabView: View {
       lockColor: .scryLock,
       onFocusTap: { devicePoint in
         controller.focus(atDevicePoint: devicePoint, lock: mode == .bulk)
+        // In single mode a tap is also the manual scan gesture: focus where the
+        // user pointed, then read whatever is there — with loud feedback.
+        if mode == .single {
+          applySingle(.userTappedScreen)
+        }
       }
     )
     .ignoresSafeArea()
@@ -130,7 +168,7 @@ struct ScryTabView: View {
           .foregroundStyle(guess.confident ? .green : .secondary)
         Text(guess.confident ? guess.name : "\(guess.name)?").fontWeight(.semibold)
       } else {
-        Text(controller.detectedCards.isEmpty ? "Point at a card" : "Card locked — tap to scan")
+        Text(controller.detectedCards.isEmpty ? "Point at a card — tap to focus & scan" : "Reading card…")
       }
     }
     .font(.subheadline.weight(.medium))
@@ -160,23 +198,36 @@ struct ScryTabView: View {
   @ViewBuilder
   private var bottomControls: some View {
     switch mode {
-    case .single: scanButton.padding(.bottom, 28)
+    case .single: singleStatus.padding(.bottom, 28)
     case .bulk: bulkStatus.padding(.bottom, 28)
     }
   }
 
-  private var scanButton: some View {
-    Button { scanSingle() } label: {
-      ZStack {
-        Circle().fill(.white).frame(width: 74, height: 74)
-        Circle().stroke(.white, lineWidth: 4).frame(width: 86, height: 86)
-        if phase == .scanning { ProgressView().tint(.black) }
-        else { Image(systemName: "eye.fill").font(.title2).foregroundStyle(.black) }
+  /// The passive single-mode bottom area: nothing while idle (the top hint
+  /// teaches the gesture), a subtle progress pill while a scan verifies, and
+  /// the confirm chip once a card is on offer.
+  @ViewBuilder
+  private var singleStatus: some View {
+    switch flow {
+    case .verifying:
+      HStack(spacing: 8) {
+        ProgressView().controlSize(.small)
+        Text("Reading…").font(.subheadline.weight(.medium))
       }
+      .padding(.horizontal, 16).padding(.vertical, 10)
+      .background(.ultraThinMaterial, in: Capsule())
+      .transition(.opacity)
+    case .offer(let offer):
+      ScryConfirmChip(
+        offer: offer,
+        onTap: { applySingle(.offerTapped) },
+        onSwipeAccept: { applySingle(.offerSwipedToAccept) },
+        onSwipeRetry: { applySingle(.offerSwipedToRetry) }
+      )
+      .transition(.move(edge: .bottom).combined(with: .opacity))
+    case .idle, .tracking, .cooldown:
+      EmptyView()
     }
-    .disabled(phase == .scanning)
-    .accessibilityIdentifier("scry-scan-button")
-    .accessibilityLabel("Scan card")
   }
 
   private var bulkStatus: some View {
@@ -198,7 +249,7 @@ struct ScryTabView: View {
 
   @ViewBuilder
   private var transientMessage: some View {
-    if phase == .noCard {
+    if showNoCardFlash {
       Text("No card locked — line one up and try again")
         .font(.subheadline)
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -206,35 +257,103 @@ struct ScryTabView: View {
     }
   }
 
-  // MARK: - Single mode
+  // MARK: - Single mode (passive flow)
 
-  private func scanSingle() {
-    guard phase != .scanning else { return }
-    phase = .scanning
-    Task {
-      let result = await controller.scan()
-      phase = .idle
-      guard let result else { flashNoCard(); return }
-      switch result.resolution.confidence {
-      case .auto:
-        if let card = result.resolution.card {
-          review = Review(kind: .single, card: card)
-        }
-      case .ambiguous:
-        picker = PickerItem(candidates: result.resolution.candidates)
-      case .none:
-        flashNoCard()
-      }
+  /// Feeds an event through `ScrySingleFlow` and executes the returned effect —
+  /// the reducer owns every interaction rule; this just wires the world to it.
+  private func applySingle(_ event: ScrySingleFlow.Event) {
+    guard mode == .single else { return }
+    let (next, effect) = ScrySingleFlow.reduce(flow, event)
+    // A light ding as the confident chip pops — only on the transition out of
+    // verifying (never re-dinged while the chip holds), and only for passive
+    // finds: manual scans open the review sheet, and accepting a card has its
+    // own, stronger sound.
+    if case .verifying = flow,
+       case .offer(let offer) = next,
+       case .confident = offer.kind,
+       !offer.manual {
+      ScrySound.identified()
     }
+    withAnimation(.easeInOut(duration: 0.2)) {
+      flow = next
+    }
+    switch effect {
+    case .none:
+      break
+    case .startScan(let manual):
+      Task {
+        // Only the deliberate tap uses the (audible, focus-sensitive) still
+        // capture; passive scans read the quiet video frame the preview uses.
+        if let result = await controller.scan(usingStillCapture: manual) {
+          applySingle(.scanFinished(result.resolution))
+        } else {
+          applySingle(.scanFailed)
+        }
+      }
+    case .presentReview(let card):
+      review = Review(kind: .single, card: card)
+    case .presentPicker(let candidates):
+      picker = PickerItem(candidates: candidates)
+    case .commitToScanned(let card):
+      // Swipe-accept: same commit as the review sheet's button, minus the sheet.
+      addToScanned(card)
+      singleCommittedCentroid = subjectCentroid(controller.detectedCards)
+    case .flashFailure:
+      flashNoCard()
+    }
+  }
+
+  /// The current preview cycle as a reducer event: the guess's identity key
+  /// (card id when confident, name otherwise), or `nil` when nothing reads.
+  private func previewTickEvent() -> ScrySingleFlow.Event {
+    guard let guess = controller.previewGuess else {
+      return .previewTick(key: nil, confident: false)
+    }
+    return .previewTick(key: guess.card?.id ?? guess.name, confident: guess.confident)
+  }
+
+  /// "Add to Scanned" from the review sheet: persist, remember where the card
+  /// sat (cooldown re-arms on movement from here), and advance the flow.
+  private func acceptSingle(_ card: CardRecord) {
+    addToScanned(card)
+    singleCommittedCentroid = subjectCentroid(controller.detectedCards)
+    review = nil
+    applySingle(.reviewClosed(added: true))
+  }
+
+  /// Cooldown watchdog: the accepted card moving (or leaving) re-arms passive
+  /// tracking, exactly like bulk placement.
+  private func trackSingleMovement(_ cards: [ScryDetectedCard]) {
+    guard case .cooldown = flow else { return }
+    switch ScryBulkPlacement.movement(
+      detectedCentroid: subjectCentroid(cards),
+      committedCentroid: singleCommittedCentroid,
+      hasCommittedCard: true,
+      threshold: movementThreshold
+    ) {
+    case .adoptBaseline(let centroid):
+      singleCommittedCentroid = centroid
+    case .rearm:
+      singleCommittedCentroid = nil
+      applySingle(.subjectMoved)
+    case .hold:
+      break
+    }
+  }
+
+  private func resetSingle() {
+    flow = .idle
+    singleCommittedCentroid = nil
+    showNoCardFlash = false
   }
 
   private func flashNoCard() {
     ScrySound.failed()
     UINotificationFeedbackGenerator().notificationOccurred(.warning)
-    phase = .noCard
+    showNoCardFlash = true
     Task {
       try? await Task.sleep(for: .seconds(1.6))
-      if phase == .noCard { phase = .idle }
+      showNoCardFlash = false
     }
   }
 
@@ -370,7 +489,7 @@ struct ScryTabView: View {
 
   private func startCamera() {
     Task {
-      await controller.start(database: model.database)
+      await controller.start(database: model.database, imageCache: model.imageCache)
       applyFocus(for: mode)
     }
   }

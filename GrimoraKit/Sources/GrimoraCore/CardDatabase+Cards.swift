@@ -814,6 +814,30 @@ extension CardDatabase {
     }
   }
 
+  /// The largest numeric collector number in a set — the `249` of an old frame's
+  /// printed `6/249`. Pre-2015 cards identify their set only by this total (plus
+  /// the set symbol), so Scry uses it to pick between same-name printings.
+  public func setSize(setCode: String) throws -> Int? {
+    let normalizedSetCode = setCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !normalizedSetCode.isEmpty else {
+      return nil
+    }
+
+    return try withDatabaseLock {
+      let statement = try database.prepare(
+        """
+        SELECT MAX(collector_number_number)
+        FROM cards
+        WHERE set_code = ? COLLATE NOCASE
+        """)
+      try statement.bind(normalizedSetCode, at: 1)
+      guard try statement.step() else {
+        return nil
+      }
+      return statement.int(at: 0)
+    }
+  }
+
   public func card(setCode: String, collectorNumber: String) throws -> CardRecord? {
     let normalizedSetCode = setCode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     let normalizedCollectorNumber = collectorNumber.trimmingCharacters(in: .whitespacesAndNewlines)

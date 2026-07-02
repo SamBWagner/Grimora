@@ -8,9 +8,18 @@ import Foundation
 /// L 0256
 /// OTJ • EN  Piotr Dura
 /// ```
-/// (older cards instead print `256/280` with a set total). Together
+/// Older (pre-2015) frames print no set code at all; the collector info is a
+/// `6/249` fragment at the end of the copyright line:
+/// ```
+/// ™ & © 1993–2009 Wizards of the Coast LLC 6/249
+/// ```
+/// From that line this parser also extracts the **set total** (249 — old frames
+/// identify their set only by size + symbol) and the **copyright year** (2009 —
+/// approximately the printing's release year). Together
 /// (set code + collector number) form Magic's unique printing key, which
-/// `CardDatabase.card(setCode:collectorNumber:)` resolves exactly.
+/// `CardDatabase.card(setCode:collectorNumber:)` resolves exactly; the total and
+/// year let `ScryCardResolver` recover a printing when the set code was never
+/// printed.
 ///
 /// The parser is deliberately **precision-first**: it would rather return `nil`
 /// than guess. Real-card OCR is littered with look-alikes — small-caps artist
@@ -33,17 +42,29 @@ public enum ScryCollectorLineParser {
   public struct Parsed: Equatable, Sendable {
     public var setCode: String?
     public var collectorNumber: String?
+    public var setTotal: Int?
+    public var copyrightYear: Int?
 
-    public init(setCode: String? = nil, collectorNumber: String? = nil) {
+    public init(
+      setCode: String? = nil,
+      collectorNumber: String? = nil,
+      setTotal: Int? = nil,
+      copyrightYear: Int? = nil
+    ) {
       self.setCode = setCode
       self.collectorNumber = collectorNumber
+      self.setTotal = setTotal
+      self.copyrightYear = copyrightYear
     }
   }
 
   public static func parse(lines: [String]) -> Parsed {
-    Parsed(
+    let slash = slashCollector(in: lines)
+    return Parsed(
       setCode: setCode(in: lines),
-      collectorNumber: collectorNumber(in: lines)
+      collectorNumber: slash?.number ?? collectorNumber(in: lines),
+      setTotal: slash?.total,
+      copyrightYear: copyrightYear(in: lines)
     )
   }
 
@@ -53,23 +74,25 @@ public enum ScryCollectorLineParser {
     // 1. The "number/total" form — but only when the denominator looks like a set
     //    size (≥ 20 and ≥ the number), so a creature's power/toughness ("2/2",
     //    "6/5") isn't mistaken for a collector number.
-    for line in lines {
-      for token in tokenize(line) where token.contains("/") {
-        if let number = slashCollectorNumber(token) { return number }
-      }
-    }
+    if let slash = slashCollector(in: lines) { return slash.number }
+    // Rules 2 and 3 must not read the copyright line: "™ & © 2020 Wizards…"
+    // OCRs the © as a lone "C" — a rarity letter — turning the year into a
+    // collector number. The only collector form that lives on the copyright
+    // line is the old-frame slash fragment, which is rule 1's job.
+    let unmarkedLines = lines.filter { !isCopyrightLine($0) }
+
     // 2. The zero-padded form modern cards print (e.g. "0256", "0005"). The slash form
     //    is rule 1's job; excluding it here keeps a 0-power creature's "0/4" toughness
     //    from being read as collector number "0" (it slips past rule 1 because its total
     //    is < 20, and the P/T line typically sits above the real collector line).
-    for line in lines {
+    for line in unmarkedLines {
       for token in tokenize(line)
       where token.count >= 2 && token.first == "0" && !token.contains("/") {
         if let number = number(fromToken: token) { return number }
       }
     }
     // 3. A number immediately following a lone rarity letter (e.g. "U 263").
-    for line in lines {
+    for line in unmarkedLines {
       let tokens = tokenize(line)
       for index in tokens.indices.dropFirst()
       where tokens[index - 1].count == 1 && rarityLetters.contains(tokens[index - 1].lowercased()) {
@@ -79,9 +102,24 @@ public enum ScryCollectorLineParser {
     return nil
   }
 
+  /// Whether a line is the copyright line (also used by `ScryLineMap`).
+  static func isCopyrightLine(_ line: String) -> Bool {
+    tokenize(line).contains { copyrightMarkers.contains($0.lowercased()) }
+  }
+
+  /// The first `number/total` token in any line (see `slashCollectorNumber`).
+  static func slashCollector(in lines: [String]) -> (number: String, total: Int)? {
+    for line in lines {
+      for token in tokenize(line) where token.contains("/") {
+        if let slash = slashCollector(token) { return slash }
+      }
+    }
+    return nil
+  }
+
   /// A `number/total` token, accepted only when `total` looks like a set size
   /// (≥ 20 and ≥ number) — which rejects power/toughness like `2/2` or `6/5`.
-  static func slashCollectorNumber(_ token: String) -> String? {
+  static func slashCollector(_ token: String) -> (number: String, total: Int)? {
     let parts = token.split(separator: "/", maxSplits: 1)
     guard parts.count == 2,
           let number = number(fromToken: String(parts[0])),
@@ -89,7 +127,7 @@ public enum ScryCollectorLineParser {
           total >= 20,
           let numeric = Int(number.filter(\.isNumber)),
           numeric <= total else { return nil }
-    return number
+    return (number, total)
   }
 
   /// Accepts `123`, `0123`, `123a`, `123/350`. Returns the number with leading
@@ -139,6 +177,34 @@ public enum ScryCollectorLineParser {
     guard token.allSatisfy({ $0.isLetter || $0.isNumber }) else { return false }
     guard token.contains(where: { $0.isLetter }) else { return false }  // not purely numeric
     return !languageCodes.contains(token.lowercased())
+  }
+
+  // MARK: - Copyright year
+
+  /// Words that mark a line as the copyright line. Requiring one keeps flavor
+  /// text and dates elsewhere on the card from being read as a copyright year.
+  static let copyrightMarkers: Set<String> = ["wizards", "coast"]
+
+  /// The plausible print-year range. 1993 is Alpha; the upper bound just guards
+  /// against OCR conjuring a far-future year out of noise.
+  static let copyrightYearRange = 1993...2035
+
+  /// The later year on the copyright line: `™ & © 1993–2009 Wizards of the
+  /// Coast LLC` → 2009, `™ & © 2024 Wizards of the Coast` → 2024. On every frame
+  /// that year is (approximately) the printing's release year.
+  static func copyrightYear(in lines: [String]) -> Int? {
+    for line in lines {
+      let tokens = tokenize(line)
+      guard tokens.contains(where: { copyrightMarkers.contains($0.lowercased()) }) else { continue }
+      let years = tokens.compactMap { token -> Int? in
+        guard token.count == 4, let year = Int(token), copyrightYearRange.contains(year) else {
+          return nil
+        }
+        return year
+      }
+      if let latest = years.max() { return latest }
+    }
+    return nil
   }
 
   // MARK: - Tokenizing

@@ -19,6 +19,19 @@ public enum ScryStringSimilarity {
     return 1 - (Double(distance) / Double(maxLength))
   }
 
+  /// Similarity of an OCR'd name to a card name that may span multiple faces
+  /// ("Fire // Ice", "Bushi Tenderfoot // Kenzo the Hardhearted"). A scan of a
+  /// split, flip, adventure or transform card reads **one face's** name, so the
+  /// best face match counts as much as the whole name.
+  public static func multifaceNameSimilarity(_ cardName: String, _ raw: String) -> Double {
+    let whole = nameSimilarity(cardName, raw)
+    guard cardName.contains("//") else { return whole }
+    let faceBest = cardName.components(separatedBy: "//")
+      .map { nameSimilarity($0.trimmingCharacters(in: .whitespaces), raw) }
+      .max() ?? 0
+    return max(whole, faceBest)
+  }
+
   /// Classic two-row Levenshtein edit distance.
   static func levenshtein(_ a: [Character], _ b: [Character]) -> Int {
     if a.isEmpty { return b.count }

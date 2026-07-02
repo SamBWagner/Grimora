@@ -9,6 +9,13 @@ enum ScrySound {
     AudioServicesPlaySystemSound(1054)  // SIMToolkitPositiveACK — a short ping
   }
 
+  /// The passive scanner confidently identified a card (the confirm chip just
+  /// appeared). Deliberately lighter than `scanned()` — it's an invitation, not
+  /// a commit.
+  static func identified() {
+    AudioServicesPlaySystemSound(1057)  // Tink — a very light, short ding
+  }
+
   /// A scan definitely failed (nothing identifiable).
   static func failed() {
     AudioServicesPlaySystemSound(1053)  // SIMToolkitNegativeACK — a short buzz

@@ -2,15 +2,34 @@
 import AVFoundation
 import CoreGraphics
 import GrimoraCore
+import ImageIO
 import Observation
 import SwiftUI
+
+/// A scan plus the exact input image it ran on, so a harness can archive the
+/// original capture alongside the recognition outcome.
+public struct ScryScanCapture: Sendable {
+  public enum Source: String, Sendable {
+    /// High-resolution photo capture.
+    case still
+    /// The latest preview video frame (still capture skipped, failed, or timed out).
+    case videoFrame
+  }
+
+  /// The pipeline's outcome; `nil` when no card could be locked.
+  public var result: ScryScanResult?
+  /// The unrotated sensor image the pipeline read (pair with `orientation`).
+  public var image: CGImage?
+  public var orientation: CGImagePropertyOrientation
+  public var source: Source
+}
 
 /// Owns the camera session for the Scry tab: permissions, the live preview feed,
 /// the live card detections that drive the overlay, and the on-demand scan.
 @MainActor
 @Observable
-final class ScryCameraController {
-  enum Authorization: Equatable {
+public final class ScryCameraController {
+  public enum Authorization: Equatable {
     case undetermined
     case authorized
     case denied
@@ -18,38 +37,45 @@ final class ScryCameraController {
 
   /// A running best guess of the card in view, for the "what it thinks" readout
   /// and for bulk auto-add.
-  struct PreviewGuess: Equatable, Sendable {
+  public struct PreviewGuess: Equatable, Sendable {
     /// The resolved printing, present only when `confident`.
-    var card: CardRecord?
-    var name: String
+    public var card: CardRecord?
+    public var name: String
     /// True when the guess is confident enough that a scan would auto-accept it.
-    var confident: Bool
+    public var confident: Bool
   }
 
-  private(set) var authorization: Authorization = ScryCameraController.currentAuthorization()
-  private(set) var isRunning = false
+  public private(set) var authorization: Authorization = ScryCameraController.currentAuthorization()
+  public private(set) var isRunning = false
   /// Live detections (normalized, raw-buffer space) for the preview overlay.
-  private(set) var detectedCards: [ScryDetectedCard] = []
+  public private(set) var detectedCards: [ScryDetectedCard] = []
   /// The live best guess, refreshed a few times a second while a card is locked.
-  private(set) var previewGuess: PreviewGuess?
+  public private(set) var previewGuess: PreviewGuess?
   /// Increments every preview cycle — even when the guess is unchanged — so
   /// observers can run per-cycle logic (e.g. bulk stability) that `onChange(of:
   /// previewGuess)` would miss, since that only fires when the value changes.
-  private(set) var previewGeneration = 0
+  public private(set) var previewGeneration = 0
 
   private var previewTask: Task<Void, Never>?
 
-  let session = AVCaptureSession()
+  public let session = AVCaptureSession()
 
   private let sessionQueue = DispatchQueue(label: "com.samwagner.Grimora.scry.session")
   private let videoQueue = DispatchQueue(label: "com.samwagner.Grimora.scry.video")
   private let videoOutput = AVCaptureVideoDataOutput()
+  private let photoOutput = AVCapturePhotoOutput()
+  private var isPhotoOutputConfigured = false
   private let processor: ScryFrameProcessor
   private var isConfigured = false
   private var scanner: ScryScanner?
+  private var imageCache: CardImageCache?
+  private let symbolPrintCache = ScryFeaturePrintCache()
+  /// The rotation the last auto-accepted scan read at — tried first on later
+  /// scans and previews, since cards on a rig tend to stay oriented one way.
+  private var lastGoodOrientation: CGImagePropertyOrientation?
   private var device: AVCaptureDevice?
 
-  init(detector: ScryCardDetector = ScryCardDetector()) {
+  public init(detector: ScryCardDetector = ScryCardDetector()) {
     processor = ScryFrameProcessor(detector: detector)
     processor.onCards = { [weak self] cards in
       Task { @MainActor in self?.detectedCards = cards }
@@ -59,9 +85,14 @@ final class ScryCameraController {
   // MARK: - Lifecycle
 
   /// Requests permission if needed, configures the session once, and starts it.
-  func start(database: CardDatabase) async {
+  /// The image cache, when provided, lets ambiguous scans be refined by
+  /// set-symbol matching against the candidates' cached card images.
+  public func start(database: CardDatabase, imageCache: CardImageCache? = nil) async {
     if scanner == nil {
       scanner = ScryScanner(database: database)
+    }
+    if let imageCache {
+      self.imageCache = imageCache
     }
     await requestAuthorizationIfNeeded()
     guard authorization == .authorized else { return }
@@ -79,7 +110,7 @@ final class ScryCameraController {
     }
   }
 
-  func stop() {
+  public func stop() {
     detectedCards = []
     previewGuess = nil
     previewTask?.cancel()
@@ -100,9 +131,18 @@ final class ScryCameraController {
       while !Task.isCancelled {
         guard let self else { return }
         await self.refreshPreviewGuess()
-        try? await Task.sleep(for: .milliseconds(650))
+        try? await Task.sleep(for: self.previewCadence())
       }
     }
+  }
+
+  /// Adaptive preview cadence: hunt quickly while a card is in view but not yet
+  /// confidently read, settle down once the guess is confident, and idle slowly
+  /// when nothing card-shaped is in frame.
+  private func previewCadence() -> Duration {
+    if detectedCards.isEmpty { return .milliseconds(1000) }
+    if previewGuess?.confident == true { return .milliseconds(650) }
+    return .milliseconds(350)
   }
 
   private func refreshPreviewGuess() async {
@@ -112,9 +152,15 @@ final class ScryCameraController {
       return
     }
     let processor = self.processor
+    let readingOrientation = lastGoodOrientation ?? .up
     previewGuess = await Task.detached(priority: .utility) { () -> PreviewGuess? in
       guard let frame = processor.latestFrame(),
-            let resolution = try? scanner.previewScan(frame.image, orientation: frame.orientation) else {
+            let resolution = try? scanner.previewScan(
+              frame.image,
+              orientation: frame.orientation,
+              seedCard: frame.cards.first,
+              readingOrientation: readingOrientation
+            ) else {
         return nil
       }
       switch resolution.confidence {
@@ -130,15 +176,174 @@ final class ScryCameraController {
 
   // MARK: - Scanning
 
-  /// Grabs the latest frame and runs the full identification pipeline off the main
-  /// actor. Returns `nil` when no card could be locked in frame.
-  func scan() async -> ScryScanResult? {
-    guard let scanner else { return nil }
+  /// Runs the full identification pipeline off the main actor. Returns `nil`
+  /// when no card could be locked.
+  ///
+  /// `usingStillCapture` opts into a high-resolution photo capture (tiny
+  /// old-frame collector lines need the pixels), falling back to the latest
+  /// video frame when the still fails, times out, or sees no card. It is
+  /// **only for user-initiated scans**: every capture plays the system shutter
+  /// sound, and a passive capture mid-focus-hunt is routinely *blurrier* than
+  /// the video frame the preview loop just read — the passive loop learned both
+  /// the hard way on device.
+  public func scan(usingStillCapture: Bool = false) async -> ScryScanResult? {
+    await scanCapturingInput(usingStillCapture: usingStillCapture).result
+  }
+
+  /// Like `scan(usingStillCapture:)`, but also hands back the exact image the
+  /// pipeline ran on (the high-res still, or the video frame it fell back to) —
+  /// for harnesses that archive the scanned input alongside the result.
+  public func scanCapturingInput(usingStillCapture: Bool = false) async -> ScryScanCapture {
+    guard let scanner else {
+      return ScryScanCapture(result: nil, image: nil, orientation: .up, source: .videoFrame)
+    }
     let processor = self.processor
-    return await Task.detached(priority: .userInitiated) {
-      guard let frame = processor.latestFrame() else { return nil }
-      return try? scanner.scan(frame.image, orientation: frame.orientation)
+    let tryFirst = lastGoodOrientation
+    let still = usingStillCapture ? await captureStill(timeout: .seconds(1)) : nil
+    let capture = await Task.detached(priority: .userInitiated) { () -> ScryScanCapture in
+      if let still,
+         let fromStill = try? scanner.scan(still.image, orientation: still.orientation, tryFirst: tryFirst) {
+        return ScryScanCapture(
+          result: fromStill, image: still.image, orientation: still.orientation, source: .still
+        )
+      }
+      guard let frame = processor.latestFrame() else {
+        // No frame to fall back to: surface the still (if any) so a failed scan
+        // can still be archived.
+        return ScryScanCapture(
+          result: nil,
+          image: still?.image,
+          orientation: still?.orientation ?? .up,
+          source: still == nil ? .videoFrame : .still
+        )
+      }
+      let result = try? scanner.scan(frame.image, orientation: frame.orientation, tryFirst: tryFirst)
+      return ScryScanCapture(
+        result: result, image: frame.image, orientation: frame.orientation, source: .videoFrame
+      )
     }.value
+    guard let result = capture.result else { return capture }
+    if result.resolution.confidence == .auto {
+      lastGoodOrientation = result.orientation
+    }
+    var refined = capture
+    refined.result = await refineIfAmbiguous(result)
+    return refined
+  }
+
+  /// One high-res still, or `nil` past the timeout — a scan must never hang on
+  /// the photo pipeline, and the video-frame fallback keeps scans working when
+  /// the photo output couldn't be configured at all.
+  private func captureStill(
+    timeout: Duration
+  ) async -> (image: CGImage, orientation: CGImagePropertyOrientation)? {
+    guard isPhotoOutputConfigured else { return nil }
+    let capture = ScryStillCapture(output: photoOutput, sessionQueue: sessionQueue)
+    return await withTaskGroup(of: (CGImage, CGImagePropertyOrientation)?.self) { group in
+      group.addTask {
+        try? await capture.capture()
+      }
+      group.addTask {
+        try? await Task.sleep(for: timeout)
+        return nil
+      }
+      let first = await group.next() ?? nil
+      group.cancelAll()
+      return first.map { (image: $0.0, orientation: $0.1) }
+    }
+  }
+
+  // MARK: - Set-symbol refinement
+
+  /// Above this many candidates a printing picker is faster than fetching a
+  /// reference image per candidate.
+  private static let maxSymbolRefinementCandidates = 16
+
+  /// Second chance for an ambiguous scan: gather a reference image for each
+  /// candidate printing (local cache first, downloading at normal quality when
+  /// missing) and let `ScrySymbolMatcher` settle or re-rank the picker by the
+  /// set symbol. Offline or with anything missing, the result passes through
+  /// untouched — the matcher owns the precision rules.
+  private func refineIfAmbiguous(_ result: ScryScanResult) async -> ScryScanResult {
+    guard result.resolution.confidence == .ambiguous,
+          (2...Self.maxSymbolRefinementCandidates).contains(result.resolution.candidates.count),
+          let rectified = result.rectified,
+          let imageCache else { return result }
+
+    // Fetch reference images only for candidates whose feature print isn't
+    // already cached — a bulk stack of same-name reprints pays for its
+    // references once per session.
+    let cache = symbolPrintCache
+    let needingImages = result.resolution.candidates.filter { candidate in
+      guard let band = ScrySymbolBand.referenceBand(for: candidate) else { return false }
+      return !cache.hasObservation(for: candidate.id, band: band)
+    }
+    let references = await Self.referenceImages(for: needingImages, imageCache: imageCache)
+
+    let resolution = result.resolution
+    let orientation = result.orientation
+    let lineMap = result.lineMap
+    let refined = await Task.detached(priority: .userInitiated) {
+      ScrySymbolMatcher().refine(
+        resolution,
+        scan: rectified,
+        orientation: orientation,
+        lineMap: lineMap,
+        referenceImages: references,
+        referenceCache: cache
+      )
+    }.value
+
+    var updated = result
+    updated.resolution = refined
+    return updated
+  }
+
+  private static func referenceImages(
+    for candidates: [CardRecord],
+    imageCache: CardImageCache
+  ) async -> [String: CGImage] {
+    await withTaskGroup(of: (String, CGImage)?.self) { group in
+      for candidate in candidates {
+        group.addTask {
+          guard let image = await referenceImage(for: candidate, imageCache: imageCache) else {
+            return nil
+          }
+          return (candidate.id, image)
+        }
+      }
+      var references: [String: CGImage] = [:]
+      for await pair in group {
+        if let (id, image) = pair {
+          references[id] = image
+        }
+      }
+      return references
+    }
+  }
+
+  private static func referenceImage(
+    for card: CardRecord,
+    imageCache: CardImageCache
+  ) async -> CGImage? {
+    if let image = loadImage(atPath: card.displayImagePath) {
+      return image
+    }
+    guard let updated = try? await imageCache.cacheDisplayedImageRecord(for: card, quality: .normal) else {
+      return nil
+    }
+    return loadImage(atPath: updated.displayImagePath)
+  }
+
+  private static func loadImage(atPath path: String?) -> CGImage? {
+    guard let path, !path.isEmpty else { return nil }
+    let url: URL = if let parsed = URL(string: path), parsed.isFileURL {
+      parsed
+    } else {
+      URL(fileURLWithPath: path)
+    }
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    return CGImageSourceCreateImageAtIndex(source, 0, nil)
   }
 
   // MARK: - Authorization
@@ -188,6 +393,24 @@ final class ScryCameraController {
       session.addOutput(videoOutput)
     }
 
+    // High-resolution stills feed the full identification scan: the 1080p video
+    // feed is fine for detection/preview but starves OCR of pixels whenever the
+    // card doesn't fill the frame (the old-frame collector line dies first).
+    if session.canAddOutput(photoOutput) {
+      session.addOutput(photoOutput)
+      if let maxDimensions = device?.activeFormat.supportedMaxPhotoDimensions.last {
+        photoOutput.maxPhotoDimensions = maxDimensions
+      }
+      photoOutput.maxPhotoQualityPrioritization = .balanced
+      if photoOutput.isZeroShutterLagSupported {
+        photoOutput.isZeroShutterLagEnabled = true
+      }
+      if photoOutput.isResponsiveCaptureSupported {
+        photoOutput.isResponsiveCaptureEnabled = true
+      }
+      isPhotoOutputConfigured = true
+    }
+
     session.commitConfiguration()
     isConfigured = true
   }
@@ -219,7 +442,7 @@ final class ScryCameraController {
 
   /// Locks focus and exposure at the current setting so cards placed at the same
   /// spot stay sharp instead of the camera re-hunting on each one.
-  func setFocusLocked(_ locked: Bool) {
+  public func setFocusLocked(_ locked: Bool) {
     sessionQueue.async { [self] in
       guard let device, (try? device.lockForConfiguration()) != nil else { return }
       if locked {
@@ -236,7 +459,7 @@ final class ScryCameraController {
   /// Tap-to-focus: focus and meter at a point in the camera's device coordinate
   /// space (origin top-left, normalized), then re-lock in bulk or resume
   /// continuous autofocus otherwise. Fixes focus drifting and getting stuck soft.
-  func focus(atDevicePoint point: CGPoint, lock: Bool) {
+  public func focus(atDevicePoint point: CGPoint, lock: Bool) {
     sessionQueue.async { [self] in
       guard let device, (try? device.lockForConfiguration()) != nil else { return }
       if device.isFocusPointOfInterestSupported, device.isFocusModeSupported(.autoFocus) {
@@ -257,7 +480,7 @@ final class ScryCameraController {
   }
 
   /// One-shot refocus on the center, then relock — for when the rig is repositioned.
-  func refocusThenLock() {
+  public func refocusThenLock() {
     sessionQueue.async { [self] in
       guard let device, (try? device.lockForConfiguration()) != nil else { return }
       let center = CGPoint(x: 0.5, y: 0.5)
