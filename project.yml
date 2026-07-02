@@ -131,6 +131,33 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: Apple Development
         DEVELOPMENT_TEAM: BJPQVZR5PZ
+  GrimoraScry:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: GrimoraScry
+    dependencies:
+      - package: GrimoraKit
+        product: GrimoraUI
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_NAME: Grimora Scry
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.GrimoraScry
+        INFOPLIST_KEY_CFBundleDisplayName: Grimora Scry
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: false
+        INFOPLIST_KEY_NSCameraUsageDescription: Grimora Scry captures Magic cards to grow the recognition test corpus.
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        # Capture sessions live in Documents/Captures and are dragged off via
+        # Finder file sharing — both keys are required for the folder to show up.
+        INFOPLIST_KEY_UIFileSharingEnabled: YES
+        INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: Apple Development
+        DEVELOPMENT_TEAM: BJPQVZR5PZ
   GrimoraMacUITests:
     type: bundle.ui-testing
     platform: macOS
@@ -199,6 +226,12 @@ schemes:
     build:
       targets:
         GrimoraEngineApp: all
+    run:
+      config: Debug
+  GrimoraScry:
+    build:
+      targets:
+        GrimoraScry: all
     run:
       config: Debug
   GrimoraiOS:
