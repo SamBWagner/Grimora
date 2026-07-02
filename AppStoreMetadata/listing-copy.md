@@ -1,6 +1,6 @@
 # Grimora App Store Listing Copy
 
-Use this copy for version 1.3 (build 2026062601). All public screenshots use
+Use this copy for version 1.4 (build 2026070301). All public screenshots use
 the clean fictional-card screenshot set.
 
 ## App Name
@@ -18,7 +18,7 @@ Card Library & Lists
 ## Promotional Text
 
 ```text
-Search smarter — tap cards to refine your results, build advanced queries with live colour-coded syntax, and search across every collection at once.
+New in 1.4: point your camera at a card and Grimora recognises it on-device and files it into your collection, plus living foil that shimmers as you tilt.
 ```
 
 ## Keywords
@@ -49,26 +49,28 @@ Grimora is independently developed and is not affiliated with or endorsed by any
 ## What's New
 
 ```text
-Version 1.3 makes finding and organising cards faster across all your devices.
+Version 1.4 brings camera card recognition and living foil to your whole library.
 
-- Refine searches by tapping cards or selecting oracle text to include or exclude what you want — and hide terms you never want to see again
-- Build precise queries with a new advanced search form and live, colour-coded Scryfall syntax right in the search field
-- Search across every collection at once and see matching cards highlighted on the dashboard
-- Lists are now Collections, with add, create and move-category actions on the card itself plus quick category reordering
-- Pinch to zoom the card grid and resize the collections dashboard on iPad
-- Star favourites from search results, scrub through price history, and jump from any card to all of an artist's art
-- A guided walkthrough helps new players get started, replayable any time from Settings
-- iCloud is now the single source of truth, ending the repeated sync prompt and keeping card counts accurate across devices
+- Scry: point your camera at a card and Grimora recognises it on-device, then files it into a new Scanned collection. Scan one card at a time, or a whole stack in bulk mode
+- When a card could be more than one printing, Grimora shows you the likely candidates to pick from rather than guessing
+- Foil comes to life: foil, etched, and special-treatment cards shimmer as you tilt on iPhone and iPad, with a new finish picker in the card detail
+- Foil now renders in search, collection grids, and detail alike, so foil cards read as foil everywhere
+- Pull down to sync: refresh any collection to sync with iCloud, or pull on the Cards screen to check for new card data
+- On Mac, sync with iCloud from the File menu or toolbar, and drag the card detail pane to the width you want
+- A new animated launch screen, plus Favourites and Scanned now lead the sidebar as built-in lists
+- Opening a collection is now instant, with artwork loading in the background
 ```
 
 ## App Review Notes
 
 ```text
-Version 1.3 (2026062601) requires no account or reviewer credentials. iCloud sync is optional.
+Version 1.4 (2026070301) requires no account or reviewer credentials. iCloud sync is optional.
 
-Grimora's card catalogue is a managed, prebuilt database. For an existing installation, the current library stays fully usable while any catalogue update stages on an allowed network and activates atomically on the next cold launch. A failed download, validation, or activation leaves the existing library untouched. A manual refresh may use any network.
+Scry, the new camera "Scry" tab on iPhone and iPad, uses the device camera to recognise cards. All recognition runs on-device with the Vision framework; the camera image is used only to read a card's name and set or collector number and is never uploaded. Grant camera access when prompted to try it, or skip it and the rest of the app works unchanged. Recognised cards are filed into a local "Scanned" collection.
 
-iCloud sync is now deterministic: changes from all signed-in devices merge automatically with no prompts and no manual conflict resolution. The interactive "Review iCloud Data" screen from earlier versions has been removed.
+Grimora's card catalogue is a managed, prebuilt database. For an existing installation, the current library stays fully usable while any catalogue update stages on an allowed network and activates atomically on the next cold launch. A failed download, validation, or activation leaves the existing library untouched. A manual refresh (pull-to-refresh on the Cards screen, or the Library menu on Mac) may use any network.
+
+iCloud sync is deterministic: changes from all signed-in devices merge automatically with no prompts and no manual conflict resolution. A new manual "Sync with iCloud" action (pull-to-refresh on iPhone and iPad, or the File menu and toolbar on Mac) forces an immediate two-way sync.
 
 Card menus include a "Buy" link that opens the third-party MTG Mate marketplace in the device browser. Grimora has no in-app purchases and is not affiliated with or endorsed by MTG Mate or any marketplace.
 
