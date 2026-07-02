@@ -509,6 +509,67 @@ final class ScryRecognitionTests: XCTestCase {
     XCTAssertNil(resolution.card)
   }
 
+  // MARK: - Resolver: blur-confusable sibling guard
+
+  func testNameAndNumberWithBlurConfusableSiblingDisambiguates() throws {
+    // Soft-focus regression: a real scan of Generous Gift [blc 106] blurred the
+    // "6" into "0", so name + collector "100" uniquely keyed the *dmc* #100
+    // printing and auto-accepted the wrong version of the right card. With a
+    // same-length single-digit sibling (#106) one OCR error away and no set code,
+    // the lone number is not a trustworthy key — surface the picker, with the
+    // real printing present, rather than guessing.
+    let database = try siblingPrintings([("blc", 106), ("dmc", 100)])
+    let resolver = ScryCardResolver(database: database)
+
+    let resolution = try resolver.resolve(ScrySignals(name: "Gift Card", collectorNumber: "100"))
+
+    XCTAssertEqual(resolution.confidence, .ambiguous)
+    XCTAssertNil(resolution.card)
+    XCTAssertTrue(resolution.candidates.contains { $0.setCode == "blc" && $0.collectorNumber == "106" })
+    XCTAssertTrue(resolution.candidates.contains { $0.setCode == "dmc" && $0.collectorNumber == "100" })
+  }
+
+  func testNameAndNumberWithNoConfusableSiblingStillAutoAccepts() throws {
+    // Recall guard: the lone-number path must keep auto-accepting when no sibling
+    // printing sits an OCR error away — #100 vs #250 differ by two digits.
+    let database = try siblingPrintings([("dmc", 100), ("blc", 250)])
+    let resolver = ScryCardResolver(database: database)
+
+    let resolution = try resolver.resolve(ScrySignals(name: "Gift Card", collectorNumber: "100"))
+
+    XCTAssertEqual(resolution.confidence, .auto)
+    XCTAssertEqual(resolution.method, .nameAndNumber)
+    XCTAssertEqual(resolution.card?.setCode, "dmc")
+  }
+
+  func testNameAndNumberShortNumberSiblingsStillAutoAccept() throws {
+    // Recall guard: a one- or two-digit number sits a single edit from dozens of
+    // others (nearly every card is #6 in some set), so short-number siblings must
+    // not trip the guard — #6 vs #3 stays a clean auto-accept.
+    let database = try siblingPrintings([("m10", 6), ("cmr", 3)])
+    let resolver = ScryCardResolver(database: database)
+
+    let resolution = try resolver.resolve(ScrySignals(name: "Gift Card", collectorNumber: "6"))
+
+    XCTAssertEqual(resolution.confidence, .auto)
+    XCTAssertEqual(resolution.card?.setCode, "m10")
+  }
+
+  func testCollectorNumbersOCRConfusableTruthTable() {
+    // Real blur: an equal-length single substitution of three or more characters.
+    XCTAssertTrue(ScryCardResolver.collectorNumbersOCRConfusable("106", "100"))
+    XCTAssertTrue(ScryCardResolver.collectorNumbersOCRConfusable("123a", "123b"))
+    // Short numbers are one edit from too much to mean anything.
+    XCTAssertFalse(ScryCardResolver.collectorNumbersOCRConfusable("6", "3"))
+    XCTAssertFalse(ScryCardResolver.collectorNumbersOCRConfusable("88", "83"))
+    // A length change is a segmentation or suffix difference, not a blurred digit.
+    XCTAssertFalse(ScryCardResolver.collectorNumbersOCRConfusable("267", "267p"))
+    XCTAssertFalse(ScryCardResolver.collectorNumbersOCRConfusable("100", "1000"))
+    // Two substitutions is not a single OCR slip; identical numbers aren't siblings.
+    XCTAssertFalse(ScryCardResolver.collectorNumbersOCRConfusable("267", "244"))
+    XCTAssertFalse(ScryCardResolver.collectorNumbersOCRConfusable("100", "100"))
+  }
+
   // MARK: - Disambiguator seam
 
   func testUnavailableDisambiguatorDeclines() async throws {
@@ -568,6 +629,27 @@ final class ScryRecognitionTests: XCTestCase {
       printing(id: "filler-old", name: "Old Filler", setCode: "oldx", number: 249, releasedAt: "2012-07-13"),
       printing(id: "filler-new", name: "New Filler", setCode: "newx", number: 134, releasedAt: "2022-10-14")
     ])
+    return database
+  }
+
+  /// Printings of one card ("Gift Card"), one per `(setCode, number)` pair, built
+  /// off a fixture record so the full initializer isn't spelled out. Used to
+  /// probe the blur-confusable collector-number guard.
+  private func siblingPrintings(_ printings: [(set: String, number: Int)]) throws -> CardDatabase {
+    let template = Fixtures.records()[0]
+    let cards = printings.map { printing -> CardRecord in
+      var card = template
+      card.id = "gift-\(printing.set)-\(printing.number)"
+      card.oracleID = "gift-oracle"
+      card.name = "Gift Card"
+      card.displayNameKey = "Gift Card".normalizedQueryKey
+      card.setCode = printing.set
+      card.collectorNumber = String(printing.number)
+      card.collectorNumberNumber = printing.number
+      return card
+    }
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(cards)
     return database
   }
 

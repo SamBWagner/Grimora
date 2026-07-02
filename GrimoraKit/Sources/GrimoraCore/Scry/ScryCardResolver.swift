@@ -133,8 +133,37 @@ public struct ScryCardResolver: Sendable {
         matches = corroborated(try numberCandidates(for: number))
       }
       if matches.count == 1 {
+        let chosen = matches[0]
+        // A lone collector number is a trustworthy unique key only if no *other*
+        // printing of the same card sits a single OCR error away. Under blur a
+        // digit flips — a real soft-focus scan read Generous Gift's "106" as
+        // "100" — and lands on a sibling printing, auto-accepting the wrong
+        // version of the right card. When such a confusable sibling exists and no
+        // set code corroborates the read, surface the printing picker (the
+        // correct printing is among the candidates) instead of guessing.
+        let setCodeCorroborates = signals.setCode.map {
+          !$0.isEmpty && $0 == chosen.setCode.lowercased()
+        } ?? false
+        if !setCodeCorroborates {
+          let namePrintings = try nameCandidates(for: name).filter {
+            ScryStringSimilarity.multifaceNameSimilarity($0.name, name) >= autoAcceptNameSimilarity
+          }
+          if namePrintings.contains(where: {
+            $0.id != chosen.id && Self.collectorNumbersOCRConfusable($0.collectorNumber, number)
+          }) {
+            return ScryResolution(
+              card: nil,
+              candidates: rankedForDisambiguation(
+                namePrintings, setCode: signals.setCode, copyrightYear: signals.copyrightYear
+              ),
+              confidence: .ambiguous,
+              method: .nameAndNumber,
+              signals: signals
+            )
+          }
+        }
         return ScryResolution(
-          card: matches[0],
+          card: chosen,
           candidates: matches,
           confidence: .auto,
           method: .nameAndNumber,
@@ -286,6 +315,29 @@ public struct ScryCardResolver: Sendable {
       }
       return lhs.offset < rhs.offset
     }.map(\.element)
+  }
+
+  /// Whether two printed collector numbers are within a single OCR error of one
+  /// another — the regime where a blurred digit could have turned one into the
+  /// other (a real soft-focus scan read Generous Gift's "106" as "100", the
+  /// number of a *different* printing of the same card).
+  ///
+  /// Restricted to an **equal-length single substitution of three or more
+  /// characters**, compared over the sanitized alphanumeric cores. That is the
+  /// only shape a blurred digit realistically takes: a one- or two-character
+  /// number sits a single edit from dozens of others (nearly every card is #6 or
+  /// #88 in *some* set), so treating those as confusable would demote correct
+  /// low-number auto-accepts wholesale; and a length change (an inserted digit,
+  /// or a "267" vs "267p" promo suffix) is a segmentation or variant difference,
+  /// not a blurred digit. Identical (or empty) numbers are not siblings.
+  static func collectorNumbersOCRConfusable(_ lhs: String, _ rhs: String) -> Bool {
+    func core(_ value: String) -> [Character] {
+      Array(value.lowercased().filter { $0.isLetter || $0.isNumber })
+    }
+    let a = core(lhs), b = core(rhs)
+    guard a.count == b.count, a.count >= 3, a != b else { return false }
+    // Equal length + edit distance 1 is exactly one substituted character.
+    return ScryStringSimilarity.levenshtein(a, b) == 1
   }
 
   /// Database printings whose name matches the OCR'd name, ranked by similarity.
