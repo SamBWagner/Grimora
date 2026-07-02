@@ -1,6 +1,7 @@
 #if canImport(Vision)
 @testable import GrimoraCore
 import CoreGraphics
+import CoreImage
 import CoreText
 import XCTest
 
@@ -37,6 +38,54 @@ final class ScryTextExtractorTests: XCTestCase {
 
     XCTAssertNil(signals.name, "type line 'Land' must not be read as a name; got \(signals.name ?? "nil")")
     XCTAssertEqual(signals.collectorNumber, "278")
+  }
+
+  // MARK: - Cross-orientation signal merge (split / battle / flip)
+
+  func testMergedSignalsCombineFieldsAcrossOrientations() {
+    // A split card: the collector key reads upright, the name reads sideways.
+    let upright = ScrySignals(setCode: "mh2", collectorNumber: "290")
+    let sideways = ScrySignals(name: "Fire")
+
+    let merged = ScryScanner.mergedSignals(from: [upright, sideways])
+
+    XCTAssertEqual(merged?.name, "Fire")
+    XCTAssertEqual(merged?.setCode, "mh2")
+    XCTAssertEqual(merged?.collectorNumber, "290")
+  }
+
+  func testMergedSignalsSkipWhenOneOrientationSawEverything() {
+    // If some rotation already carried the whole combination, re-resolving the
+    // merge adds nothing — it must return nil so identify() keeps its result.
+    let complete = ScrySignals(name: "Fire", setCode: "mh2", collectorNumber: "290")
+    let partial = ScrySignals(name: "Fire")
+
+    XCTAssertNil(ScryScanner.mergedSignals(from: [complete, partial]))
+  }
+
+  // MARK: - Old-frame bottom-strip retry
+
+  func testBottomStripRetryReadsSmallOldFrameCrop() throws {
+    // At small crop resolutions (card far from the camera) the whole-card pass
+    // loses the tiny `6/249` at the end of an old frame's copyright line; the
+    // zoomed bottom-strip retry reads it back.
+    let image = try ScrySymbolMatcherTests.corpusImage("captain-of-the-watch-m10-6.jpg")
+    let small = try Self.downscaled(image, toWidth: 500)
+
+    let signals = try ScryTextExtractor().extractSignals(from: small)
+
+    XCTAssertEqual(signals.collectorNumber, "6")
+    XCTAssertEqual(signals.setTotal, 249)
+  }
+
+  static func downscaled(_ image: CGImage, toWidth width: CGFloat) throws -> CGImage {
+    let scale = width / CGFloat(image.width)
+    let filter = try XCTUnwrap(CIFilter(name: "CILanczosScaleTransform"))
+    filter.setValue(CIImage(cgImage: image), forKey: kCIInputImageKey)
+    filter.setValue(scale, forKey: kCIInputScaleKey)
+    filter.setValue(1.0, forKey: kCIInputAspectRatioKey)
+    let output = try XCTUnwrap(filter.outputImage)
+    return try XCTUnwrap(CIContext().createCGImage(output, from: output.extent))
   }
 
   // MARK: - Rendering helpers

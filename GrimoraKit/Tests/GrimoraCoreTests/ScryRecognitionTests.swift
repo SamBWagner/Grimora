@@ -97,6 +97,54 @@ final class ScryRecognitionTests: XCTestCase {
     XCTAssertEqual(withCollector.setCode, "otj")
   }
 
+  // MARK: - Old-frame copyright line (year + set total)
+
+  func testParsesOldFrameCopyrightLineNumberTotalAndYear() {
+    // The real M10 form: collector info is a fragment at the end of the copyright
+    // line — no set code exists anywhere on the card.
+    let parsed = ScryCollectorLineParser.parse(lines: [
+      "Greg Staples", "TM & © 1993-2009 Wizards of the Coast LLC 6/249"
+    ])
+    XCTAssertNil(parsed.setCode)
+    XCTAssertEqual(parsed.collectorNumber, "6")
+    XCTAssertEqual(parsed.setTotal, 249)
+    XCTAssertEqual(parsed.copyrightYear, 2009)
+  }
+
+  func testCopyrightYearTakesLaterYearOfSpan() {
+    let parsed = ScryCollectorLineParser.parse(lines: ["™ & © 1993-2012 Wizards of the Coast LLC"])
+    XCTAssertEqual(parsed.copyrightYear, 2012)
+  }
+
+  func testModernCopyrightLineYieldsSingleYear() {
+    let parsed = ScryCollectorLineParser.parse(lines: ["TM & © 2024 Wizards of the Coast"])
+    XCTAssertEqual(parsed.copyrightYear, 2024)
+  }
+
+  func testYearWithoutCopyrightMarkerIsIgnored() {
+    // A bare year (flavor text, dates in card names like "1996 World Champion")
+    // must not be read as the copyright year.
+    let parsed = ScryCollectorLineParser.parse(lines: ["Chronicle of the year 2005", "Piotr Dura"])
+    XCTAssertNil(parsed.copyrightYear)
+  }
+
+  func testImplausibleYearOnCopyrightLineIsIgnored() {
+    let parsed = ScryCollectorLineParser.parse(lines: ["© 1899 Wizards of the Coast"])
+    XCTAssertNil(parsed.copyrightYear)
+  }
+
+  func testModernSlashFormStillCarriesSetTotal() {
+    let parsed = ScryCollectorLineParser.parse(lines: ["0123/350 R", "NEO • EN"])
+    XCTAssertEqual(parsed.setTotal, 350)
+    XCTAssertEqual(parsed.collectorNumber, "123")
+  }
+
+  func testPowerToughnessNeverBecomesSetTotal() {
+    let parsed = ScryCollectorLineParser.parse(lines: ["3/3", "Creature — Human Soldier"])
+    XCTAssertNil(parsed.setTotal)
+    XCTAssertNil(parsed.collectorNumber)
+  }
+
   // MARK: - Name heuristics (don't read the type line as the name)
 
   func testTypeLinesAreNotAcceptedAsNames() {
@@ -174,6 +222,213 @@ final class ScryRecognitionTests: XCTestCase {
     XCTAssertEqual(Set(resolution.candidates.map(\.id)), ["twin-1", "twin-2"])
   }
 
+  // MARK: - Multi-face names (split / flip / adventure)
+
+  func testFaceNameSimilarityMatchesEitherFace() {
+    XCTAssertEqual(ScryStringSimilarity.multifaceNameSimilarity("Fire // Ice", "Fire"), 1, accuracy: 0.0001)
+    XCTAssertEqual(ScryStringSimilarity.multifaceNameSimilarity("Fire // Ice", "Ice"), 1, accuracy: 0.0001)
+    XCTAssertEqual(
+      ScryStringSimilarity.multifaceNameSimilarity(
+        "Bushi Tenderfoot // Kenzo the Hardhearted", "Kenzo the Hardhearted"
+      ), 1, accuracy: 0.0001
+    )
+    // Whole-name reads still count.
+    XCTAssertGreaterThan(ScryStringSimilarity.multifaceNameSimilarity("Fire // Ice", "Fire // Ice"), 0.99)
+    // A face match is not a free pass for unrelated text.
+    XCTAssertLessThan(ScryStringSimilarity.multifaceNameSimilarity("Fire // Ice", "Firebrand Archer"), 0.6)
+  }
+
+  // MARK: - Foreign-language guard
+
+  func testForeignNameOnlyScanNeverAutoAccepts() throws {
+    // A Japanese title OCR'd against an English database matches nothing — the
+    // resolver must return none/ambiguous, never a confident wrong card. (The
+    // exact-key tier handles foreign cards; the name tier must just stay safe.)
+    let resolver = ScryCardResolver(database: try Fixtures.database())
+    let resolution = try resolver.resolve(ScrySignals(name: "祖先の刀"))
+    XCTAssertNotEqual(resolution.confidence, .auto)
+    XCTAssertNil(resolution.card)
+  }
+
+  // MARK: - First-letter-repair search precision
+
+  func testRepairedSearchRejectsLowSimilarityBatches() throws {
+    // "Xiller" repairs to "filler" and finds the Filler cards — but at ~0.5
+    // similarity that batch is noise, and surfacing it would put a wrong picker
+    // in front of the user (the on-device Bria → "Lurking Lizards" failure).
+    let resolver = ScryCardResolver(database: try collisionDatabase())
+    let resolution = try resolver.resolve(ScrySignals(name: "Xiller"))
+    XCTAssertEqual(resolution.confidence, .none, "junk repairs must yield nothing, not a wrong picker")
+  }
+
+  func testRepairRecoversWhenAShorterWordWasDamaged() throws {
+    // "Xld Filler": the long word is intact, the short one is mangled — the
+    // longest-word-alone attempt recovers it, and the 0.9 similarity clears
+    // both the floor and the auto gate.
+    let resolver = ScryCardResolver(database: try collisionDatabase())
+    let resolution = try resolver.resolve(ScrySignals(name: "Xld Filler"))
+    XCTAssertEqual(resolution.confidence, .auto)
+    XCTAssertEqual(resolution.card?.name, "Old Filler")
+  }
+
+  // MARK: - Vintage era ranking
+
+  func testEraRankingPrefersPlausiblePrintingsWithoutExactYear() throws {
+    let template = Fixtures.records()[0]
+    func printing(_ id: String, releasedAt: String) -> CardRecord {
+      var card = template
+      card.id = id
+      card.releasedAt = releasedAt
+      return card
+    }
+    let vintage = printing("vintage", releasedAt: "1994-06-01")
+    let middle = printing("middle", releasedAt: "2010-07-01")
+    let recent = printing("recent", releasedAt: "2021-03-01")
+    let resolver = ScryCardResolver(database: try Fixtures.database())
+
+    // Copyright year 1995, no exact-year printing: the era-plausible 1994
+    // printing outranks reprints that didn't exist yet.
+    let ranked = resolver.rankedForDisambiguation([recent, middle, vintage], copyrightYear: 1995)
+    XCTAssertEqual(ranked.map(\.id), ["vintage", "recent", "middle"])
+  }
+
+  func testSetCodeRankingPutsReadSetFirstInPicker() throws {
+    // A cleanly OCR'd set code is the strongest picker signal there is (it's
+    // printed on the card), but it is NEVER an auto key — misreads like
+    // "otj"→"ots" could name a sibling set. A real Sram scan read `cmr` and
+    // still buried the CMR printings mid-list; this pins them to the top.
+    let template = Fixtures.records()[0]
+    func printing(_ id: String, setCode: String, releasedAt: String) -> CardRecord {
+      var card = template
+      card.id = id
+      card.setCode = setCode
+      card.releasedAt = releasedAt
+      return card
+    }
+    let aer = printing("aer", setCode: "aer", releasedAt: "2017-01-20")
+    let cmr = printing("cmr", setCode: "cmr", releasedAt: "2020-11-20")
+    let tsr = printing("tsr", setCode: "tsr", releasedAt: "2021-03-19")
+    let resolver = ScryCardResolver(database: try Fixtures.database())
+
+    let ranked = resolver.rankedForDisambiguation([aer, tsr, cmr], setCode: "cmr", copyrightYear: nil)
+    XCTAssertEqual(ranked.map(\.id), ["cmr", "aer", "tsr"])
+
+    // The set match outranks a copyright-year match on a different printing.
+    let both = resolver.rankedForDisambiguation([aer, tsr, cmr], setCode: "cmr", copyrightYear: 2021)
+    XCTAssertEqual(both.first?.id, "cmr")
+
+    // An unreadable or misread set code that names no candidate changes nothing.
+    let unchanged = resolver.rankedForDisambiguation([aer, tsr, cmr], setCode: "imm", copyrightYear: nil)
+    XCTAssertEqual(unchanged.map(\.id), ["aer", "tsr", "cmr"])
+  }
+
+  // MARK: - Resolver: number + total with no name (clipped title)
+
+  func testNumberAndTotalWithoutNameYieldsRankedPicker() throws {
+    // A clipped/glared title leaves only the "8/249" fragment — enough to name
+    // the set-size family. Must be a picker (no name to corroborate ⇒ never
+    // auto), with the copyright year putting the right printing first.
+    let resolver = ScryCardResolver(database: try collisionDatabase())
+
+    let resolution = try resolver.resolve(
+      ScrySignals(collectorNumber: "8", setTotal: 249, copyrightYear: 2012)
+    )
+
+    XCTAssertEqual(resolution.confidence, .ambiguous)
+    XCTAssertEqual(resolution.method, .numberAndTotal)
+    XCTAssertNil(resolution.card)
+    XCTAssertEqual(resolution.candidates.first?.setCode, "oldx")
+  }
+
+  func testNumberAndTotalMatchingNoSetYieldsNone() throws {
+    let resolver = ScryCardResolver(database: try collisionDatabase())
+    let resolution = try resolver.resolve(ScrySignals(collectorNumber: "8", setTotal: 300))
+    XCTAssertEqual(resolution.confidence, .none)
+  }
+
+  // MARK: - Name heuristics: rules-text fragments
+
+  func testRulesTextFragmentsAreNotNames() {
+    // Real clipped-crop failure: the title was cut off and "creature." (with
+    // OCR punctuation) or the aura's "Enchant creature" line became the name.
+    XCTAssertFalse(ScryNameHeuristics.isAcceptableName("creature."))
+    XCTAssertFalse(ScryNameHeuristics.isAcceptableName("Enchant creature"))
+    XCTAssertFalse(ScryNameHeuristics.isAcceptableName("Enchant land"))
+    // Equipment's keyword cost line, same trap (a real Beamtown Beatstick
+    // capture read "Equip 2 (2: Attach to target creature you" as the name).
+    XCTAssertFalse(ScryNameHeuristics.isAcceptableName("Equip 2 (2: Attach to target creature you"))
+    XCTAssertFalse(ScryNameHeuristics.isAcceptableName("Equip {2}"))
+    // Names that merely contain these words stay acceptable.
+    XCTAssertTrue(ScryNameHeuristics.isAcceptableName("Enchanted Evening"))
+    XCTAssertTrue(ScryNameHeuristics.isAcceptableName("Creature Guy"))
+    XCTAssertTrue(ScryNameHeuristics.isAcceptableName("Equipoise"))
+  }
+
+  // MARK: - Resolver: old-frame signals (set total + copyright year)
+
+  func testNameAndNumberCollisionResolvedBySetTotal() throws {
+    // Two printings share name AND collector number (the real M13 #8 vs GN3 #8
+    // case). The old frame prints "8/249"; a unique set-size match on the total
+    // is as good as a printed set code.
+    let database = try collisionDatabase()
+    let resolver = ScryCardResolver(database: database)
+
+    let resolution = try resolver.resolve(
+      ScrySignals(name: "Twin Card", collectorNumber: "8", setTotal: 249)
+    )
+
+    XCTAssertEqual(resolution.confidence, .auto)
+    XCTAssertEqual(resolution.method, .nameAndNumber)
+    XCTAssertEqual(resolution.card?.setCode, "oldx")
+  }
+
+  func testMisreadSetTotalNeverAutoAccepts() throws {
+    // A total matching no candidate's set size must fall back to the picker.
+    let database = try collisionDatabase()
+    let resolver = ScryCardResolver(database: database)
+
+    let resolution = try resolver.resolve(
+      ScrySignals(name: "Twin Card", collectorNumber: "8", setTotal: 300)
+    )
+
+    XCTAssertEqual(resolution.confidence, .ambiguous)
+    XCTAssertNil(resolution.card)
+  }
+
+  func testNumberCollisionCandidatesRankedByCopyrightYear() throws {
+    // Year is a ranking signal only — a misread year digit could hit a sibling
+    // printing's year, so it must never auto-accept. But when present it should
+    // put the matching printing first in the picker.
+    let database = try collisionDatabase()
+    let resolver = ScryCardResolver(database: database)
+
+    let resolution = try resolver.resolve(
+      ScrySignals(name: "Twin Card", collectorNumber: "8", copyrightYear: 2022)
+    )
+
+    XCTAssertEqual(resolution.confidence, .ambiguous)
+    XCTAssertEqual(resolution.candidates.first?.setCode, "newx")
+  }
+
+  func testNameOnlyCandidatesRankedByCopyrightYear() throws {
+    let database = try collisionDatabase()
+    let resolver = ScryCardResolver(database: database)
+
+    let resolution = try resolver.resolve(
+      ScrySignals(name: "Twin Card", copyrightYear: 2012)
+    )
+
+    XCTAssertEqual(resolution.confidence, .ambiguous)
+    XCTAssertEqual(resolution.candidates.first?.setCode, "oldx")
+  }
+
+  func testSetSizeIsLargestCollectorNumberInSet() throws {
+    let database = try collisionDatabase()
+    XCTAssertEqual(try database.setSize(setCode: "oldx"), 249)
+    XCTAssertEqual(try database.setSize(setCode: "newx"), 134)
+    XCTAssertNil(try database.setSize(setCode: "nope"))
+  }
+
   // MARK: - Resolver: precision guards
 
   func testEmptySignalsResolveToNone() throws {
@@ -190,6 +445,67 @@ final class ScryRecognitionTests: XCTestCase {
     let resolution = try resolver.resolve(signals)
 
     XCTAssertEqual(resolution.confidence, .none)
+    XCTAssertNil(resolution.card)
+  }
+
+  func testMidWordOCRSlipsResolveViaNumberSearch() throws {
+    // Real capture: "Beamfown Beafstick" (two t→f slips) + collector 131. The
+    // word-prefix search can't match a mid-word slip and first-letter repair
+    // only fixes the first letter — but the collector number finds the card
+    // from the other end, and 0.89 name similarity corroborates it.
+    let template = Fixtures.records()[0]
+    func printing(_ id: String, name: String, setCode: String, number: Int) -> CardRecord {
+      var card = template
+      card.id = id
+      card.oracleID = "\(name)-oracle"
+      card.name = name
+      card.displayNameKey = name.normalizedQueryKey
+      card.setCode = setCode
+      card.collectorNumber = String(number)
+      card.collectorNumberNumber = number
+      return card
+    }
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards([
+      printing("beatstick", name: "Beamtown Beatstick", setCode: "mom", number: 131),
+      printing("decoy-same-number", name: "Completely Different", setCode: "xyz", number: 131),
+      printing("decoy-other-number", name: "Beamtown Bully", setCode: "mom", number: 130),
+    ])
+    let resolver = ScryCardResolver(database: database)
+
+    let resolution = try resolver.resolve(
+      ScrySignals(name: "Beamfown Beafstick", collectorNumber: "131")
+    )
+
+    XCTAssertEqual(resolution.confidence, .auto)
+    XCTAssertEqual(resolution.method, .nameAndNumber)
+    XCTAssertEqual(resolution.card?.id, "beatstick")
+  }
+
+  func testNameFragmentPlusNumberNeverAutoAccepts() throws {
+    // Real precision failure: a clipped title read "AL" plus collector 7, and
+    // the prefix search found exactly one #7 among "AL…" names — Alibou,
+    // Ancient Witness — which Tier A′ auto-accepted without ever checking that
+    // "AL" actually resembles "Alibou, Ancient Witness". A name that doesn't
+    // corroborate its match must never auto-accept, no matter how unique the
+    // number filter makes it.
+    let template = Fixtures.records()[0]
+    var alibou = template
+    alibou.id = "alibou-c21"
+    alibou.oracleID = "alibou-oracle"
+    alibou.name = "Alibou, Ancient Witness"
+    alibou.displayNameKey = "Alibou, Ancient Witness".normalizedQueryKey
+    alibou.setCode = "c21"
+    alibou.collectorNumber = "7"
+    alibou.collectorNumberNumber = 7
+
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards([alibou])
+    let resolver = ScryCardResolver(database: database)
+
+    let resolution = try resolver.resolve(ScrySignals(name: "AL", collectorNumber: "7"))
+
+    XCTAssertNotEqual(resolution.confidence, .auto)
     XCTAssertNil(resolution.card)
   }
 
@@ -221,6 +537,39 @@ final class ScryRecognitionTests: XCTestCase {
   }
 
   // MARK: - Helpers
+
+  /// A database with the "same name, same collector number, different set" shape
+  /// of the real M13 #8 / GN3 #8 collision: `oldx` is a 249-card 2012 set, `newx`
+  /// a 134-card 2022 set, and "Twin Card" is #8 in both. Filler cards give each
+  /// set its size.
+  private func collisionDatabase() throws -> CardDatabase {
+    let template = Fixtures.records()[0]
+
+    func printing(
+      id: String, name: String, setCode: String,
+      number: Int, releasedAt: String
+    ) -> CardRecord {
+      var card = template
+      card.id = id
+      card.oracleID = "\(name)-oracle"
+      card.name = name
+      card.displayNameKey = name.normalizedQueryKey
+      card.setCode = setCode
+      card.collectorNumber = String(number)
+      card.collectorNumberNumber = number
+      card.releasedAt = releasedAt
+      return card
+    }
+
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards([
+      printing(id: "twin-old", name: "Twin Card", setCode: "oldx", number: 8, releasedAt: "2012-07-13"),
+      printing(id: "twin-new", name: "Twin Card", setCode: "newx", number: 8, releasedAt: "2022-10-14"),
+      printing(id: "filler-old", name: "Old Filler", setCode: "oldx", number: 249, releasedAt: "2012-07-13"),
+      printing(id: "filler-new", name: "New Filler", setCode: "newx", number: 134, releasedAt: "2022-10-14")
+    ])
+    return database
+  }
 
   /// Two printings of one card, built by copying a fixture record so the full
   /// `CardRecord` initializer doesn't have to be spelled out here.

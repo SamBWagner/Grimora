@@ -26,6 +26,11 @@ final class ScrySceneTests: XCTestCase {
     var name: String
     var setCode: String
     var collectorNumber: String
+    /// Only `knownFailure` is meaningful for scenes: the default contract is
+    /// already "auto-accept correctly or disambiguate with the correct card
+    /// present". A `knownFailure` scene documents a live engine failure with
+    /// correct ground truth and is exempt from the gates (reported only).
+    var expectation: ScryCorpusTests.Expectation?
     var foil: Bool?
     var notes: String?
   }
@@ -33,8 +38,13 @@ final class ScrySceneTests: XCTestCase {
   func testDetectsAndResolvesSubjectInEachScene() throws {
     let manifest = try Self.loadManifest()
     try XCTSkipIf(manifest.entries.isEmpty, "No scenes — add photos to ScryCorpus/scenes and scenes-manifest.json.")
+    // See ScryCorpusTests: scene photos are gitignored local-only assets.
+    try XCTSkipIf(
+      Self.corpusURL().map { !FileManager.default.fileExists(atPath: $0.appendingPathComponent("scenes").path) } ?? true,
+      "ScryCorpus/scenes not on this checkout — local-only assets (see ScryCorpus/README.md)"
+    )
 
-    let database = try XCTUnwrap(ScryTestCatalog.shared, "Could not build the real test catalog.")
+    let database = try ScryTestCatalog.requireShared()
     let scanner = ScryScanner(database: database)
 
     var autoCorrect = 0
@@ -48,7 +58,23 @@ final class ScrySceneTests: XCTestCase {
         continue
       }
 
-      guard let scan = try scanner.scan(image, orientation: orientation) else {
+      let scanned = try scanner.scan(image, orientation: orientation)
+
+      if entry.expectation == .knownFailure {
+        let resolution = scanned?.resolution
+        let nowAuto = resolution?.confidence == .auto && Self.matches(resolution?.card, entry)
+        let nowPresent = resolution?.confidence == .ambiguous
+          && resolution?.candidates.contains { Self.matches($0, entry) } == true
+        if nowAuto || nowPresent {
+          report += "  ! \(entry.image)  knownFailure NOW PASSING (\(nowAuto ? "auto" : "disambiguation")) — upgrade the expectation\n"
+        } else {
+          let outcome = resolution.map { "\(Self.describe($0.card)) / \($0.confidence)" } ?? "no card detected"
+          report += "  ✗ \(entry.image)  knownFailure (still failing: \(outcome))\n"
+        }
+        continue
+      }
+
+      guard let scan = scanned else {
         failures.append("\(entry.image): no fully-in-frame card detected")
         report += "  ✗ \(entry.image): no card detected\n"
         continue
@@ -82,6 +108,13 @@ final class ScrySceneTests: XCTestCase {
 
     report += "auto-accepted correctly \(autoCorrect)/\(manifest.entries.count) · disambiguated \(disambiguated)\n"
     print(report)
+    // See ScryCorpusTests: the runner truncates large print buffers.
+    if let dir = ProcessInfo.processInfo.environment["SCRY_REPORT_DIR"] {
+      try? report.write(
+        to: URL(fileURLWithPath: dir).appendingPathComponent("scenes.txt"),
+        atomically: true, encoding: .utf8
+      )
+    }
     XCTAssertTrue(failures.isEmpty, "Scene failures:\n" + failures.joined(separator: "\n"))
   }
 

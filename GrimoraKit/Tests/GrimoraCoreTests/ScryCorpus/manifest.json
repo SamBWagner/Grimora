@@ -69,6 +69,571 @@
       "sleeved": false,
       "background": "black",
       "notes": "Foil (star in collector line), strong rainbow sheen across art."
+    },
+    {
+      "image": "captain-of-the-watch-m10-6.jpg",
+      "name": "Captain of the Watch",
+      "setCode": "m10",
+      "collectorNumber": "6",
+      "foil": false,
+      "sleeved": false,
+      "background": "none",
+      "notes": "Old (2003) frame: no printed set code; collector info is the '6/249' fragment at the end of the tiny copyright line. Scryfall scan stand-in until a real photo lands. 8 printings incl. an M13/GN3 #8 collision."
+    },
+    {
+      "image": "coat-of-arms-exo-131.jpg",
+      "name": "Coat of Arms",
+      "setCode": "exo",
+      "collectorNumber": "131",
+      "background": "none",
+      "notes": "1997 frame, Exodus — the first set with printed collector numbers. Scryfall stand-in."
+    },
+    {
+      "image": "icy-manipulator-ice-322.jpg",
+      "name": "Icy Manipulator",
+      "setCode": "ice",
+      "collectorNumber": "322",
+      "expectation": "disambiguation",
+      "background": "none",
+      "notes": "1993 frame, pre-collector-number era: name + set symbol + year only. Scryfall stand-in."
+    },
+    {
+      "image": "lightning-bolt-4ed-208.jpg",
+      "name": "Lightning Bolt",
+      "setCode": "4ed",
+      "collectorNumber": "208",
+      "expectation": "disambiguation",
+      "background": "none",
+      "notes": "1993 frame, no collector number AND no set symbol — the honest floor: many printings, year is the only printed discriminator. Scryfall stand-in."
+    },
+    {
+      "image": "island-zen-234.jpg",
+      "name": "Island",
+      "setCode": "zen",
+      "collectorNumber": "234",
+      "expectation": "disambiguation",
+      "background": "none",
+      "notes": "Full-art basic land (compressed center name band, tiny collector text). Scryfall stand-in."
+    },
+    {
+      "image": "history-of-benalia-dom-21.jpg",
+      "name": "History of Benalia",
+      "setCode": "dom",
+      "collectorNumber": "21",
+      "expectation": "auto",
+      "background": "none",
+      "notes": "Saga: type line and set symbol sit ~87% down the card. Scryfall stand-in."
+    },
+    {
+      "image": "ajanis-pridemate-tsr-290.jpg",
+      "name": "Ajani's Pridemate",
+      "setCode": "tsr",
+      "collectorNumber": "290",
+      "expectation": "disambiguation",
+      "background": "none",
+      "notes": "Retro-frame modern reprint (1997 frame WITH modern collector line + set code). The stylized retro capitals OCR wrong ('Hjani's Dridemate') — recovered by the first-letter-repair search; the collector line doesn't OCR from this Scryfall scan, so it lands in the picker. Scryfall stand-in."
+    },
+    {
+      "image": "ardenvale-tactician-eld-273-showcase.jpg",
+      "name": "Ardenvale Tactician // Dizzying Swoop",
+      "setCode": "eld",
+      "collectorNumber": "273",
+      "expectation": "disambiguation",
+      "background": "none",
+      "notes": "Showcase frame + adventure layout (decorative storybook fonts). Scryfall stand-in."
+    },
+    {
+      "image": "ancestral-katana-neo-1-ja.jpg",
+      "name": "Ancestral Katana",
+      "setCode": "neo",
+      "collectorNumber": "1",
+      "expectation": "auto",
+      "background": "none",
+      "notes": "Japanese-language printing: the name is unreadable against an English DB, but the NEO • JA collector line is language-independent (exact-key path). Scryfall stand-in."
+    },
+    {
+      "image": "brazen-borrower-eld-39.jpg",
+      "name": "Brazen Borrower // Petty Theft",
+      "setCode": "eld",
+      "collectorNumber": "39",
+      "expectation": "auto",
+      "background": "none",
+      "notes": "Adventure: the second name/type box (lower left) must not steal the name anchor. Scryfall stand-in."
+    },
+    {
+      "image": "fire-ice-mh2-290.jpg",
+      "name": "Fire // Ice",
+      "setCode": "mh2",
+      "collectorNumber": "290",
+      "background": "none",
+      "notes": "Split card: both names read sideways; the collector line reads upright — cross-orientation merge case. Scryfall stand-in."
+    },
+    {
+      "image": "bushi-tenderfoot-chk-2.jpg",
+      "name": "Bushi Tenderfoot // Kenzo the Hardhearted",
+      "setCode": "chk",
+      "collectorNumber": "2",
+      "background": "none",
+      "notes": "Flip card (Kamigawa): second title upside-down at the bottom. Scryfall stand-in."
+    },
+    {
+      "image": "invasion-of-gobakhan-mom-22.jpg",
+      "name": "Invasion of Gobakhan // Lightshield Array",
+      "setCode": "mom",
+      "collectorNumber": "22",
+      "background": "none",
+      "notes": "Battle: physically landscape (Scryfall layout 'transform'); read via the rotation loop. Scryfall stand-in."
+    },
+    {
+      "image": "siphon-insight-otp-54.jpg",
+      "name": "Siphon Insight",
+      "setCode": "otp",
+      "collectorNumber": "54",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:10:21Z; engine: exactKey/auto → Siphon Insight [otp 54]"
+    },
+    {
+      "image": "botanical-sanctum-otj-267-2.jpg",
+      "name": "Botanical Sanctum",
+      "setCode": "otj",
+      "collectorNumber": "267",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:11:39Z; engine: exactKey/auto → Botanical Sanctum [otj 267]"
+    },
+    {
+      "image": "command-tower-cmm-420.jpg",
+      "name": "Command Tower",
+      "setCode": "cmm",
+      "collectorNumber": "420",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:52:20Z; engine: nameAndNumber/auto → Command Tower [cmm 420]"
+    },
+    {
+      "image": "wayfarers-bauble-pip-252.jpg",
+      "name": "Wayfarer's Bauble",
+      "setCode": "pip",
+      "collectorNumber": "252",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:52:27Z; engine: exactKey/auto → Wayfarer's Bauble [pip 252]"
+    },
+    {
+      "image": "generous-gift-blc-106.jpg",
+      "name": "Generous Gift",
+      "setCode": "blc",
+      "collectorNumber": "106",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "Labeled on the Mac (U 0106 BLC visible). Crop top edge shaves the title cap-height -> OCR \"ererous Gitt\". — GrimoraScry 2026-07-02T13:52:33Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "generous-gift-blc-106-2.jpg",
+      "name": "Generous Gift",
+      "setCode": "blc",
+      "collectorNumber": "106",
+      "expectation": "disambiguation",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:53:02Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "brilliant-restoration-neo-7.jpg",
+      "name": "Brilliant Restoration",
+      "setCode": "neo",
+      "collectorNumber": "7",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:53:09Z; engine: exactKey/auto → Brilliant Restoration [neo 7]"
+    },
+    {
+      "image": "bureau-headmaster-acr-296.jpg",
+      "name": "Bureau Headmaster",
+      "setCode": "acr",
+      "collectorNumber": "296",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:53:13Z; engine: nameAndNumber/auto → Bureau Headmaster [acr 296]"
+    },
+    {
+      "image": "boros-signet-c20-239.jpg",
+      "name": "Boros Signet",
+      "setCode": "c20",
+      "collectorNumber": "239",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:53:22Z; engine: nameAndNumber/auto → Boros Signet [c20 239]"
+    },
+    {
+      "image": "arcane-signet-cmm-367.jpg",
+      "name": "Arcane Signet",
+      "setCode": "cmm",
+      "collectorNumber": "367",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:53:50Z; engine: exactKey/auto → Arcane Signet [cmm 367]"
+    },
+    {
+      "image": "abrade-cmm-203.jpg",
+      "name": "Abrade",
+      "setCode": "cmm",
+      "collectorNumber": "203",
+      "expectation": "disambiguation",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:53:59Z; engine: nameAndNumber/ambiguous → ambiguous"
+    },
+    {
+      "image": "dispatch-c21-88.jpg",
+      "name": "Dispatch",
+      "setCode": "c21",
+      "collectorNumber": "88",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:54:06Z; engine: nameAndNumber/auto → Dispatch [c21 88]"
+    },
+    {
+      "image": "sram-senior-edificer-cmr-386.jpg",
+      "name": "Sram, Senior Edificer",
+      "setCode": "cmr",
+      "collectorNumber": "386",
+      "expectation": "disambiguation",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:54:21Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "terastodon-wwk-115.jpg",
+      "name": "Terastodon",
+      "setCode": "wwk",
+      "collectorNumber": "115",
+      "expectation": "knownFailure",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "Labeled on the Mac (115/145, 2010 (c) = Worldwake). Quad over-included the \"Arch of Orazca\" neighbor above; topmost-name rule read the neighbor title. — GrimoraScry 2026-07-02T13:54:58Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "vadmir-new-blood-otj-113.jpg",
+      "name": "Vadmir, New Blood",
+      "setCode": "otj",
+      "collectorNumber": "113",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:55:04Z; engine: exactKey/auto → Vadmir, New Blood [otj 113]"
+    },
+    {
+      "image": "goblin-glasswright-craft-with-pride-sos-117.jpg",
+      "name": "Goblin Glasswright // Craft with Pride",
+      "setCode": "sos",
+      "collectorNumber": "117",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:55:12Z; engine: exactKey/auto → Goblin Glasswright // Craft with Pride [sos 117]"
+    },
+    {
+      "image": "izzet-boilerworks-cmd-278.jpg",
+      "name": "Izzet Boilerworks",
+      "setCode": "cmd",
+      "collectorNumber": "278",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:55:24Z; engine: nameAndNumber/auto → Izzet Boilerworks [cmd 278]"
+    },
+    {
+      "image": "blackblade-reforged-cmr-457.jpg",
+      "name": "Blackblade Reforged",
+      "setCode": "cmr",
+      "collectorNumber": "457",
+      "expectation": "disambiguation",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:55:39Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "bruenor-battlehammer-afr-219.jpg",
+      "name": "Bruenor Battlehammer",
+      "setCode": "afr",
+      "collectorNumber": "219",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:55:46Z; engine: exactKey/auto → Bruenor Battlehammer [afr 219]"
+    },
+    {
+      "image": "wayfarers-bauble-pip-252-2.jpg",
+      "name": "Wayfarer's Bauble",
+      "setCode": "pip",
+      "collectorNumber": "252",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:55:53Z; engine: exactKey/auto → Wayfarer's Bauble [pip 252]"
+    },
+    {
+      "image": "blasphemous-act-voc-143.jpg",
+      "name": "Blasphemous Act",
+      "setCode": "voc",
+      "collectorNumber": "143",
+      "expectation": "disambiguation",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T13:56:05Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "beamtown-beatstick-mom-131.jpg",
+      "name": "Beamtown Beatstick",
+      "setCode": "mom",
+      "collectorNumber": "131",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:36:17Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "boros-signet-c20-239-2.jpg",
+      "name": "Boros Signet",
+      "setCode": "c20",
+      "collectorNumber": "239",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:36:27Z; engine: exactKey/auto → Boros Signet [c20 239]"
+    },
+    {
+      "image": "generous-gift-blc-106-3.jpg",
+      "name": "Generous Gift",
+      "setCode": "blc",
+      "collectorNumber": "106",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:36:42Z; engine: exactKey/auto → Generous Gift [blc 106]"
+    },
+    {
+      "image": "bureau-headmaster-acr-296-2.jpg",
+      "name": "Bureau Headmaster",
+      "setCode": "acr",
+      "collectorNumber": "296",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:36:48Z; engine: exactKey/auto → Bureau Headmaster [acr 296]"
+    },
+    {
+      "image": "dispatch-c21-88-2.jpg",
+      "name": "Dispatch",
+      "setCode": "c21",
+      "collectorNumber": "88",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:36:52Z; engine: nameAndNumber/auto → Dispatch [c21 88]"
+    },
+    {
+      "image": "abrade-cmm-203-2.jpg",
+      "name": "Abrade",
+      "setCode": "cmm",
+      "collectorNumber": "203",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:36:57Z; engine: exactKey/auto → Abrade [cmm 203]"
+    },
+    {
+      "image": "wayfarers-bauble-pip-252-3.jpg",
+      "name": "Wayfarer's Bauble",
+      "setCode": "pip",
+      "collectorNumber": "252",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:37:03Z; engine: exactKey/auto → Wayfarer's Bauble [pip 252]"
+    },
+    {
+      "image": "command-tower-cmm-420-2.jpg",
+      "name": "Command Tower",
+      "setCode": "cmm",
+      "collectorNumber": "420",
+      "expectation": "disambiguation",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:37:14Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "arcane-signet-cmm-367-2.jpg",
+      "name": "Arcane Signet",
+      "setCode": "cmm",
+      "collectorNumber": "367",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:37:19Z; engine: exactKey/auto → Arcane Signet [cmm 367]"
+    },
+    {
+      "image": "thought-vessel-cmm-414.jpg",
+      "name": "Thought Vessel",
+      "setCode": "cmm",
+      "collectorNumber": "414",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:37:23Z; engine: exactKey/auto → Thought Vessel [cmm 414]"
+    },
+    {
+      "image": "sol-ring-dsc-94.jpg",
+      "name": "Sol Ring",
+      "setCode": "dsc",
+      "collectorNumber": "94",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:37:29Z; engine: exactKey/auto → Sol Ring [dsc 94]"
+    },
+    {
+      "image": "diamond-pick-axe-lci-143.jpg",
+      "name": "Diamond Pick-Axe",
+      "setCode": "lci",
+      "collectorNumber": "143",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:37:34Z; engine: nameOnly/auto → Diamond Pick-Axe [lci 143]"
+    },
+    {
+      "image": "fellwar-stone-cmm-382.jpg",
+      "name": "Fellwar Stone",
+      "setCode": "cmm",
+      "collectorNumber": "382",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:37:39Z; engine: exactKey/auto → Fellwar Stone [cmm 382]"
+    },
+    {
+      "image": "demand-answers-mkm-306.jpg",
+      "name": "Demand Answers",
+      "setCode": "mkm",
+      "collectorNumber": "306",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:37:44Z; engine: exactKey/auto → Demand Answers [mkm 306]"
+    },
+    {
+      "image": "thrill-of-possibility-dmu-148.jpg",
+      "name": "Thrill of Possibility",
+      "setCode": "dmu",
+      "collectorNumber": "148",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:37:49Z; engine: exactKey/auto → Thrill of Possibility [dmu 148]"
+    },
+    {
+      "image": "champions-helm-cmm-375.jpg",
+      "name": "Champion's Helm",
+      "setCode": "cmm",
+      "collectorNumber": "375",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:38:26Z; engine: exactKey/auto → Champion's Helm [cmm 375]"
+    },
+    {
+      "image": "captain-of-the-watch-m10-6-2.jpg",
+      "name": "Captain of the Watch",
+      "setCode": "m10",
+      "collectorNumber": "6",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:38:37Z; engine: nameAndNumber/auto → Captain of the Watch [m10 6]"
+    },
+    {
+      "image": "alpha-authority-gtc-114.jpg",
+      "name": "Alpha Authority",
+      "setCode": "gtc",
+      "collectorNumber": "114",
+      "expectation": "knownFailure",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:39:02Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "alpha-authority-gtc-114-2.jpg",
+      "name": "Alpha Authority",
+      "setCode": "gtc",
+      "collectorNumber": "114",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:39:08Z; engine: nameAndNumber/auto → Alpha Authority [gtc 114]"
+    },
+    {
+      "image": "angelic-skirmisher-gtc-3.jpg",
+      "name": "Angelic Skirmisher",
+      "setCode": "gtc",
+      "collectorNumber": "3",
+      "expectation": "knownFailure",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:39:28Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "angelic-skirmisher-gtc-3-2.jpg",
+      "name": "Angelic Skirmisher",
+      "setCode": "gtc",
+      "collectorNumber": "3",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:39:32Z; engine: nameAndNumber/auto → Angelic Skirmisher [gtc 3]"
+    },
+    {
+      "image": "zur-the-enchanter-dmr-206.jpg",
+      "name": "Zur the Enchanter",
+      "setCode": "dmr",
+      "collectorNumber": "206",
+      "expectation": "disambiguation",
+      "foil": false,
+      "sleeved": false,
+      "background": "black",
+      "notes": "GrimoraScry 2026-07-02T14:39:53Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "mountain-one-270-foil.jpg",
+      "name": "Mountain",
+      "setCode": "one",
+      "collectorNumber": "270",
+      "expectation": "knownFailure",
+      "foil": true,
+      "sleeved": false,
+      "background": "black",
+      "notes": "Oil-slick raised-foil Phyrexian-language Mountain (ONE Compleat bundle). Entirely Phyrexian script — no Latin text exists on the card, so OCR is structurally impossible; wants an art/frame-based fallback someday. — GrimoraScry 2026-07-02T14:38:18Z; engine: unresolved/none → none"
     }
   ]
 }

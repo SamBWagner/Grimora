@@ -1,6 +1,7 @@
 #if canImport(Vision)
 @testable import GrimoraCore
 import Foundation
+import XCTest
 
 /// A realistic, independently-sourced card catalog for the Scry corpus tests.
 ///
@@ -15,6 +16,23 @@ import Foundation
 enum ScryTestCatalog {
   /// Built once, shared across tests (read-only).
   static let shared: CardDatabase? = try? build()
+
+  /// The shared catalog, or a test SKIP on checkouts without the corpus assets
+  /// (images, scenes, and catalog.json.gz are gitignored local-only data — see
+  /// ScryCorpus/README.md). A catalog that exists but fails to build is still a
+  /// hard failure, not a skip.
+  static func requireShared() throws -> CardDatabase {
+    if let shared { return shared }
+    if let url = Bundle.module.resourceURL?
+      .appendingPathComponent("ScryCorpus", isDirectory: true)
+      .appendingPathComponent("catalog.json.gz"),
+      FileManager.default.fileExists(atPath: url.path) {
+      return try build()  // present but broken — surface the real error
+    }
+    throw XCTSkip(
+      "ScryCorpus/catalog.json.gz not on this checkout — the corpus is a local-only asset store (ScryCorpus/README.md)"
+    )
+  }
 
   static func build() throws -> CardDatabase {
     guard let url = Bundle.module.resourceURL?

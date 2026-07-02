@@ -49,6 +49,432 @@
       "setCode": "cmd",
       "collectorNumber": "278",
       "notes": "On-device failure case: old frame read 'Land' (type line) as the name. After the type-line fix it must not auto-accept a wrong card; correct printing must be in the picker. 24 reprints exist."
+    },
+    {
+      "image": "alpha-authority-gtc-114.jpg",
+      "name": "Alpha Authority",
+      "setCode": "gtc",
+      "collectorNumber": "114",
+      "notes": "REAL PHOTO, old (2003) frame at still-capture scale (3024x4032): collector info is the tiny '114/249' copyright-line fragment; no set code printed. Cluttered scene (drawstring bag, tin, cables)."
+    },
+    {
+      "image": "eroded-canyon-otj-256-fullres.jpg",
+      "name": "Eroded Canyon",
+      "setCode": "otj",
+      "collectorNumber": "256",
+      "notes": "Still-capture-scale (3024x4032) variant of the corpus crop's source photo — exercises detection + rectification at the 12MP manual-tap path size. Partial CMM neighbor at top right to ignore."
+    },
+    {
+      "image": "hollow-marauder-otj-90-foil-fullres.jpg",
+      "name": "Hollow Marauder",
+      "setCode": "otj",
+      "collectorNumber": "90",
+      "foil": true,
+      "notes": "Still-capture-scale foil variant (glare at 12MP)."
+    },
+    {
+      "image": "beyond-the-quiet-eoe-303-sleeved-fullres.jpg",
+      "name": "Beyond the Quiet",
+      "setCode": "eoe",
+      "collectorNumber": "303",
+      "notes": "Still-capture-scale sleeved borderless variant (plastic glare at 12MP)."
+    },
+    {
+      "image": "siphon-insight-otp-54-fullres.jpg",
+      "name": "Siphon Insight",
+      "setCode": "otp",
+      "collectorNumber": "54",
+      "notes": "GrimoraScry 2026-07-02T13:10:21Z; engine: exactKey/auto → Siphon Insight [otp 54]"
+    },
+    {
+      "image": "esoteric-duplicator-big-5-fullres.jpg",
+      "name": "Esoteric Duplicator",
+      "setCode": "big",
+      "collectorNumber": "5",
+      "notes": "GrimoraScry 2026-07-02T13:11:30Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "botanical-sanctum-otj-267-fullres.jpg",
+      "name": "Botanical Sanctum",
+      "setCode": "otj",
+      "collectorNumber": "267",
+      "notes": "GrimoraScry 2026-07-02T13:11:39Z; engine: exactKey/auto → Botanical Sanctum [otj 267]"
+    },
+    {
+      "image": "luxurious-locomotive-otj-244-fullres.jpg",
+      "name": "Luxurious Locomotive",
+      "setCode": "otj",
+      "collectorNumber": "244",
+      "notes": "GrimoraScry 2026-07-02T13:12:01Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "arcane-signet-cmm-367-fullres.jpg",
+      "name": "Arcane Signet",
+      "setCode": "cmm",
+      "collectorNumber": "367",
+      "expectation": "knownFailure",
+      "notes": "Labeled on the Mac from the still (U 0367 CMM-EN visible). Small card in cluttered scene: keyboard, deck box, card stack. — GrimoraScry 2026-07-02T13:12:40Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "sram-senior-edificer-cmr-386-fullres.jpg",
+      "name": "Sram, Senior Edificer",
+      "setCode": "cmr",
+      "collectorNumber": "386",
+      "notes": "GrimoraScry 2026-07-02T13:13:08Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "vadmir-new-blood-otj-113-fullres.jpg",
+      "name": "Vadmir, New Blood",
+      "setCode": "otj",
+      "collectorNumber": "113",
+      "notes": "GrimoraScry 2026-07-02T13:13:33Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "goblin-glasswright-craft-with-pride-sos-117-foil-fullres.jpg",
+      "name": "Goblin Glasswright // Craft with Pride",
+      "setCode": "sos",
+      "collectorNumber": "117",
+      "foil": true,
+      "notes": "GrimoraScry 2026-07-02T13:14:02Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "captain-of-the-watch-m10-6-foil-fullres.jpg",
+      "name": "Captain of the Watch",
+      "setCode": "m10",
+      "collectorNumber": "6",
+      "foil": true,
+      "notes": "GrimoraScry 2026-07-02T13:14:35Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "brilliant-restoration-neo-7-fullres.jpg",
+      "name": "Brilliant Restoration",
+      "setCode": "neo",
+      "collectorNumber": "7",
+      "expectation": "knownFailure",
+      "notes": "GrimoraScry 2026-07-02T13:15:06Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "command-tower-cmm-420-fullres.jpg",
+      "name": "Command Tower",
+      "setCode": "cmm",
+      "collectorNumber": "420",
+      "notes": "GrimoraScry 2026-07-02T13:52:20Z; engine: nameAndNumber/auto → Command Tower [cmm 420]"
+    },
+    {
+      "image": "wayfarers-bauble-pip-252-fullres.jpg",
+      "name": "Wayfarer's Bauble",
+      "setCode": "pip",
+      "collectorNumber": "252",
+      "notes": "GrimoraScry 2026-07-02T13:52:27Z; engine: exactKey/auto → Wayfarer's Bauble [pip 252]"
+    },
+    {
+      "image": "generous-gift-blc-106-fullres.jpg",
+      "name": "Generous Gift",
+      "setCode": "blc",
+      "collectorNumber": "106",
+      "notes": "Labeled on the Mac (U 0106 BLC visible). Crop top edge shaves the title cap-height -> OCR \"ererous Gitt\". — GrimoraScry 2026-07-02T13:52:33Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "generous-gift-blc-106-fullres-2.jpg",
+      "name": "Generous Gift",
+      "setCode": "blc",
+      "collectorNumber": "106",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-02T13:53:02Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "brilliant-restoration-neo-7-fullres-2.jpg",
+      "name": "Brilliant Restoration",
+      "setCode": "neo",
+      "collectorNumber": "7",
+      "notes": "GrimoraScry 2026-07-02T13:53:09Z; engine: exactKey/auto → Brilliant Restoration [neo 7]"
+    },
+    {
+      "image": "bureau-headmaster-acr-296-fullres.jpg",
+      "name": "Bureau Headmaster",
+      "setCode": "acr",
+      "collectorNumber": "296",
+      "notes": "GrimoraScry 2026-07-02T13:53:13Z; engine: nameAndNumber/auto → Bureau Headmaster [acr 296]"
+    },
+    {
+      "image": "boros-signet-c20-239-fullres.jpg",
+      "name": "Boros Signet",
+      "setCode": "c20",
+      "collectorNumber": "239",
+      "notes": "GrimoraScry 2026-07-02T13:53:22Z; engine: nameAndNumber/auto → Boros Signet [c20 239]"
+    },
+    {
+      "image": "beamtown-beatstick-mom-131-fullres.jpg",
+      "name": "Beamtown Beatstick",
+      "setCode": "mom",
+      "collectorNumber": "131",
+      "expectation": "knownFailure",
+      "notes": "GrimoraScry 2026-07-02T13:53:43Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "arcane-signet-cmm-367-fullres-2.jpg",
+      "name": "Arcane Signet",
+      "setCode": "cmm",
+      "collectorNumber": "367",
+      "notes": "GrimoraScry 2026-07-02T13:53:50Z; engine: exactKey/auto → Arcane Signet [cmm 367]"
+    },
+    {
+      "image": "abrade-cmm-203-fullres.jpg",
+      "name": "Abrade",
+      "setCode": "cmm",
+      "collectorNumber": "203",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-02T13:53:59Z; engine: nameAndNumber/ambiguous → ambiguous"
+    },
+    {
+      "image": "dispatch-c21-88-fullres.jpg",
+      "name": "Dispatch",
+      "setCode": "c21",
+      "collectorNumber": "88",
+      "notes": "GrimoraScry 2026-07-02T13:54:06Z; engine: nameAndNumber/auto → Dispatch [c21 88]"
+    },
+    {
+      "image": "sram-senior-edificer-cmr-386-fullres-2.jpg",
+      "name": "Sram, Senior Edificer",
+      "setCode": "cmr",
+      "collectorNumber": "386",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-02T13:54:21Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "terastodon-wwk-115-fullres.jpg",
+      "name": "Terastodon",
+      "setCode": "wwk",
+      "collectorNumber": "115",
+      "expectation": "knownFailure",
+      "notes": "Labeled on the Mac (115/145, 2010 (c) = Worldwake). Quad over-included the \"Arch of Orazca\" neighbor above; topmost-name rule read the neighbor title. — GrimoraScry 2026-07-02T13:54:58Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "vadmir-new-blood-otj-113-fullres-2.jpg",
+      "name": "Vadmir, New Blood",
+      "setCode": "otj",
+      "collectorNumber": "113",
+      "notes": "GrimoraScry 2026-07-02T13:55:04Z; engine: exactKey/auto → Vadmir, New Blood [otj 113]"
+    },
+    {
+      "image": "goblin-glasswright-craft-with-pride-sos-117-fullres.jpg",
+      "name": "Goblin Glasswright // Craft with Pride",
+      "setCode": "sos",
+      "collectorNumber": "117",
+      "notes": "GrimoraScry 2026-07-02T13:55:12Z; engine: exactKey/auto → Goblin Glasswright // Craft with Pride [sos 117]"
+    },
+    {
+      "image": "izzet-boilerworks-cmd-278-fullres.jpg",
+      "name": "Izzet Boilerworks",
+      "setCode": "cmd",
+      "collectorNumber": "278",
+      "notes": "GrimoraScry 2026-07-02T13:55:24Z; engine: nameAndNumber/auto → Izzet Boilerworks [cmd 278]"
+    },
+    {
+      "image": "blackblade-reforged-cmr-457-fullres.jpg",
+      "name": "Blackblade Reforged",
+      "setCode": "cmr",
+      "collectorNumber": "457",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-02T13:55:39Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "bruenor-battlehammer-afr-219-fullres.jpg",
+      "name": "Bruenor Battlehammer",
+      "setCode": "afr",
+      "collectorNumber": "219",
+      "notes": "GrimoraScry 2026-07-02T13:55:46Z; engine: exactKey/auto → Bruenor Battlehammer [afr 219]"
+    },
+    {
+      "image": "wayfarers-bauble-pip-252-fullres-2.jpg",
+      "name": "Wayfarer's Bauble",
+      "setCode": "pip",
+      "collectorNumber": "252",
+      "notes": "GrimoraScry 2026-07-02T13:55:53Z; engine: exactKey/auto → Wayfarer's Bauble [pip 252]"
+    },
+    {
+      "image": "blasphemous-act-voc-143-fullres.jpg",
+      "name": "Blasphemous Act",
+      "setCode": "voc",
+      "collectorNumber": "143",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-02T13:56:05Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "fiery-confluence-moc-278-fullres.jpg",
+      "name": "Fiery Confluence",
+      "setCode": "moc",
+      "collectorNumber": "278",
+      "expectation": "knownFailure",
+      "notes": "GrimoraScry 2026-07-02T13:56:28Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "beamtown-beatstick-mom-131-fullres-2.jpg",
+      "name": "Beamtown Beatstick",
+      "setCode": "mom",
+      "collectorNumber": "131",
+      "expectation": "knownFailure",
+      "notes": "GrimoraScry 2026-07-02T14:36:17Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "boros-signet-c20-239-fullres-2.jpg",
+      "name": "Boros Signet",
+      "setCode": "c20",
+      "collectorNumber": "239",
+      "notes": "GrimoraScry 2026-07-02T14:36:27Z; engine: exactKey/auto → Boros Signet [c20 239]"
+    },
+    {
+      "image": "generous-gift-blc-106-fullres-3.jpg",
+      "name": "Generous Gift",
+      "setCode": "blc",
+      "collectorNumber": "106",
+      "notes": "GrimoraScry 2026-07-02T14:36:42Z; engine: exactKey/auto → Generous Gift [blc 106]"
+    },
+    {
+      "image": "bureau-headmaster-acr-296-fullres-2.jpg",
+      "name": "Bureau Headmaster",
+      "setCode": "acr",
+      "collectorNumber": "296",
+      "notes": "GrimoraScry 2026-07-02T14:36:48Z; engine: exactKey/auto → Bureau Headmaster [acr 296]"
+    },
+    {
+      "image": "dispatch-c21-88-fullres-2.jpg",
+      "name": "Dispatch",
+      "setCode": "c21",
+      "collectorNumber": "88",
+      "notes": "GrimoraScry 2026-07-02T14:36:52Z; engine: nameAndNumber/auto → Dispatch [c21 88]"
+    },
+    {
+      "image": "abrade-cmm-203-fullres-2.jpg",
+      "name": "Abrade",
+      "setCode": "cmm",
+      "collectorNumber": "203",
+      "notes": "GrimoraScry 2026-07-02T14:36:57Z; engine: exactKey/auto → Abrade [cmm 203]"
+    },
+    {
+      "image": "wayfarers-bauble-pip-252-fullres-3.jpg",
+      "name": "Wayfarer's Bauble",
+      "setCode": "pip",
+      "collectorNumber": "252",
+      "notes": "GrimoraScry 2026-07-02T14:37:03Z; engine: exactKey/auto → Wayfarer's Bauble [pip 252]"
+    },
+    {
+      "image": "command-tower-cmm-420-fullres-2.jpg",
+      "name": "Command Tower",
+      "setCode": "cmm",
+      "collectorNumber": "420",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-02T14:37:14Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "arcane-signet-cmm-367-fullres-3.jpg",
+      "name": "Arcane Signet",
+      "setCode": "cmm",
+      "collectorNumber": "367",
+      "notes": "GrimoraScry 2026-07-02T14:37:19Z; engine: exactKey/auto → Arcane Signet [cmm 367]"
+    },
+    {
+      "image": "thought-vessel-cmm-414-fullres.jpg",
+      "name": "Thought Vessel",
+      "setCode": "cmm",
+      "collectorNumber": "414",
+      "notes": "GrimoraScry 2026-07-02T14:37:23Z; engine: exactKey/auto → Thought Vessel [cmm 414]"
+    },
+    {
+      "image": "sol-ring-dsc-94-fullres.jpg",
+      "name": "Sol Ring",
+      "setCode": "dsc",
+      "collectorNumber": "94",
+      "notes": "GrimoraScry 2026-07-02T14:37:29Z; engine: exactKey/auto → Sol Ring [dsc 94]"
+    },
+    {
+      "image": "diamond-pick-axe-lci-143-fullres.jpg",
+      "name": "Diamond Pick-Axe",
+      "setCode": "lci",
+      "collectorNumber": "143",
+      "notes": "GrimoraScry 2026-07-02T14:37:34Z; engine: nameOnly/auto → Diamond Pick-Axe [lci 143]"
+    },
+    {
+      "image": "fellwar-stone-cmm-382-fullres.jpg",
+      "name": "Fellwar Stone",
+      "setCode": "cmm",
+      "collectorNumber": "382",
+      "notes": "GrimoraScry 2026-07-02T14:37:39Z; engine: exactKey/auto → Fellwar Stone [cmm 382]"
+    },
+    {
+      "image": "demand-answers-mkm-306-fullres.jpg",
+      "name": "Demand Answers",
+      "setCode": "mkm",
+      "collectorNumber": "306",
+      "notes": "GrimoraScry 2026-07-02T14:37:44Z; engine: exactKey/auto → Demand Answers [mkm 306]"
+    },
+    {
+      "image": "thrill-of-possibility-dmu-148-fullres.jpg",
+      "name": "Thrill of Possibility",
+      "setCode": "dmu",
+      "collectorNumber": "148",
+      "notes": "GrimoraScry 2026-07-02T14:37:49Z; engine: exactKey/auto → Thrill of Possibility [dmu 148]"
+    },
+    {
+      "image": "champions-helm-cmm-375-fullres.jpg",
+      "name": "Champion's Helm",
+      "setCode": "cmm",
+      "collectorNumber": "375",
+      "notes": "GrimoraScry 2026-07-02T14:38:26Z; engine: exactKey/auto → Champion's Helm [cmm 375]"
+    },
+    {
+      "image": "captain-of-the-watch-m10-6-fullres.jpg",
+      "name": "Captain of the Watch",
+      "setCode": "m10",
+      "collectorNumber": "6",
+      "notes": "GrimoraScry 2026-07-02T14:38:37Z; engine: nameAndNumber/auto → Captain of the Watch [m10 6]"
+    },
+    {
+      "image": "alpha-authority-gtc-114-fullres.jpg",
+      "name": "Alpha Authority",
+      "setCode": "gtc",
+      "collectorNumber": "114",
+      "expectation": "knownFailure",
+      "notes": "GrimoraScry 2026-07-02T14:39:02Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "alpha-authority-gtc-114-fullres-2.jpg",
+      "name": "Alpha Authority",
+      "setCode": "gtc",
+      "collectorNumber": "114",
+      "notes": "GrimoraScry 2026-07-02T14:39:08Z; engine: nameAndNumber/auto → Alpha Authority [gtc 114]"
+    },
+    {
+      "image": "angelic-skirmisher-gtc-3-fullres.jpg",
+      "name": "Angelic Skirmisher",
+      "setCode": "gtc",
+      "collectorNumber": "3",
+      "expectation": "knownFailure",
+      "notes": "GrimoraScry 2026-07-02T14:39:28Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "angelic-skirmisher-gtc-3-fullres-2.jpg",
+      "name": "Angelic Skirmisher",
+      "setCode": "gtc",
+      "collectorNumber": "3",
+      "notes": "GrimoraScry 2026-07-02T14:39:32Z; engine: nameAndNumber/auto → Angelic Skirmisher [gtc 3]"
+    },
+    {
+      "image": "zur-the-enchanter-dmr-206-fullres.jpg",
+      "name": "Zur the Enchanter",
+      "setCode": "dmr",
+      "collectorNumber": "206",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-02T14:39:53Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "mountain-one-270-foil-fullres.jpg",
+      "name": "Mountain",
+      "setCode": "one",
+      "collectorNumber": "270",
+      "expectation": "knownFailure",
+      "foil": true,
+      "notes": "Oil-slick raised-foil Phyrexian-language Mountain (ONE Compleat bundle). Entirely Phyrexian script — no Latin text exists on the card, so OCR is structurally impossible; wants an art/frame-based fallback someday. — GrimoraScry 2026-07-02T14:38:18Z; engine: unresolved/none → none"
     }
   ]
 }

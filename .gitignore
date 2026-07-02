@@ -65,3 +65,11 @@ unique-artwork-*.json
 *.db
 *.db-shm
 *.db-wal
+
+# Scry recognition corpus: pixels are a LOCAL-ONLY asset store (200MB+ and
+# growing every capture round). Ground truth (manifests, README) stays in git;
+# images/scenes live only on the dev machine and catalog.json.gz is rebuilt by
+# Tools/scry_build_corpus_catalog.py. See ScryCorpus/README.md.
+GrimoraKit/Tests/GrimoraCoreTests/ScryCorpus/images/
+GrimoraKit/Tests/GrimoraCoreTests/ScryCorpus/scenes/
+GrimoraKit/Tests/GrimoraCoreTests/ScryCorpus/catalog.json.gz

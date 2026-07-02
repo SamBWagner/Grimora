@@ -21,7 +21,7 @@ final class ScrySoftFocusTests: XCTestCase {
     let manifest = try ScryCorpusTests.loadManifest()
     try XCTSkipIf(manifest.entries.isEmpty, "empty corpus")
 
-    let database = try XCTUnwrap(ScryTestCatalog.shared, "Could not build the real test catalog.")
+    let database = try ScryTestCatalog.requireShared()
     let resolver = ScryCardResolver(database: database)
     let extractor = ScryTextExtractor()
 
