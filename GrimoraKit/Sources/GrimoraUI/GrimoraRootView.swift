@@ -7,6 +7,7 @@ public struct GrimoraRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var model: GrimoraAppModel
     @State private var onboarding = GrimoraOnboardingModel()
+    @State private var isLaunching = !GrimoraLaunchScreen.isDisabled
     @AppStorage(GrimoraSearchPreferences.defaultSearchTextKey)
     private var defaultSearchText = GrimoraSearchPreferences.defaultSearchText
     @AppStorage(GrimoraSearchPreferences.alwaysIncludedSearchTextKey)
@@ -47,6 +48,18 @@ public struct GrimoraRootView: View {
                 OnboardingTutorialView(onboarding: onboarding)
                     .transition(.opacity)
                     .zIndex(1)
+            }
+
+            if isLaunching {
+                GrimoraLaunchScreen()
+                    .transition(.opacity)
+                    .zIndex(100)
+                    .task {
+                        try? await Task.sleep(for: .seconds(1.9))
+                        withAnimation(.easeOut(duration: 0.55)) {
+                            isLaunching = false
+                        }
+                    }
             }
         }
         .environment(model)
