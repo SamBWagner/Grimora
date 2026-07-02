@@ -29,6 +29,21 @@ struct CardCollectionImportSheet: View {
     var mode: CardCollectionImportMode
 
     var body: some View {
+        #if os(iOS)
+        NavigationStack {
+            CardCollectionImportForm(
+                mode: mode,
+                presentation: .touchSheet,
+                onCancel: {
+                    dismiss()
+                },
+                onComplete: {
+                    dismiss()
+                }
+            )
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        #else
         CardCollectionImportForm(
             mode: mode,
             presentation: .modalSheet,
@@ -41,6 +56,7 @@ struct CardCollectionImportSheet: View {
         )
         .padding(24)
         .frame(minWidth: 540, idealWidth: 620, minHeight: 430)
+        #endif
     }
 }
 
@@ -106,6 +122,11 @@ private enum CardCollectionImportPresentation: Equatable {
     case modalSheet
     case inlineDestination
     case touchDestination
+    case touchSheet
+
+    var usesTouchForm: Bool {
+        self == .touchDestination || self == .touchSheet
+    }
 }
 
 private struct CardCollectionImportForm: View {
@@ -160,8 +181,8 @@ private struct CardCollectionImportForm: View {
     @ViewBuilder
     private var content: some View {
         #if os(iOS)
-        if presentation == .touchDestination {
-            touchCreateForm
+        if presentation.usesTouchForm {
+            touchForm
         } else {
             panelForm
         }
@@ -204,10 +225,12 @@ private struct CardCollectionImportForm: View {
     }
 
     #if os(iOS)
-    private var touchCreateForm: some View {
+    private var touchForm: some View {
         Form {
-            Section("Details") {
-                listNameField
+            if mode.isCreate {
+                Section("Details") {
+                    listNameField
+                }
             }
 
             Section("Source") {
@@ -232,7 +255,7 @@ private struct CardCollectionImportForm: View {
             GrimoraAppBackground(palette: palette)
         }
         .navigationTitle(title)
-        .accessibilityIdentifier("create-list-destination")
+        .accessibilityIdentifier(titleAccessibilityIdentifier ?? "list-import-form")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel", role: .cancel) {
@@ -449,7 +472,7 @@ private struct CardCollectionImportForm: View {
     }
 
     private var editorMinimumHeight: CGFloat {
-        presentation == .touchDestination ? 170 : 220
+        presentation.usesTouchForm ? 170 : 220
     }
 
     private var fileTitle: String {

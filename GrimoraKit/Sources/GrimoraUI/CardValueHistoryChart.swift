@@ -17,6 +17,11 @@ struct CardValueHistoryChart: View {
 
     @State private var scrubbedValuePoint: CardValueChartPoint?
     @State private var valueHistoryShareItem: PriceHistoryShareItem?
+    #if os(iOS) || os(visionOS)
+    // Detent height must grow with Dynamic Type or the share button clips at
+    // accessibility sizes; the system clamps oversized heights to the sheet max.
+    @ScaledMetric(relativeTo: .body) private var shareSheetDetentHeight: CGFloat = 170
+    #endif
 
     @ViewBuilder
     var body: some View {
@@ -208,7 +213,7 @@ struct CardValueHistoryChart: View {
         .padding(24)
         .accessibilityIdentifier("card-value-history-share")
         #if os(iOS) || os(visionOS)
-        .presentationDetents([.height(170)])
+        .presentationDetents([.height(shareSheetDetentHeight)])
         #endif
     }
 }

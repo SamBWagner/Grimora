@@ -106,7 +106,9 @@ struct CardCollectionExportSheet: View {
                 }
             }
         }
+        #if os(macOS) || os(visionOS)
         .frame(minWidth: 560, minHeight: 620)
+        #endif
         .fileExporter(
             isPresented: $isPresentingFileExporter,
             document: exportedDocument,
