@@ -538,7 +538,13 @@ extension CardCollectionDetailView {
             .accessibilityIdentifier("undo-list-action-button")
         }
 
-        listSortButtons(for: selectedCollection)
+        Menu {
+            listSortButtons(for: selectedCollection)
+        } label: {
+            Text("Sort")
+        }
+        .accessibilityIdentifier("list-sort-menu")
+        .accessibilityValue(listSortDescription(for: selectedCollection))
 
         Section("View") {
             Button {
