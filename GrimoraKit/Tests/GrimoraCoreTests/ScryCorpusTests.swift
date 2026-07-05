@@ -30,11 +30,12 @@ final class ScryCorpusTests: XCTestCase {
     /// Must surface the correct printing among the disambiguation candidates;
     /// auto-accepting the correct printing is also fine (and worth upgrading).
     case disambiguation
-    /// A documented engine failure captured on-device (wrong auto-accept,
-    /// correct card missing from candidates, or unresolved), stored with the
-    /// correct ground truth. Exempt from both the precision gate and recall —
-    /// reported only, and flagged loudly once it starts passing (the ratchet:
-    /// upgrade it to `auto`/`disambiguation` then).
+    /// A permanent *historical* tag: this card was hard when captured (a wrong
+    /// auto-accept, a missing candidate, or unresolved), stored with the correct
+    /// ground truth. It is **not** exempt — every real card must scan, so a
+    /// knownFailure entry still has to be identified (auto-accept the correct
+    /// printing, or surface it among the candidates) or it fails like any other
+    /// entry. The tag records history: it is never removed and never "upgraded".
     case knownFailure
   }
 
@@ -90,13 +91,24 @@ final class ScryCorpusTests: XCTestCase {
       let expectation = entry.resolvedExpectation
 
       if expectation == .knownFailure {
-        let nowAuto = resolution.confidence == .auto && Self.matches(resolution.card, entry)
-        let nowPresent = resolution.confidence == .ambiguous
+        // `knownFailure` is a permanent *historical* tag ("this card was hard
+        // when captured") — it no longer EXEMPTS the card. Every real card must
+        // scan: it has to be identified (auto-accept the correct printing, or
+        // surface it among disambiguation candidates). Resolving to none, the
+        // wrong card, or a candidate list missing the correct printing is a real
+        // failure, exactly like any other entry. The tag is never removed and is
+        // never "upgraded" — it just records history.
+        let identifiedAuto = resolution.confidence == .auto && Self.matches(resolution.card, entry)
+        let identifiedAmbiguous = resolution.confidence == .ambiguous
           && resolution.candidates.contains { Self.matches($0, entry) }
-        if nowAuto || nowPresent {
-          report += "  ! \(entry.image)  knownFailure NOW PASSING (\(nowAuto ? "auto" : "disambiguation")) — upgrade the expectation\n"
+        if identifiedAuto {
+          autoCorrect += 1
+          report += "  ✓ \(entry.image)  [historically hard — now auto]  \(read)\n"
+        } else if identifiedAmbiguous {
+          report += "  ✓ \(entry.image)  [historically hard — identified via disambiguation]  \(read)\n"
         } else {
-          report += "  ✗ \(entry.image)  knownFailure (still failing: \(Self.describe(resolution.card)) / \(resolution.confidence))  \(read)\n"
+          failures.append("\(entry.image): historically-hard card still not scannable (\(Self.describe(resolution.card)) / \(resolution.confidence))  \(read)")
+          report += "  ✗ \(entry.image)  not scannable yet (\(Self.describe(resolution.card)) / \(resolution.confidence))  \(read)\n"
         }
         continue
       }
@@ -142,6 +154,85 @@ final class ScryCorpusTests: XCTestCase {
       )
     }
     XCTAssertTrue(failures.isEmpty, "Crop failures:\n" + failures.joined(separator: "\n"))
+  }
+
+  /// The **bulk decision path**. Bulk mode commits straight off
+  /// `ScryScanner.previewScan` (a fast, single-orientation, no-retry read) with no
+  /// follow-up full scan, so a confident preview of the *wrong* printing is a real
+  /// wrong-auto-accept the full-scan test above never exercises. Precision is the
+  /// hard gate here; recall is intentionally lenient — preview is a subset, so a
+  /// crop that simply doesn't confidently commit is reported, never failed.
+  func testPreviewScanNeverWronglyAutoCommitsCropAgainstRealCatalog() throws {
+    let manifest = try Self.loadManifest()
+    try XCTSkipIf(
+      manifest.entries.isEmpty,
+      "Scry corpus is empty — add labeled crops to ScryCorpus/images and manifest.json."
+    )
+    try XCTSkipIf(
+      Self.corpusURL().map { !FileManager.default.fileExists(atPath: $0.appendingPathComponent("images").path) } ?? true,
+      "ScryCorpus/images not on this checkout — local-only assets (see ScryCorpus/README.md)"
+    )
+
+    let database = try ScryTestCatalog.requireShared()
+    let scanner = ScryScanner(database: database)
+
+    var committedCorrect = 0
+    var committed = 0
+    var failures: [String] = []
+    var report = "\nScry preview-path (bulk commit) precision (real catalog, \(try database.cardCount()) cards):\n"
+
+    for entry in manifest.entries {
+      guard let (image, orientation) = Self.loadImage(entry.image) else {
+        XCTFail("Could not load corpus image \(entry.image)")
+        continue
+      }
+
+      // Bulk seeds previewScan with the current live detection; corpus crops are
+      // already rectified, so the full-frame placeholder quad stands in.
+      let upright = ScryTextExtractor.makeUpright(image, orientation: orientation)
+      let resolution = try scanner.previewScan(
+        upright, orientation: .up, seedCard: Self.placeholderCard, readingOrientation: .up
+      )
+      // Bulk commits only on a confident preview (`.auto`, which carries a card).
+      let committedCard = resolution?.confidence == .auto ? resolution?.card : nil
+      let read = "set=\(resolution?.signals.setCode ?? "—") num=\(resolution?.signals.collectorNumber ?? "—")"
+
+      if entry.resolvedExpectation == .knownFailure {
+        if let committedCard, Self.matches(committedCard, entry) {
+          report += "  ! \(entry.image)  knownFailure NOW commits correctly on preview — revisit\n"
+        } else {
+          report += "  · \(entry.image)  knownFailure (preview: \(Self.describe(committedCard)))  \(read)\n"
+        }
+        continue
+      }
+
+      guard let committedCard else {
+        report += "  – \(entry.image)  no confident preview commit  \(read)\n"
+        continue
+      }
+      committed += 1
+      if Self.matches(committedCard, entry) {
+        committedCorrect += 1
+        report += "  ✓ \(entry.image)  preview commit correct  \(read)\n"
+      } else {
+        failures.append("\(entry.image): preview auto-committed \(Self.describe(committedCard)), expected \(entry.setCode) \(entry.collectorNumber)")
+        report += "  ✗ WRONG \(entry.image)  preview committed \(Self.describe(committedCard))\n"
+      }
+    }
+
+    report += "confident preview commits correct \(committedCorrect)/\(committed)\n"
+    print(report)
+    if let dir = ProcessInfo.processInfo.environment["SCRY_REPORT_DIR"] {
+      try? report.write(
+        to: URL(fileURLWithPath: dir).appendingPathComponent("crops-preview.txt"),
+        atomically: true, encoding: .utf8
+      )
+    }
+    XCTAssertTrue(
+      failures.isEmpty,
+      "Preview-path (bulk) precision failures — bulk mode would auto-commit the wrong printing:\n"
+        + failures.joined(separator: "\n")
+    )
   }
 
   /// `identify` only reads the detection for bookkeeping; corpus crops are

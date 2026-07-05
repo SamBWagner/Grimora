@@ -61,15 +61,24 @@ final class ScrySceneTests: XCTestCase {
       let scanned = try scanner.scan(image, orientation: orientation)
 
       if entry.expectation == .knownFailure {
+        // Permanent *historical* tag only — no exemption. Every card must scan:
+        // the subject has to be identified (auto, or correct present among the
+        // candidates). None / wrong / missing is a real failure. The tag stays
+        // forever and is never upgraded.
         let resolution = scanned?.resolution
-        let nowAuto = resolution?.confidence == .auto && Self.matches(resolution?.card, entry)
-        let nowPresent = resolution?.confidence == .ambiguous
+        let identifiedAuto = resolution?.confidence == .auto && Self.matches(resolution?.card, entry)
+        let identifiedAmbiguous = resolution?.confidence == .ambiguous
           && resolution?.candidates.contains { Self.matches($0, entry) } == true
-        if nowAuto || nowPresent {
-          report += "  ! \(entry.image)  knownFailure NOW PASSING (\(nowAuto ? "auto" : "disambiguation")) — upgrade the expectation\n"
+        if identifiedAuto {
+          autoCorrect += 1
+          report += "  ✓ \(entry.image)  [historically hard — now auto]\n"
+        } else if identifiedAmbiguous {
+          disambiguated += 1
+          report += "  ✓ \(entry.image)  [historically hard — identified via disambiguation]\n"
         } else {
           let outcome = resolution.map { "\(Self.describe($0.card)) / \($0.confidence)" } ?? "no card detected"
-          report += "  ✗ \(entry.image)  knownFailure (still failing: \(outcome))\n"
+          failures.append("\(entry.image): historically-hard scene still not scannable (\(outcome))")
+          report += "  ✗ \(entry.image)  not scannable yet (\(outcome))\n"
         }
         continue
       }
@@ -116,6 +125,73 @@ final class ScrySceneTests: XCTestCase {
       )
     }
     XCTAssertTrue(failures.isEmpty, "Scene failures:\n" + failures.joined(separator: "\n"))
+  }
+
+  /// The **bulk commit path** on full desk photos: `previewScan` runs its own
+  /// rectangles-only, single-orientation detection+read — exactly what bulk mode
+  /// commits straight off, with no follow-up full scan. Precision-only gate: a
+  /// confident commit of the wrong printing (or a neighbor/clutter region) fails;
+  /// a non-commit is reported, not failed (preview recall is intentionally lower).
+  func testPreviewScanNeverWronglyAutoCommitsSceneAgainstRealCatalog() throws {
+    let manifest = try Self.loadManifest()
+    try XCTSkipIf(manifest.entries.isEmpty, "No scenes — add photos to ScryCorpus/scenes and scenes-manifest.json.")
+    try XCTSkipIf(
+      Self.corpusURL().map { !FileManager.default.fileExists(atPath: $0.appendingPathComponent("scenes").path) } ?? true,
+      "ScryCorpus/scenes not on this checkout — local-only assets (see ScryCorpus/README.md)"
+    )
+
+    let database = try ScryTestCatalog.requireShared()
+    let scanner = ScryScanner(database: database)
+
+    var committedCorrect = 0
+    var committed = 0
+    var failures: [String] = []
+    var report = "\nScry scene preview-path (bulk commit) precision (real catalog, \(try database.cardCount()) cards):\n"
+
+    for entry in manifest.entries {
+      guard let (image, orientation) = Self.loadImage(entry.image) else {
+        XCTFail("Could not load scene \(entry.image)")
+        continue
+      }
+
+      let resolution = try scanner.previewScan(image, orientation: orientation)
+      let committedCard = resolution?.confidence == .auto ? resolution?.card : nil
+
+      if entry.expectation == .knownFailure {
+        if let committedCard, Self.matches(committedCard, entry) {
+          report += "  ! \(entry.image)  knownFailure NOW commits correctly on preview — revisit\n"
+        } else {
+          report += "  · \(entry.image)  knownFailure (preview: \(Self.describe(committedCard)))\n"
+        }
+        continue
+      }
+
+      guard let committedCard else {
+        report += "  – \(entry.image)  no confident preview commit\n"
+        continue
+      }
+      committed += 1
+      if Self.matches(committedCard, entry) {
+        committedCorrect += 1
+        report += "  ✓ \(entry.image)  preview commit correct\n"
+      } else {
+        failures.append("\(entry.image): preview auto-committed \(Self.describe(committedCard)), expected \(entry.setCode) \(entry.collectorNumber)")
+        report += "  ✗ WRONG \(entry.image)  preview committed \(Self.describe(committedCard))\n"
+      }
+    }
+
+    report += "confident preview commits correct \(committedCorrect)/\(committed)\n"
+    print(report)
+    if let dir = ProcessInfo.processInfo.environment["SCRY_REPORT_DIR"] {
+      try? report.write(
+        to: URL(fileURLWithPath: dir).appendingPathComponent("scenes-preview.txt"),
+        atomically: true, encoding: .utf8
+      )
+    }
+    XCTAssertTrue(
+      failures.isEmpty,
+      "Scene preview-path (bulk) precision failures:\n" + failures.joined(separator: "\n")
+    )
   }
 
   // MARK: - Identity
