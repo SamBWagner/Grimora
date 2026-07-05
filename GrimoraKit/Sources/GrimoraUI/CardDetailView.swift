@@ -31,6 +31,10 @@ public struct CardDetailView: View {
     @State private var buyFeedbackTrigger = 0
     @State private var isValueDetailsExpanded = false
     @State private var artistPendingArtSearch: String?
+    // Printings whose artwork is currently turned to a landscape (quarter-turn) variant, e.g. a
+    // rotated split or aftermath card. The compact gallery reserves a landscape box for these so the
+    // rotated card fills the width instead of shrinking inside a portrait frame.
+    @State private var landscapeGalleryPrintingIDs: Set<CardRecord.ID> = []
     @AppStorage(GrimoraValuePreferences.displayCurrencyKey)
     private var displayCurrencyRawValue = CardValueDisplayCurrency.usd.rawValue
 
@@ -918,9 +922,12 @@ public struct CardDetailView: View {
                         preferredQuality: .large,
                         fallbackImagePath: galleryImagePath(for: printing),
                         accessibilityHidden: false,
-                        foilTreatment: printing.foilTreatment(for: selectedFinish(printing))
+                        foilTreatment: printing.foilTreatment(for: selectedFinish(printing)),
+                        onLandscapeLayoutChange: { isLandscape in
+                            setGalleryPrinting(printing.id, showsLandscapeArtwork: isLandscape)
+                        }
                     )
-                    .aspectRatio(Self.cardAspectRatio, contentMode: .fit)
+                    .aspectRatio(galleryArtworkAspectRatio, contentMode: .fit)
                     .shadow(color: palette.shadow.color, radius: 10, x: 0, y: 6)
                     .cardGridPointerActivation(
                         onClick: { _ in fullScreenPrintingID = printing.id },
@@ -959,16 +966,34 @@ public struct CardDetailView: View {
         // the full container width. The aspect ratio must sit inside the maxWidth
         // cap — otherwise a wide host (e.g. the iPad fly-up sheet) reserves a box
         // sized to the whole panel width while the card is only 420pt, leaving a
-        // tall empty band above and below the artwork.
-        .aspectRatio(Self.cardAspectRatio, contentMode: .fit)
+        // tall empty band above and below the artwork. When the visible card is
+        // turned sideways the box flips to landscape so the rotated art fills it.
+        .aspectRatio(galleryArtworkAspectRatio, contentMode: .fit)
         .frame(maxWidth: Self.compactGalleryMaximumWidth)
         .frame(maxWidth: .infinity, alignment: .center)
+        .animation(.easeInOut(duration: 0.18), value: galleryArtworkAspectRatio)
         .accessibilityIdentifier("card-printings-gallery")
         .simultaneousGesture(compactGalleryMagnifyGesture)
     }
 
     private var currentCompactPrintingID: CardRecord.ID {
         gallerySelectionID ?? card.id
+    }
+
+    // Portrait by default; flips to landscape once the on-screen printing is turned sideways so the
+    // rotated card gets a wide box to fill rather than being letterboxed inside a portrait frame.
+    private var galleryArtworkAspectRatio: CGFloat {
+        landscapeGalleryPrintingIDs.contains(currentCompactPrintingID)
+            ? 1 / Self.cardAspectRatio
+            : Self.cardAspectRatio
+    }
+
+    private func setGalleryPrinting(_ id: CardRecord.ID, showsLandscapeArtwork: Bool) {
+        if showsLandscapeArtwork {
+            landscapeGalleryPrintingIDs.insert(id)
+        } else {
+            landscapeGalleryPrintingIDs.remove(id)
+        }
     }
 
     private var compactPrintingGrid: some View {

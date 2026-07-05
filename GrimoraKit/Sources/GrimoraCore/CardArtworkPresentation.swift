@@ -9,9 +9,16 @@ public enum CardArtworkRotation: Int, Equatable, Sendable {
   case none = 0
   case clockwise90 = 90
   case upsideDown180 = 180
+  // Expressed as clockwise degrees, so a 90° counterclockwise turn is 270° clockwise. Aftermath
+  // cards print their second half turned the opposite way from normal splits, so they rotate here.
+  case counterclockwise90 = 270
 
   public var degrees: Double {
     Double(rawValue)
+  }
+
+  public var isQuarterTurn: Bool {
+    self == .clockwise90 || self == .counterclockwise90
   }
 }
 
@@ -291,6 +298,9 @@ public enum CardArtworkPresentationResolver {
     let normalizedLayout: String
     let quality: CardImageQuality
     let includesLandscapeRotation: Bool
+    // Rotation direction also depends on the card's keywords (aftermath), which the image sources
+    // don't carry, so fold that decision into the key to keep it a complete cache identity.
+    let isAftermath: Bool
   }
 
   private static let variantsCacheLock = NSLock()
@@ -304,11 +314,13 @@ public enum CardArtworkPresentationResolver {
     includesLandscapeRotation: Bool = false
   ) -> [CardArtworkVariant] {
     let sources = imageSources(for: card)
+    let normalizedLayout = card.layout.normalizedArtworkKey
     let key = VariantsCacheKey(
       sources: sources,
-      normalizedLayout: card.layout.normalizedArtworkKey,
+      normalizedLayout: normalizedLayout,
       quality: preferredQuality,
-      includesLandscapeRotation: includesLandscapeRotation
+      includesLandscapeRotation: includesLandscapeRotation,
+      isAftermath: isAftermath(card: card, normalizedLayout: normalizedLayout)
     )
 
     variantsCacheLock.lock()
@@ -443,12 +455,17 @@ public enum CardArtworkPresentationResolver {
       rotations.append(.upsideDown180)
     }
 
-    if shouldRotateClockwise90(source: source, card: card, normalizedLayout: normalizedLayout) {
-      rotations.append(.clockwise90)
+    if shouldRotateQuarterTurn(source: source, card: card, normalizedLayout: normalizedLayout) {
+      // Aftermath cards print their second half turned the opposite way, so a clockwise turn would
+      // leave that half upside down — spin them counterclockwise so it reads upright instead.
+      let turn: CardArtworkRotation = isAftermath(card: card, normalizedLayout: normalizedLayout)
+        ? .counterclockwise90
+        : .clockwise90
+      rotations.append(turn)
     }
 
     if includesLandscapeRotation,
-       !rotations.contains(.clockwise90),
+       !rotations.contains(where: \.isQuarterTurn),
        !rotations.contains(.upsideDown180) {
       rotations.append(.clockwise90)
     }
@@ -456,7 +473,12 @@ public enum CardArtworkPresentationResolver {
     return rotations
   }
 
-  private static func shouldRotateClockwise90(
+  private static func isAftermath(card: CardRecord, normalizedLayout: String) -> Bool {
+    normalizedLayout == "split"
+      && card.keywords.contains { $0.normalizedArtworkKey == "aftermath" }
+  }
+
+  private static func shouldRotateQuarterTurn(
     source: CardArtworkImageSource,
     card: CardRecord,
     normalizedLayout: String

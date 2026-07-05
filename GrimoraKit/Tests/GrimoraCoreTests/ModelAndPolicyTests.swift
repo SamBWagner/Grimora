@@ -113,10 +113,10 @@ final class ModelAndPolicyTests: XCTestCase {
         XCTAssertEqual(variants.map(\.imagePath), ["/fable-front.jpg", "/fable-back.jpg"])
     }
 
-    func testArtworkPresentationRotatesSplitFuseAndAftermathClockwise() {
+    func testArtworkPresentationRotatesSplitAndFuseClockwise() {
         for (layout, keywords, typeLine) in [
-            ("split", ["Fuse"], "Instant // Instant"),
-            ("split", ["Aftermath"], "Sorcery // Sorcery")
+            ("split", [String](), "Instant // Instant"),
+            ("split", ["Fuse"], "Instant // Instant")
         ] {
             let card = CardRecord(
                 id: "\(typeLine)-\(keywords.joined())",
@@ -139,6 +139,31 @@ final class ModelAndPolicyTests: XCTestCase {
             XCTAssertEqual(variants.map(\.rotation), [.none, .clockwise90])
             XCTAssertEqual(variants.map(\.imagePath), ["/split.jpg", "/split.jpg"])
         }
+    }
+
+    func testArtworkPresentationRotatesAftermathCounterclockwise() {
+        // Aftermath's second half is printed turned the opposite way from a normal split, so it must
+        // rotate counterclockwise to read upright rather than end up upside down.
+        let card = CardRecord(
+            id: "aftermath",
+            name: "Insult // Injury",
+            setCode: "akh",
+            setName: "Amonkhet",
+            setType: "expansion",
+            collectorNumber: "213",
+            rarity: "rare",
+            colorSortKey: 0,
+            layout: "split",
+            typeLine: "Sorcery // Sorcery",
+            oracleText: "",
+            keywords: ["Aftermath"],
+            normalImagePath: "/split.jpg"
+        )
+
+        let variants = CardArtworkPresentationResolver.variants(for: card)
+
+        XCTAssertEqual(variants.map(\.rotation), [.none, .counterclockwise90])
+        XCTAssertEqual(variants.map(\.imagePath), ["/split.jpg", "/split.jpg"])
     }
 
     func testArtworkPresentationDefaultsRoomsToRotatedArtwork() {
@@ -398,6 +423,13 @@ final class ModelAndPolicyTests: XCTestCase {
             rotation: .upsideDown180
         )
 
+        let counterclockwise = artworkVariant(
+            id: "card-rotation-270",
+            source: .card,
+            imagePath: "/card.jpg",
+            rotation: .counterclockwise90
+        )
+
         let sidewaysPlan = CardArtworkMotionPlan.transition(from: sideways, to: normal)
         let upsideDownPlan = CardArtworkMotionPlan.transition(from: upsideDown, to: normal)
 
@@ -405,6 +437,16 @@ final class ModelAndPolicyTests: XCTestCase {
         XCTAssertEqual(sidewaysPlan.rotationDeltaDegrees, -90)
         XCTAssertEqual(upsideDownPlan.kind, .rotate)
         XCTAssertEqual(abs(upsideDownPlan.rotationDeltaDegrees), 180)
+
+        // The cycle button's turn icon reads its direction from these signs: turning an aftermath
+        // card counterclockwise is a negative delta, and turning it back upright is positive.
+        let counterclockwisePlan = CardArtworkMotionPlan.transition(from: normal, to: counterclockwise)
+        let backToUprightPlan = CardArtworkMotionPlan.transition(from: counterclockwise, to: normal)
+
+        XCTAssertEqual(counterclockwisePlan.kind, .rotate)
+        XCTAssertEqual(counterclockwisePlan.rotationDeltaDegrees, -90)
+        XCTAssertEqual(backToUprightPlan.kind, .rotate)
+        XCTAssertEqual(backToUprightPlan.rotationDeltaDegrees, 90)
     }
 
     func testLargeCachedImageCanDisplayWithoutSatisfyingPreviewCache() {

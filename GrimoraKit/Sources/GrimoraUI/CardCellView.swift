@@ -235,7 +235,7 @@ struct CardArtworkView: View {
             Button {
                 cycleVariant()
             } label: {
-                CardArtworkCycleIcon(kind: nextVariant.isRotated ? .rotate : .flip)
+                CardArtworkCycleIcon(kind: cycleIconKind(to: nextVariant))
                     .foregroundStyle(palette.primaryText.color)
                     .frame(width: 30, height: 30)
                     .background(.regularMaterial, in: Circle())
@@ -452,12 +452,31 @@ struct CardArtworkView: View {
         includesLandscapeRotation = true
     }
 
-    private func cycleAccessibilityLabel(for variant: CardArtworkVariant) -> String {
-        if variant.isRotated {
-            return "Rotate card art"
+    // The button previews the *next* transition, so its symbol has to match what pressing it does:
+    // a clockwise or counterclockwise quarter/half turn on the same art, or a flip to another face.
+    private func cycleIconKind(to next: CardArtworkVariant) -> CardArtworkCycleIconKind {
+        guard let current = selectedVariant else {
+            return next.isRotated ? .rotateClockwise : .flip
         }
 
-        return "Show \(variant.title)"
+        let plan = CardArtworkMotionPlan.transition(from: current, to: next)
+        switch plan.kind {
+        case .rotate:
+            return plan.rotationDeltaDegrees < 0 ? .rotateCounterclockwise : .rotateClockwise
+        case .flip:
+            return .flip
+        case .none:
+            return next.isRotated ? .rotateClockwise : .flip
+        }
+    }
+
+    private func cycleAccessibilityLabel(for next: CardArtworkVariant) -> String {
+        switch cycleIconKind(to: next) {
+        case .rotateClockwise, .rotateCounterclockwise:
+            return "Rotate card art"
+        case .flip:
+            return "Show \(next.title)"
+        }
     }
 
     private var currentVariantAccessibilityValue: String {
@@ -509,7 +528,8 @@ private enum CardArtworkActiveTransition {
 
 private enum CardArtworkCycleIconKind {
     case flip
-    case rotate
+    case rotateClockwise
+    case rotateCounterclockwise
 }
 
 private struct CardArtworkCycleIcon: View {
@@ -518,8 +538,11 @@ private struct CardArtworkCycleIcon: View {
     var body: some View {
         ZStack {
             switch kind {
-            case .rotate:
+            case .rotateClockwise:
                 Image(systemName: "rotate.right.fill")
+                    .font(.system(size: 14, weight: .bold))
+            case .rotateCounterclockwise:
+                Image(systemName: "rotate.left.fill")
                     .font(.system(size: 14, weight: .bold))
             case .flip:
                 RoundedRectangle(cornerRadius: 2.5, style: .continuous)
