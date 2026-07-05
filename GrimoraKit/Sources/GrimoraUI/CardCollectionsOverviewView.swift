@@ -7,6 +7,7 @@ struct CardCollectionsOverviewView: View {
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
+    @State private var measuredGridWidth: CGFloat = 0
 
     var gridZoom: GridZoomController
     var onCreateList: () -> Void
@@ -36,6 +37,17 @@ struct CardCollectionsOverviewView: View {
                 } else {
                     collectionsLayout(items: items)
                 }
+            }
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: CollectionsGridWidthPreferenceKey.self,
+                        value: proxy.size.width
+                    )
+                }
+            }
+            .onPreferenceChange(CollectionsGridWidthPreferenceKey.self) { width in
+                measuredGridWidth = width
             }
             .padding(.horizontal, horizontalPadding)
             .padding(.vertical, verticalPadding)
@@ -87,7 +99,7 @@ struct CardCollectionsOverviewView: View {
 
         if systemItems.isEmpty {
             tilesGrid(items, lastSystemID: nil)
-        } else if isNarrowTwoColumn {
+        } else if isCompactPhoneLayout {
             VStack(alignment: .leading, spacing: verticalSpacing) {
                 tilesGrid(systemItems, lastSystemID: nil)
                 Divider().overlay(palette.hairline.color)
@@ -134,7 +146,10 @@ struct CardCollectionsOverviewView: View {
         }
     }
 
-    private var isNarrowTwoColumn: Bool {
+    // Compact iPhone widths separate the system lists from the user's with a divider, and
+    // (via `baseTileMinimumWidth`) hold a single, full-width column in portrait at the
+    // default zoom.
+    private var isCompactPhoneLayout: Bool {
         #if os(iOS)
         horizontalSizeClass == .compact
         #else
@@ -142,14 +157,51 @@ struct CardCollectionsOverviewView: View {
         #endif
     }
 
+    // A lone `.adaptive` GridItem clamps each column to `tileMaximumWidth`, so when a single
+    // column fits on a narrow phone the tile sits at its max width with dead space along its
+    // trailing edge — and just above that width it forms a cramped, half-empty second column
+    // (the system/user split leaves only a tile or two per section). Measuring the content
+    // width and sizing the columns via the shared grid math instead lets iOS fill the lone
+    // column edge-to-edge (`fillsSingleColumn`); the wider compact minimum keeps portrait
+    // phones at one full-width column until the user pinches to zoom out or rotates to a wide
+    // (landscape / iPad) layout that genuinely fits several tiles. Before the first
+    // measurement lands we fall back to the adaptive item so the grid still renders.
     private var columns: [GridItem] {
-        [
-            GridItem(
-                .adaptive(minimum: tileMinimumWidth, maximum: tileMaximumWidth),
-                spacing: horizontalSpacing,
-                alignment: .topLeading
-            )
-        ]
+        guard measuredGridWidth > 0 else {
+            return [
+                GridItem(
+                    .adaptive(minimum: tileMinimumWidth, maximum: tileMaximumWidth),
+                    spacing: horizontalSpacing,
+                    alignment: .topLeading
+                )
+            ]
+        }
+        let columnWidth = adaptiveCardGridColumnWidth(
+            availableWidth: measuredGridWidth,
+            minimumColumnWidth: tileMinimumWidth,
+            maximumColumnWidth: tileMaximumWidth,
+            fillsSingleColumn: gridFillsSingleColumn,
+            spacing: horizontalSpacing
+        )
+        let columnCount = max(
+            1,
+            Int((measuredGridWidth + horizontalSpacing) / (max(1, tileMinimumWidth) + horizontalSpacing))
+        )
+        return Array(
+            repeating: GridItem(.fixed(columnWidth), spacing: horizontalSpacing, alignment: .topLeading),
+            count: columnCount
+        )
+    }
+
+    // Fill the single column edge-to-edge on iPhone/iPad (touch); macOS and visionOS keep
+    // the clamp-to-max behaviour they had before. (On iPad a single column never occurs, so
+    // this only takes effect on a phone.)
+    private var gridFillsSingleColumn: Bool {
+        #if os(iOS)
+        true
+        #else
+        false
+        #endif
     }
 
     private var palette: GrimoraPalette {
@@ -219,7 +271,11 @@ struct CardCollectionsOverviewView: View {
         #elseif os(macOS)
         260
         #else
-        170
+        // A compact iPhone holds one full-width column in portrait at the default zoom: 200
+        // keeps a second tile from squeezing in until ~440pt of content (wider than any phone
+        // portrait), while pinch-to-zoom-out or a landscape/iPad width still forms several
+        // columns. iPad (regular) keeps the denser 170 it used before.
+        isCompactPhoneLayout ? 200 : 170
         #endif
     }
 
@@ -252,6 +308,17 @@ struct CardCollectionsOverviewView: View {
             item.topCard?.id ?? "empty",
             item.topCard?.listOverviewImagePath ?? "missing"
         ].joined(separator: ":")
+    }
+}
+
+private struct CollectionsGridWidthPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        let next = nextValue()
+        if next > 0 {
+            value = next
+        }
     }
 }
 
