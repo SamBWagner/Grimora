@@ -111,6 +111,27 @@ final class ScryRecognitionTests: XCTestCase {
     XCTAssertEqual(parsed.copyrightYear, 2009)
   }
 
+  func testParsesRetroFrameCollectorNumberFromCopyrightLine() {
+    // Retro (1997) frame reprints — e.g. Innistrad Remastered's old-border Edgar
+    // Markov — print the collector number as a bare integer after the studio name:
+    // "™ & © 2025 Wizards of the Coast 428". No slash, no set code, no zero pad.
+    let parsed = ScryCollectorLineParser.parse(lines: [
+      "Illus. Volkan Baga", "TM & © 2025 Wizards of the Coast 428"
+    ])
+    XCTAssertEqual(parsed.collectorNumber, "428")
+    XCTAssertEqual(parsed.copyrightYear, 2025)
+    XCTAssertNil(parsed.setTotal)  // no slash fragment
+    XCTAssertNil(parsed.setCode)   // the retro frame prints none
+  }
+
+  func testLeadingCopyrightYearIsNotReadAsRetroCollectorNumber() {
+    // The year precedes the "Wizards"/"Coast" marker; with no real number after
+    // the marker, nothing may be read as a collector number.
+    let parsed = ScryCollectorLineParser.parse(lines: ["TM & © 2024 Wizards of the Coast"])
+    XCTAssertNil(parsed.collectorNumber)
+    XCTAssertEqual(parsed.copyrightYear, 2024)
+  }
+
   func testCopyrightYearTakesLaterYearOfSpan() {
     let parsed = ScryCollectorLineParser.parse(lines: ["™ & © 1993-2012 Wizards of the Coast LLC"])
     XCTAssertEqual(parsed.copyrightYear, 2012)

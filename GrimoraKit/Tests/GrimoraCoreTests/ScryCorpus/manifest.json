@@ -634,6 +634,28 @@
       "sleeved": false,
       "background": "black",
       "notes": "Oil-slick raised-foil Phyrexian-language Mountain (ONE Compleat bundle). Entirely Phyrexian script — no Latin text exists on the card, so OCR is structurally impossible; wants an art/frame-based fallback someday. — GrimoraScry 2026-07-02T14:38:18Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "edgar-markov-inr-428.jpg",
+      "name": "Edgar Markov",
+      "setCode": "inr",
+      "collectorNumber": "428",
+      "foil": false,
+      "sleeved": false,
+      "background": "white",
+      "notes": "Retro (1997) frame reprint, Innistrad Remastered. Sharp in-focus capture, baked upright. Name reads cleanly and the collector number 428 now parses off the copyright line, but sibling inr #328 (showcase Edgar Markov) is one collector digit away with no set code on the retro frame, so name+number correctly surfaces a picker (precision guard) rather than auto-accepting; on-device the set-symbol matcher settles retro vs showcase. Provided as a plain Camera-app photo after the GrimoraScry harness export failed on-device.",
+      "expectation": "disambiguation"
+    },
+    {
+      "image": "edgar-markov-inr-428-blurry.jpg",
+      "name": "Edgar Markov",
+      "setCode": "inr",
+      "collectorNumber": "428",
+      "expectation": "disambiguation",
+      "foil": false,
+      "sleeved": false,
+      "background": "white",
+      "notes": "Same card, out-of-focus bulk-scan field capture (the original failing scan). The title is too soft to auto-corroborate, but the copyright-line collector number 428 survives the blur and parses, so it recovers to a picker with inr 428 present rather than resolving to nothing. Documents the field failure that motivated the tap-to-focus rebuild; kept as a blurry robustness data point alongside the sharp entry."
     }
   ]
 }

@@ -42,7 +42,7 @@ struct ContentView: View {
         ScryCameraPreviewView(
           session: model.camera.session,
           detectedCards: model.camera.detectedCards,
-          onFocusTap: { point in model.camera.focus(atDevicePoint: point, lock: false) }
+          onFocusTap: { point in model.camera.focus(atDevicePoint: point) }
         )
         .ignoresSafeArea()
       }

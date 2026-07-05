@@ -116,6 +116,8 @@ public final class ScryCameraController {
     previewTask?.cancel()
     previewTask = nil
     sessionQueue.async { [self] in
+      focusSettle?.cancel()
+      focusSettle = nil
       if session.isRunning {
         session.stopRunning()
       }
@@ -427,7 +429,10 @@ public final class ScryCameraController {
       device.focusMode = .continuousAutoFocus
     }
     if device.isAutoFocusRangeRestrictionSupported {
-      device.autoFocusRangeRestriction = .near  // cards are held close
+      // Full range, not `.near`: on a lightbox rig the card can sit past the
+      // near band, where a `.near` restriction stops AF from ever converging.
+      // The center-weighted `focusPointOfInterest` still keeps it off the walls.
+      device.autoFocusRangeRestriction = .none
     }
     if device.isSmoothAutoFocusSupported {
       device.isSmoothAutoFocusEnabled = true
@@ -440,10 +445,16 @@ public final class ScryCameraController {
 
   // MARK: - Focus control (for the fixed bulk-scan rig)
 
-  /// Locks focus and exposure at the current setting so cards placed at the same
-  /// spot stay sharp instead of the camera re-hunting on each one.
+  /// The in-flight tap/refocus settle, so a newer request can supersede it.
+  private var focusSettle: ScryFocusSettleCoordinator?
+
+  /// Locks or unlocks focus and exposure at the current setting. Retained for the
+  /// single-mode entry path; the bulk rig now prefers `beginBulkFocus` (centered
+  /// continuous AF) over a hard lock that could freeze on a soft frame.
   public func setFocusLocked(_ locked: Bool) {
     sessionQueue.async { [self] in
+      focusSettle?.cancel()
+      focusSettle = nil
       guard let device, (try? device.lockForConfiguration()) != nil else { return }
       if locked {
         if device.isFocusModeSupported(.locked) { device.focusMode = .locked }
@@ -456,49 +467,75 @@ public final class ScryCameraController {
     }
   }
 
-  /// Tap-to-focus: focus and meter at a point in the camera's device coordinate
-  /// space (origin top-left, normalized), then re-lock in bulk or resume
-  /// continuous autofocus otherwise. Fixes focus drifting and getting stuck soft.
-  public func focus(atDevicePoint point: CGPoint, lock: Bool) {
+  /// Bulk-mode steady state: center-weighted continuous autofocus, no lock. A
+  /// fixed rig re-converges per placement on its own — and, unlike locking on
+  /// entry, it never freezes on the (often empty-box) first frame and leaves
+  /// every later card soft.
+  public func beginBulkFocus() {
     sessionQueue.async { [self] in
-      guard let device, (try? device.lockForConfiguration()) != nil else { return }
-      if device.isFocusPointOfInterestSupported, device.isFocusModeSupported(.autoFocus) {
-        device.focusPointOfInterest = point
-        device.focusMode = .autoFocus
-      }
-      if device.isExposurePointOfInterestSupported, device.isExposureModeSupported(.autoExpose) {
-        device.exposurePointOfInterest = point
-        device.exposureMode = .autoExpose
-      }
-      device.unlockForConfiguration()
-    }
-    // Let the one-shot focus settle, then lock (bulk) or hand back to continuous AF.
-    Task { @MainActor in
-      try? await Task.sleep(for: .seconds(0.7))
-      self.setFocusLocked(lock)
+      focusSettle?.cancel()
+      focusSettle = nil
+      applyCenteredContinuousFocus()
     }
   }
 
-  /// One-shot refocus on the center, then relock — for when the rig is repositioned.
-  public func refocusThenLock() {
+  /// Tap-to-focus: one-shot AF + AE at a point in the camera's device coordinate
+  /// space (origin top-left, normalized), then — once the lens *actually* stops
+  /// hunting (observed via `ScryFocusSettleCoordinator`, not a fixed timer) —
+  /// hand back to continuous AF so the next card re-converges. Waiting for the
+  /// real settle is what keeps a tap from freezing a mid-hunt, soft frame.
+  public func focus(atDevicePoint point: CGPoint) {
     sessionQueue.async { [self] in
-      guard let device, (try? device.lockForConfiguration()) != nil else { return }
-      let center = CGPoint(x: 0.5, y: 0.5)
-      if device.isFocusPointOfInterestSupported, device.isFocusModeSupported(.autoFocus) {
-        device.focusPointOfInterest = center
-        device.focusMode = .autoFocus
-      }
-      if device.isExposurePointOfInterestSupported, device.isExposureModeSupported(.autoExpose) {
-        device.exposurePointOfInterest = center
-        device.exposureMode = .autoExpose
-      }
-      device.unlockForConfiguration()
+      applyOneShotFocus(at: point)
+      beginFocusSettle()
     }
-    // Give the one-shot autofocus a moment to settle, then lock it.
-    Task { @MainActor in
-      try? await Task.sleep(for: .seconds(1.0))
-      self.setFocusLocked(true)
+  }
+
+  /// Refocus button / rig repositioned: one-shot on center, then continuous.
+  public func refocusCenter() {
+    focus(atDevicePoint: CGPoint(x: 0.5, y: 0.5))
+  }
+
+  // MARK: - Focus helpers (all run on `sessionQueue`)
+
+  private func applyOneShotFocus(at point: CGPoint) {
+    focusSettle?.cancel()
+    focusSettle = nil
+    guard let device, (try? device.lockForConfiguration()) != nil else { return }
+    if device.isFocusPointOfInterestSupported, device.isFocusModeSupported(.autoFocus) {
+      device.focusPointOfInterest = point
+      device.focusMode = .autoFocus
     }
+    if device.isExposurePointOfInterestSupported, device.isExposureModeSupported(.autoExpose) {
+      device.exposurePointOfInterest = point
+      device.exposureMode = .autoExpose
+    }
+    device.unlockForConfiguration()
+  }
+
+  private func beginFocusSettle() {
+    guard let device else { return }
+    let coordinator = ScryFocusSettleCoordinator(device: device, sessionQueue: sessionQueue) { [weak self] in
+      // Fires on `sessionQueue` (the coordinator's completion).
+      self?.resumeContinuousFocusAfterSettle()
+    }
+    focusSettle = coordinator
+    coordinator.begin()
+  }
+
+  private func resumeContinuousFocusAfterSettle() {
+    applyCenteredContinuousFocus()
+    focusSettle = nil
+  }
+
+  private func applyCenteredContinuousFocus() {
+    guard let device, (try? device.lockForConfiguration()) != nil else { return }
+    let center = CGPoint(x: 0.5, y: 0.5)
+    if device.isFocusPointOfInterestSupported { device.focusPointOfInterest = center }
+    if device.isFocusModeSupported(.continuousAutoFocus) { device.focusMode = .continuousAutoFocus }
+    if device.isExposurePointOfInterestSupported { device.exposurePointOfInterest = center }
+    if device.isExposureModeSupported(.continuousAutoExposure) { device.exposureMode = .continuousAutoExposure }
+    device.unlockForConfiguration()
   }
 }
 #endif

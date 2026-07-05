@@ -133,7 +133,8 @@ struct ScryTabView: View {
       detectedCards: controller.detectedCards,
       lockColor: .scryLock,
       onFocusTap: { devicePoint in
-        controller.focus(atDevicePoint: devicePoint, lock: mode == .bulk)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        controller.focus(atDevicePoint: devicePoint)
         // In single mode a tap is also the manual scan gesture: focus where the
         // user pointed, then read whatever is there — with loud feedback.
         if mode == .single {
@@ -185,9 +186,9 @@ struct ScryTabView: View {
           .foregroundStyle(guess.confident ? .green : .secondary)
         Text(guess.confident ? guess.name : "\(guess.name)?").fontWeight(.semibold).lineLimit(1)
       } else {
-        Text("Place a card under the camera")
+        Text("Place a card — tap to focus")
       }
-      Button { controller.refocusThenLock() } label: { Image(systemName: "camera.metering.center.weighted") }
+      Button { controller.refocusCenter() } label: { Image(systemName: "camera.metering.center.weighted") }
         .help("Refocus")
     }
     .font(.subheadline.weight(.medium))
@@ -496,7 +497,7 @@ struct ScryTabView: View {
 
   private func applyFocus(for mode: Mode) {
     switch mode {
-    case .bulk: controller.refocusThenLock()
+    case .bulk: controller.beginBulkFocus()
     case .single: controller.setFocusLocked(false)
     }
   }

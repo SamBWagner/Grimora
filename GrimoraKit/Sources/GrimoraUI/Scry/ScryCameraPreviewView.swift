@@ -42,7 +42,7 @@ public struct ScryCameraPreviewView: UIViewRepresentable {
 
 /// A view backed by `AVCaptureVideoPreviewLayer`, with a shape layer that draws
 /// the detected card quads (Vision normalized corners → preview-layer points).
-public final class ScryPreviewUIView: UIView {
+public final class ScryPreviewUIView: UIView, UIGestureRecognizerDelegate {
   public override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
 
   var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
@@ -64,14 +64,25 @@ public final class ScryPreviewUIView: UIView {
 
     let tap = UITapGestureRecognizer(target: self, action: #selector(handleFocusTap(_:)))
     tap.cancelsTouchesInView = false  // let SwiftUI controls keep working
+    tap.delegate = self  // coexist with any SwiftUI gesture recognizers on ancestors
     addGestureRecognizer(tap)
   }
 
   @objc private func handleFocusTap(_ recognizer: UITapGestureRecognizer) {
     let location = recognizer.location(in: self)
     let devicePoint = previewLayer.captureDevicePointConverted(fromLayerPoint: location)
+    // Ignore taps outside the imaged area (e.g. letterboxing): a
+    // focusPointOfInterest is only valid within [0,1] on both axes.
+    guard (0...1).contains(devicePoint.x), (0...1).contains(devicePoint.y) else { return }
     onFocusTap?(devicePoint)
     showFocusReticle(at: location)
+  }
+
+  public func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+  ) -> Bool {
+    true
   }
 
   private func showFocusReticle(at point: CGPoint) {

@@ -99,6 +99,29 @@ public enum ScryCollectorLineParser {
         if let number = number(fromToken: tokens[index]) { return number }
       }
     }
+    // 4. Retro (1997) frame reprints — e.g. Innistrad Remastered's old-border
+    //    Edgar Markov — print the collector number as a bare integer at the end
+    //    of the copyright line: "™ & © 2025 Wizards of the Coast 428". That line
+    //    is otherwise off-limits (rules 2–3 skip it), so this is the one number
+    //    besides the slash fragment worth reading there.
+    if let number = copyrightLineCollector(in: lines) { return number }
+    return nil
+  }
+
+  /// The collector number a retro-frame reprint tacks onto its copyright line: a
+  /// bare number sitting *after* the "Wizards"/"Coast" marker (so the leading
+  /// copyright year, which precedes the marker, is never mistaken for it), and
+  /// not itself a plausible 4-digit year.
+  static func copyrightLineCollector(in lines: [String]) -> String? {
+    for line in lines where isCopyrightLine(line) {
+      let tokens = tokenize(line)
+      guard let markerIndex = tokens.lastIndex(where: { copyrightMarkers.contains($0.lowercased()) })
+      else { continue }
+      for token in tokens[tokens.index(after: markerIndex)...] {
+        if token.count == 4, let year = Int(token), copyrightYearRange.contains(year) { continue }
+        if let number = number(fromToken: token) { return number }
+      }
+    }
     return nil
   }
 
