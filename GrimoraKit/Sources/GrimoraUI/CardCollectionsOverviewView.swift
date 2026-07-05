@@ -14,6 +14,11 @@ struct CardCollectionsOverviewView: View {
     var onSelectList: (CardCollectionRecord.ID) -> Void
     var onRenameList: (CardCollectionRecord) -> Void = { _ in }
 
+    /// The list currently being dragged in the tile grid (nil when no drag is in flight). Drives
+    /// the lifted-tile opacity and the drop-commit haptic.
+    @State private var draggedListID: CardCollectionRecord.ID?
+    @State private var reorderFeedbackTrigger = 0
+
     var body: some View {
         let items = model.filteredCardCollectionOverviewItems
 
@@ -35,7 +40,7 @@ struct CardCollectionsOverviewView: View {
                         searchText: model.dashboardSearchText
                     )
                 } else {
-                    collectionsLayout(items: items)
+                    tilesGrid(items)
                 }
             }
             .background {
@@ -55,6 +60,14 @@ struct CardCollectionsOverviewView: View {
         }
         .gridZoomPinch(gridZoom)
         .cloudSyncRefreshable(model)
+        .onChange(of: draggedListID) { oldValue, newValue in
+            // A drag just completed (something was being dragged, now nothing is): confirm the
+            // reorder/pin with a success haptic.
+            if oldValue != nil, newValue == nil {
+                reorderFeedbackTrigger += 1
+            }
+        }
+        .grimoraDropSuccessFeedback(trigger: reorderFeedbackTrigger)
         .background {
             GrimoraAppBackground(palette: palette)
         }
@@ -88,41 +101,27 @@ struct CardCollectionsOverviewView: View {
         }
     }
 
-    // System lists (Favourites, Scanned) lead and are set apart from user
-    // collections. On a two-column phone grid a full-width rule reads cleanly; on
-    // wider grids that would leave an awkward empty row, so the lists flow
-    // continuously and the last system tile carries a subtle trailing rule.
+    // One continuous grid, already ordered system -> pinned -> unpinned. A pin glyph marks pinned
+    // tiles (see `systemSymbol` below); long-press-drag reorders, and dropping a tile onto one of the
+    // opposite pin-state flips it (pin/unpin) via `CardCollectionDropDelegate`.
     @ViewBuilder
-    private func collectionsLayout(items: [CardCollectionOverviewItem]) -> some View {
-        let systemItems = items.filter { model.isSystemList($0.list) }
-        let normalItems = items.filter { !model.isSystemList($0.list) }
+    private func tilesGrid(_ items: [CardCollectionOverviewItem]) -> some View {
+        // The drop delegate reorders within a section using that section's slice, so precompute the
+        // user-pinned and unpinned records (system lists are excluded — they aren't reorderable).
+        let pinnedUser = items.filter { $0.list.isPinned && !model.isSystemList($0.list) }.map(\.list)
+        let unpinnedUser = items.filter { !$0.list.isPinned && !model.isSystemList($0.list) }.map(\.list)
+        // Reordering a filtered subset is confusing, so drag is suppressed while a cross-list search
+        // narrows the tiles. (Dropping cards onto a tile still works — that path ignores this.)
+        let canReorder = !model.hasActiveDashboardSearch
 
-        if systemItems.isEmpty {
-            tilesGrid(items, lastSystemID: nil)
-        } else if isCompactPhoneLayout {
-            VStack(alignment: .leading, spacing: verticalSpacing) {
-                tilesGrid(systemItems, lastSystemID: nil)
-                Divider().overlay(palette.hairline.color)
-                tilesGrid(normalItems, lastSystemID: nil)
-            }
-        } else {
-            tilesGrid(items, lastSystemID: systemItems.last?.id)
-        }
-    }
-
-    @ViewBuilder
-    private func tilesGrid(
-        _ items: [CardCollectionOverviewItem],
-        lastSystemID: CardCollectionRecord.ID?
-    ) -> some View {
         LazyVGrid(columns: columns, alignment: .leading, spacing: verticalSpacing) {
             ForEach(items) { item in
                 CardCollectionOverviewTile(
                     item: item,
                     palette: palette,
                     isSystemList: model.isSystemList(item.list),
-                    systemSymbol: model.systemSymbol(for: item.list),
-                    showsTrailingSeparator: item.id == lastSystemID,
+                    systemSymbol: model.systemSymbol(for: item.list)
+                        ?? (item.list.isPinned ? "pin.fill" : nil),
                     matchPreview: matchPreview(for: item.list.id)
                 ) {
                     model.selectCardCollection(id: item.list.id)
@@ -134,7 +133,7 @@ struct CardCollectionsOverviewView: View {
                 }
                 // Tiles live in a LazyVGrid, so `.swipeActions` (List-only) doesn't
                 // apply here — the context menu is the dashboard's action affordance
-                // (long-press on iOS/visionOS, right-click on macOS).
+                // (long-press on iOS/visionOS, right-click on macOS), including explicit Pin/Unpin.
                 .contextMenu {
                     CardCollectionOverviewActions(
                         model: model,
@@ -142,13 +141,31 @@ struct CardCollectionsOverviewView: View {
                         onRenameList: onRenameList
                     )
                 }
+                // System lists (Favourites/Scanned) can't be dragged; dropping another list onto one
+                // pins that list to the top so drag-to-pin works even with no user pins yet.
+                .draggableList(
+                    if: canReorder && !model.isSystemList(item.list),
+                    draggedListID: $draggedListID,
+                    listID: item.list.id
+                )
+                .onDrop(
+                    of: CardCollectionDropDelegate.supportedContentTypes,
+                    delegate: CardCollectionDropDelegate(
+                        targetList: item.list,
+                        targetIsPinned: item.list.isPinned,
+                        lists: item.list.isPinned ? pinnedUser : unpinnedUser,
+                        draggedListID: $draggedListID,
+                        model: model,
+                        pinsWhenDroppedOnSystemList: true
+                    )
+                )
+                .opacity(draggedListID == item.list.id ? 0.35 : 1)
             }
         }
     }
 
-    // Compact iPhone widths separate the system lists from the user's with a divider, and
-    // (via `baseTileMinimumWidth`) hold a single, full-width column in portrait at the
-    // default zoom.
+    // Compact iPhone widths hold a single, full-width column in portrait at the default zoom (via
+    // `baseTileMinimumWidth`).
     private var isCompactPhoneLayout: Bool {
         #if os(iOS)
         horizontalSizeClass == .compact
@@ -328,12 +345,9 @@ private struct CardCollectionOverviewTile: View {
     var item: CardCollectionOverviewItem
     var palette: GrimoraPalette
     var isSystemList: Bool
-    /// SF Symbol shown next to the name for a system list (star for Favourites,
-    /// tray for Scanned); `nil` for normal collections.
+    /// SF Symbol shown next to the name — star for Favourites, tray for Scanned, or `pin.fill` for a
+    /// user-pinned collection; `nil` for an unpinned collection.
     var systemSymbol: String? = nil
-    /// Draws a subtle accent rule on the trailing edge — used (on wide layouts)
-    /// to mark the boundary between the system lists and normal collections.
-    var showsTrailingSeparator: Bool = false
     var matchPreview: MatchPreview? = nil
     var onSelect: () -> Void
 
@@ -397,15 +411,6 @@ private struct CardCollectionOverviewTile: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .trailing) {
-            if showsTrailingSeparator {
-                Capsule()
-                    .fill(palette.accent.color.opacity(0.5))
-                    .frame(width: 2.5)
-                    .padding(.vertical, 14)
-                    .accessibilityHidden(true)
-            }
-        }
         #if os(macOS)
         .scaleEffect(isHovered && !reduceMotion ? 1.05 : 1)
         .zIndex(isHovered ? 1 : 0)
@@ -436,10 +441,14 @@ private struct CardCollectionOverviewTile: View {
     }
 
     private var accessibilityValueText: String {
-        guard let matchPreview else {
-            return entryCountText
+        var parts = [entryCountText]
+        if item.list.isPinned, !isSystemList {
+            parts.append("Pinned")
         }
-        return "\(entryCountText), \(matchSummaryText(matchPreview))"
+        if let matchPreview {
+            parts.append(matchSummaryText(matchPreview))
+        }
+        return parts.joined(separator: ", ")
     }
 
     private var shadowOpacity: Double {

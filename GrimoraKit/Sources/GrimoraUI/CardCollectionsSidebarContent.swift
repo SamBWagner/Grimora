@@ -298,7 +298,7 @@ struct CardCollectionSidebarRow: View {
     }
 }
 
-private struct CardCollectionDropDelegate: DropDelegate {
+struct CardCollectionDropDelegate: DropDelegate {
     static let listUTType = UTType(exportedAs: "com.grimora.card-list")
     static let supportedContentTypes = [listUTType] + CardDropTokenLoader.supportedContentTypes
 
@@ -307,6 +307,10 @@ private struct CardCollectionDropDelegate: DropDelegate {
     var lists: [CardCollectionRecord]
     @Binding var draggedListID: CardCollectionRecord.ID?
     var model: GrimoraAppModel
+    /// Dashboard-only: dropping a list onto a system tile (Favourites/Scanned) pins it to the top of
+    /// the user-pinned run instead of no-op'ing, so drag-to-pin works even with zero user pins. The
+    /// sidebar leaves this `false` to keep dropping-onto-a-system-row inert.
+    var pinsWhenDroppedOnSystemList = false
 
     static func dragProvider(for listID: CardCollectionRecord.ID) -> NSItemProvider {
         let token = CardCollectionDragToken.token(for: listID)
@@ -362,6 +366,9 @@ private struct CardCollectionDropDelegate: DropDelegate {
             return
         }
         if let targetList, model.isSystemList(targetList) {
+            if pinsWhenDroppedOnSystemList {
+                model.moveCardCollection(id: draggedListID, toPosition: 0, isPinned: true)
+            }
             return
         }
 
@@ -382,8 +389,7 @@ private struct CardCollectionDropDelegate: DropDelegate {
     }
 }
 
-#if os(macOS)
-private extension View {
+extension View {
     @ViewBuilder
     func draggableList(
         if isEnabled: Bool,
@@ -400,4 +406,3 @@ private extension View {
         }
     }
 }
-#endif
