@@ -40,6 +40,37 @@ public struct ScryPriceThresholds: Equatable, Sendable {
   }
 }
 
+/// Resolves the USD price a scanned card should be *valued and celebrated* by —
+/// the same number the detail screen shows. A foil-only printing (a special-edition
+/// legend, a promo) has no non-foil price, so `CardRecord.priceUSD` is `nil` and
+/// tiering off it alone silently treats a $40 foil as worthless. This prefers the
+/// value-guide price for the card's inherent finish, matching `CardDetailView`'s
+/// `primaryValueEntry`, and falls back to `priceUSD` when no guide data exists.
+public enum ScryValueTiering {
+  /// - Parameters:
+  ///   - card: the scanned printing.
+  ///   - finishPrices: current value-guide price per finish (may be empty).
+  /// - Returns: the effective USD price, or `nil` when nothing is known.
+  public static func effectivePriceUSD(
+    for card: CardRecord,
+    finishPrices: [CardValueFinish: Double]
+  ) -> Double? {
+    if !finishPrices.isEmpty {
+      // Prefer the finish the printing inherently is (foil-only → foil), exactly
+      // like the detail view's finish selection; then fall through the ordering.
+      if let price = finishPrices[card.defaultFinish] {
+        return price
+      }
+      for finish in CardValueFinish.allCases {
+        if let price = finishPrices[finish] {
+          return price
+        }
+      }
+    }
+    return card.priceUSD
+  }
+}
+
 /// UserDefaults-backed storage for the Scry price-tier thresholds, mirroring
 /// `GrimoraValuePreferences`. The keys are shared with the `@AppStorage` bindings
 /// in the settings section, so edits there and reads here agree.

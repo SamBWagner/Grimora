@@ -28,6 +28,7 @@ struct CommanderRescanView: View {
   private struct Review: Identifiable {
     let id = UUID()
     let card: CardRecord
+    let priceUSD: Double?
   }
 
   private var priceThresholds: ScryPriceThresholds { GrimoraScryPreferences.thresholds() }
@@ -51,7 +52,9 @@ struct CommanderRescanView: View {
     }
     .onAppear {
       bulk.onScanned = { session.record($0) }
-      bulk.onNeedsReview = { card in review = Review(card: card) }
+      bulk.onNeedsReview = { card in
+        review = Review(card: card, priceUSD: model.scanTierPriceUSD(for: card))
+      }
       syncCamera()
     }
     .onDisappear { controller.stop() }
@@ -94,7 +97,8 @@ struct CommanderRescanView: View {
     ) { item in
       ScryReviewSheet(
         card: item.card,
-        tier: priceThresholds.tier(forUSD: item.card.priceUSD),
+        tier: priceThresholds.tier(forUSD: item.priceUSD),
+        priceUSD: item.priceUSD,
         kind: .bulkUncertain,
         onAddToScanned: {},
         onFullDetails: {},

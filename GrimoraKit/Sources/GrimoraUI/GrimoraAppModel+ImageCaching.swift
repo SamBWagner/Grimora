@@ -743,6 +743,17 @@ extension GrimoraAppModel {
     selectedCardValueGuide = result
   }
 
+  /// The foil-aware USD price used to value-tier a scanned card's confirmation —
+  /// the chip accent/badge, the review sheet, and the celebratory sound. Mirrors
+  /// the detail screen: a foil-only printing celebrates at its true foil value
+  /// instead of its absent non-foil `priceUSD`. One lightweight indexed read done
+  /// once per confirmed scan (a user-paced moment), so a synchronous main-actor
+  /// lookup is fine.
+  public func scanTierPriceUSD(for card: CardRecord) -> Double? {
+    let finishPrices = (try? database.currentValuePricesUSD(forCardID: card.id)) ?? [:]
+    return ScryValueTiering.effectivePriceUSD(for: card, finishPrices: finishPrices)
+  }
+
   public func loadValueExchangeRateIfNeeded(for currency: CardValueDisplayCurrency) async {
     guard currency != .usd else {
       valueExchangeRate = nil

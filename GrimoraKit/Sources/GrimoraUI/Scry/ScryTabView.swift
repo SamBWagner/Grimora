@@ -31,6 +31,10 @@ struct ScryTabView: View {
   // Shared review sheet (single "Add to Scanned" + bulk Correct/Incorrect).
   @State private var review: Review?
 
+  // The offered card's foil-aware value, resolved once when a confident offer
+  // appears and read by the confirm chip (drag re-renders must not hit the DB).
+  @State private var offeredPriceUSD: Double?
+
   // Bulk-mode workflow. The tuned state machine lives in ScryBulkCoordinator so the
   // Commander Re-scan flow shares one implementation; the tab keeps only the running
   // count for its "Auto-adding to Scanned" status.
@@ -44,6 +48,13 @@ struct ScryTabView: View {
     let id = UUID()
     let kind: ScryReviewKind
     let card: CardRecord
+    let priceUSD: Double?
+  }
+
+  /// Builds a review, resolving the card's foil-aware value up front so the sheet
+  /// (accent + price line) matches the detail screen for foil-only cards.
+  private func makeReview(kind: ScryReviewKind, card: CardRecord) -> Review {
+    Review(kind: kind, card: card, priceUSD: model.scanTierPriceUSD(for: card))
   }
 
   /// How far (normalized) the card must move to count as a new placement.
@@ -64,7 +75,7 @@ struct ScryTabView: View {
     }
     .onAppear {
       bulk.onScanned = { addToScanned($0) }
-      bulk.onNeedsReview = { card in review = Review(kind: .bulkUncertain, card: card) }
+      bulk.onNeedsReview = { card in review = makeReview(kind: .bulkUncertain, card: card) }
       syncCamera()
     }
     .onDisappear { controller.stop() }
@@ -101,7 +112,7 @@ struct ScryTabView: View {
     ) { item in
       ScryDisambiguationSheet(candidates: item.candidates) { card in
         picker = nil
-        review = Review(kind: .single, card: card)
+        review = makeReview(kind: .single, card: card)
       }
     }
     .sheet(
@@ -119,7 +130,8 @@ struct ScryTabView: View {
     ) { item in
       ScryReviewSheet(
         card: item.card,
-        tier: priceThresholds.tier(forUSD: item.card.priceUSD),
+        tier: priceThresholds.tier(forUSD: item.priceUSD),
+        priceUSD: item.priceUSD,
         kind: item.kind,
         onAddToScanned: { acceptSingle(item.card) },
         onFullDetails: { review = nil; model.selectCard(item.card) },
@@ -229,6 +241,7 @@ struct ScryTabView: View {
       ScryConfirmChip(
         offer: offer,
         thresholds: priceThresholds,
+        priceUSD: offeredPriceUSD,
         onTap: { applySingle(.offerTapped) },
         onSwipeAccept: { applySingle(.offerSwipedToAccept) },
         onSwipeRetry: { applySingle(.offerSwipedToRetry) }
@@ -280,7 +293,11 @@ struct ScryTabView: View {
     if case .verifying = flow,
        case .offer(let offer) = next,
        case .confident(let card) = offer.kind {
-      ScrySound.tier(priceThresholds.tier(forUSD: card.priceUSD))
+      // Foil-aware value so a foil-only card (nil non-foil `priceUSD`) celebrates
+      // at its real worth. Resolved once here and reused by the chip.
+      let priceUSD = model.scanTierPriceUSD(for: card)
+      offeredPriceUSD = priceUSD
+      ScrySound.tier(priceThresholds.tier(forUSD: priceUSD))
     }
     withAnimation(.easeInOut(duration: 0.2)) {
       flow = next
@@ -299,7 +316,7 @@ struct ScryTabView: View {
         }
       }
     case .presentReview(let card):
-      review = Review(kind: .single, card: card)
+      review = makeReview(kind: .single, card: card)
     case .presentPicker(let candidates):
       picker = PickerItem(candidates: candidates)
     case .commitToScanned(let card):
@@ -419,6 +436,9 @@ struct ScryTabView: View {
 struct ScryReviewSheet: View {
   let card: CardRecord
   let tier: ScryPriceTier
+  /// The card's foil-aware value (`model.scanTierPriceUSD`), matching `tier` and
+  /// the detail screen. `nil` hides the price line.
+  var priceUSD: Double?
   let kind: ScryReviewKind
   let onAddToScanned: () -> Void
   let onFullDetails: () -> Void
@@ -441,7 +461,7 @@ struct ScryReviewSheet: View {
         Text(card.name).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
         Text("\(card.setName) · \(card.setCode.uppercased()) \(card.collectorNumber)")
           .font(.subheadline).foregroundStyle(.secondary)
-        if let price = card.priceUSD {
+        if let price = priceUSD {
           Text(price, format: .currency(code: "USD"))
             .font(.title3.weight(.bold))
             .monospacedDigit()

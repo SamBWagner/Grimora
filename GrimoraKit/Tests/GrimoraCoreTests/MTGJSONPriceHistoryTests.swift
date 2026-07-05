@@ -87,6 +87,28 @@ final class MTGJSONPriceHistoryTests: XCTestCase {
         XCTAssertEqual(etchedGuide.entries.first?.currentPrice, 7.00)
     }
 
+    func testCurrentValuePricesReadsFinishPricesWithoutHistory() async throws {
+        // The lean read behind foil-aware Scry value-tiering: a foil-only card must
+        // surface its foil price (the fix for a foil-only legend scanning as "$0").
+        let database = try CardDatabase(storage: .inMemory)
+        try database.replaceAllCards([
+            testCard(id: "scry-one", name: "Value Spell"),
+            testCard(id: "scry-two", name: "Etched Spell")
+        ])
+        let fixtures = try writePriceFixtures(printings: allPrintingsJSON(), prices: allPricesJSON())
+        let importer = MTGJSONPriceHistoryImporter(database: database)
+        _ = try await importer.importHistory(
+            meta: MTGJSONPriceHistoryMeta(date: "2026-05-13", version: "5.2.1"),
+            allPrintingsJSONURL: fixtures.printingsURL,
+            allPricesJSONURL: fixtures.pricesURL
+        )
+
+        XCTAssertEqual(try database.currentValuePricesUSD(forCardID: "scry-one"), [.normal: 2.50, .foil: 5.00])
+        XCTAssertEqual(try database.currentValuePricesUSD(forCardID: "scry-two"), [.etched: 7.00])
+        // No value summaries → empty, so the caller falls back to the Scryfall priceUSD.
+        XCTAssertEqual(try database.currentValuePricesUSD(forCardID: "no-such-card"), [:])
+    }
+
     func testImporterMapsAllIdentifiersShapeUsedByPricingDownloads() async throws {
         let database = try CardDatabase(storage: .inMemory)
         try database.replaceAllCards([testCard(id: "scry-one", name: "Value Spell")])

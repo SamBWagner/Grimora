@@ -64,6 +64,37 @@ extension CardDatabase {
     }
   }
 
+  /// The current TCGplayer price per finish for a card, without loading price
+  /// history — a lean read for value-tiering a scan (chip accent, price badge, and
+  /// celebratory sound). Empty when the card has no value summaries; callers fall
+  /// back to the Scryfall `priceUSD`. Unlike `valueGuide`, this deliberately skips
+  /// the Scryfall-snapshot fallback, which only ever yields the non-foil price the
+  /// caller already has.
+  public func currentValuePricesUSD(forCardID cardID: CardRecord.ID) throws -> [CardValueFinish: Double] {
+    try withDatabaseLock {
+      let statement = try database.prepare(
+        """
+        SELECT finish, current_price
+        FROM card_value_summaries
+        WHERE card_id = ? AND provider = ?
+        """)
+      try statement.bind(cardID, at: 1)
+      try statement.bind(CardValueProvider.tcgplayer.rawValue, at: 2)
+
+      var prices: [CardValueFinish: Double] = [:]
+      while try statement.step() {
+        guard let finishRaw = statement.string(at: 0),
+          let finish = CardValueFinish(rawValue: finishRaw),
+          let price = statement.double(at: 1)
+        else {
+          continue
+        }
+        prices[finish] = price
+      }
+      return prices
+    }
+  }
+
   public func valueSummaryCount() throws -> Int {
     try withDatabaseLock {
       let statement = try database.prepare("SELECT COUNT(*) FROM card_value_summaries")

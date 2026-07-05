@@ -12,6 +12,10 @@ import SwiftUI
 struct ScryConfirmChip: View {
   let offer: ScrySingleFlow.Offer
   var thresholds: ScryPriceThresholds = .default
+  /// The offered card's foil-aware value (`model.scanTierPriceUSD`), resolved once
+  /// when the offer appears so drag re-renders never touch the database. `nil` for
+  /// an ambiguous offer (no single price) or an unknown value.
+  var priceUSD: Double? = nil
   let onTap: () -> Void
   var onSwipeAccept: () -> Void = {}
   var onSwipeRetry: () -> Void = {}
@@ -27,8 +31,8 @@ struct ScryConfirmChip: View {
   /// The value band of the offered card — drives the chip's accent color, price
   /// badge, and (for `.gold`) its border. Ambiguous offers have no single price.
   private var priceTier: ScryPriceTier {
-    if case .confident(let card) = offer.kind {
-      return thresholds.tier(forUSD: card.priceUSD)
+    if case .confident = offer.kind {
+      return thresholds.tier(forUSD: priceUSD)
     }
     return .none
   }
@@ -152,7 +156,7 @@ struct ScryConfirmChip: View {
   /// value is visible at a glance; hidden only when the price is unknown.
   @ViewBuilder
   private var priceBadge: some View {
-    if case .confident(let card) = offer.kind, let price = card.priceUSD {
+    if case .confident = offer.kind, let price = priceUSD {
       Text(price, format: .currency(code: "USD"))
         .font(.subheadline.weight(.bold))
         .monospacedDigit()
