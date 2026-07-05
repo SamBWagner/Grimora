@@ -11,6 +11,7 @@ import SwiftUI
 /// - **swipe right** — "that's wrong": dismiss and scan again.
 struct ScryConfirmChip: View {
   let offer: ScrySingleFlow.Offer
+  var thresholds: ScryPriceThresholds = .default
   let onTap: () -> Void
   var onSwipeAccept: () -> Void = {}
   var onSwipeRetry: () -> Void = {}
@@ -21,6 +22,15 @@ struct ScryConfirmChip: View {
   private var isConfident: Bool {
     if case .confident = offer.kind { return true }
     return false
+  }
+
+  /// The value band of the offered card — drives the chip's accent color, price
+  /// badge, and (for `.gold`) its border. Ambiguous offers have no single price.
+  private var priceTier: ScryPriceTier {
+    if case .confident(let card) = offer.kind {
+      return thresholds.tier(forUSD: card.priceUSD)
+    }
+    return .none
   }
 
   var body: some View {
@@ -96,7 +106,7 @@ struct ScryConfirmChip: View {
           Label(card.name, systemImage: "checkmark.circle.fill")
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(.primary)
-            .labelStyle(ChipLabelStyle(iconColor: .green))
+            .labelStyle(ChipLabelStyle(iconColor: priceTier.accentColor ?? .secondary))
           Text("\(card.setCode.uppercased()) \(card.collectorNumber) · \(card.setName)")
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -119,6 +129,8 @@ struct ScryConfirmChip: View {
       }
       .lineLimit(1)
 
+      priceBadge
+
       Image(systemName: "chevron.right")
         .font(.caption.weight(.semibold))
         .foregroundStyle(.tertiary)
@@ -126,6 +138,27 @@ struct ScryConfirmChip: View {
     .padding(.horizontal, 14)
     .padding(.vertical, 10)
     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+    .overlay(
+      RoundedRectangle(cornerRadius: 16)
+        .strokeBorder(priceTier.accentColor ?? .clear, lineWidth: priceTier.hasBorder ? 2.5 : 1)
+    )
+    .shadow(
+      color: priceTier.hasBorder ? (priceTier.accentColor ?? .clear).opacity(0.55) : .clear,
+      radius: priceTier.hasBorder ? 9 : 0
+    )
+  }
+
+  /// The card's USD price, tinted by tier. Shown for every identified card so the
+  /// value is visible at a glance; hidden only when the price is unknown.
+  @ViewBuilder
+  private var priceBadge: some View {
+    if case .confident(let card) = offer.kind, let price = card.priceUSD {
+      Text(price, format: .currency(code: "USD"))
+        .font(.subheadline.weight(.bold))
+        .monospacedDigit()
+        .foregroundStyle(priceTier.accentColor ?? .secondary)
+        .lineLimit(1)
+    }
   }
 
   private var accessibilityText: String {

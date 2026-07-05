@@ -53,6 +53,10 @@ struct ScryTabView: View {
   /// How far (normalized) the card must move to count as a new placement.
   private let movementThreshold: CGFloat = 0.08
 
+  /// Live price-tier thresholds from Settings, reread on access so edits take
+  /// effect on the next scan without a restart.
+  private var priceThresholds: ScryPriceThresholds { GrimoraScryPreferences.thresholds() }
+
   var body: some View {
     ZStack {
       Color.black.ignoresSafeArea()
@@ -113,6 +117,7 @@ struct ScryTabView: View {
     ) { item in
       ScryReviewSheet(
         card: item.card,
+        tier: priceThresholds.tier(forUSD: item.card.priceUSD),
         kind: item.kind,
         onAddToScanned: { acceptSingle(item.card) },
         onFullDetails: { review = nil; model.selectCard(item.card) },
@@ -221,6 +226,7 @@ struct ScryTabView: View {
     case .offer(let offer):
       ScryConfirmChip(
         offer: offer,
+        thresholds: priceThresholds,
         onTap: { applySingle(.offerTapped) },
         onSwipeAccept: { applySingle(.offerSwipedToAccept) },
         onSwipeRetry: { applySingle(.offerSwipedToRetry) }
@@ -265,15 +271,14 @@ struct ScryTabView: View {
   private func applySingle(_ event: ScrySingleFlow.Event) {
     guard mode == .single else { return }
     let (next, effect) = ScrySingleFlow.reduce(flow, event)
-    // A light ding as the confident chip pops — only on the transition out of
-    // verifying (never re-dinged while the chip holds), and only for passive
-    // finds: manual scans open the review sheet, and accepting a card has its
-    // own, stronger sound.
+    // A tiered cue as the confident offer appears — the light click for cheap
+    // cards, escalating "level-up" jingles for valuable ones. Fires once on the
+    // verifying → offer transition (the chip for passive finds, the review sheet
+    // for a manual tap); reopening an existing offer doesn't retrigger it.
     if case .verifying = flow,
        case .offer(let offer) = next,
-       case .confident = offer.kind,
-       !offer.manual {
-      ScrySound.identified()
+       case .confident(let card) = offer.kind {
+      ScrySound.tier(priceThresholds.tier(forUSD: card.priceUSD))
     }
     withAnimation(.easeInOut(duration: 0.2)) {
       flow = next
@@ -506,6 +511,7 @@ struct ScryTabView: View {
 /// Confirmation card shown after a scan (single) or for an uncertain bulk card.
 private struct ScryReviewSheet: View {
   let card: CardRecord
+  let tier: ScryPriceTier
   let kind: ScryReviewKind
   let onAddToScanned: () -> Void
   let onFullDetails: () -> Void
@@ -518,11 +524,23 @@ private struct ScryReviewSheet: View {
       cardImage
         .frame(maxHeight: 300)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+          RoundedRectangle(cornerRadius: 12)
+            .strokeBorder(tier.hasBorder ? (tier.accentColor ?? .clear) : .clear, lineWidth: 3)
+        )
+        .shadow(color: tier.hasBorder ? (tier.accentColor ?? .clear).opacity(0.6) : .clear, radius: 12)
 
       VStack(spacing: 4) {
         Text(card.name).font(.title3.weight(.semibold)).multilineTextAlignment(.center)
         Text("\(card.setName) · \(card.setCode.uppercased()) \(card.collectorNumber)")
           .font(.subheadline).foregroundStyle(.secondary)
+        if let price = card.priceUSD {
+          Text(price, format: .currency(code: "USD"))
+            .font(.title3.weight(.bold))
+            .monospacedDigit()
+            .foregroundStyle(tier.accentColor ?? .primary)
+            .padding(.top, 2)
+        }
       }
 
       switch kind {
@@ -534,6 +552,7 @@ private struct ScryReviewSheet: View {
           }
           .buttonStyle(.borderedProminent)
           .controlSize(.large)
+          .tint(tier.accentColor)
 
           Button("Full details", action: onFullDetails)
           Button("Rescan", role: .cancel, action: onDismiss)

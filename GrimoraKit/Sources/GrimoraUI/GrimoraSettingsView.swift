@@ -156,6 +156,10 @@ public struct GrimoraSettingsView: View {
 
       GrimoraSettingsTutorialSection(onReplay: replayTutorial)
 
+      #if os(iOS)
+      GrimoraSettingsScrySection()
+      #endif
+
       #if os(iOS) || os(visionOS)
       GrimoraSettingsValueSection()
 
