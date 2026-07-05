@@ -2,6 +2,7 @@
 @testable import GrimoraCore
 import CoreGraphics
 import ImageIO
+import Vision
 import XCTest
 
 /// Developer diagnostics, skipped unless their env var is set. Point them at a
@@ -80,7 +81,9 @@ final class ScryDiagnosticsTests: XCTestCase {
     let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
     let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
 
-    for radius in [0.0, 2.0, 3.0, 4.0, 5.0] {
+    let sweep = ProcessInfo.processInfo.environment["SCRY_DIAG_RADII"]
+      .map { $0.split(separator: ",").compactMap { Double($0) } } ?? [0.0, 2.0, 3.0, 4.0, 5.0]
+    for radius in sweep {
       let input: CGImage
       if radius > 0 {
         input = try XCTUnwrap(Self.blurred(image, radius: radius))
@@ -92,7 +95,67 @@ final class ScryDiagnosticsTests: XCTestCase {
         extractor.usesBottomStripRetry = retry
         let signals = try extractor.extractSignals(from: input)
         print("r=\(radius) retry=\(retry): name=\(signals.name ?? "—") set=\(signals.setCode ?? "—") num=\(signals.collectorNumber ?? "—") total=\(signals.setTotal.map(String.init) ?? "—") year=\(signals.copyrightYear.map(String.init) ?? "—")")
+        if retry {
+          for line in signals.rawTextLines { print("      | \(line)") }
+        }
       }
+    }
+  }
+
+  /// `SCRY_DETECT_IMAGE=<path>` — every raw rectangle/document-segmentation
+  /// observation (before the detector's in-frame + card-aspect filter) plus the
+  /// merged production candidates, to see why the wrong quad (a text box, a
+  /// neighbor) is winning the subject.
+  func testDetectCandidates() throws {
+    guard let path = ProcessInfo.processInfo.environment["SCRY_DETECT_IMAGE"] else {
+      throw XCTSkip("Set SCRY_DETECT_IMAGE to a scene image path")
+    }
+    let url = URL(fileURLWithPath: path)
+    let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+    let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+    var orientation = CGImagePropertyOrientation.up
+    if let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+       let raw = props[kCGImagePropertyOrientation] as? UInt32,
+       let parsed = CGImagePropertyOrientation(rawValue: raw) {
+      orientation = parsed
+    }
+    let upright = ScryTextExtractor.makeUpright(image, orientation: orientation)
+    let w = Double(upright.width), h = Double(upright.height)
+    print("image \(image.width)x\(image.height) exif \(orientation.rawValue) → upright \(upright.width)x\(upright.height)")
+
+    func describe(_ obs: VNRectangleObservation, _ tag: String) {
+      let corners = [obs.topLeft, obs.topRight, obs.bottomRight, obs.bottomLeft]
+      let inFrame = corners.allSatisfy { $0.x >= 0.015 && $0.x <= 0.985 && $0.y >= 0.015 && $0.y <= 0.985 }
+      let px = corners.map { CGPoint(x: $0.x * w, y: $0.y * h) }
+      let aspect = ScryCardDetector.aspectRatio(of: px)
+      let area = ScryCardDetector.polygonArea(px) / (w * h)
+      let c = ScryCardDetector.centroid(corners)
+      let minX = corners.map(\.x).min() ?? 0, maxX = corners.map(\.x).max() ?? 0
+      let minY = corners.map(\.y).min() ?? 0, maxY = corners.map(\.y).max() ?? 0
+      print(String(format: "  [%@] area=%.3f aspect=%.3f conf=%.2f inFrame=%@ center=(%.2f,%.2f) x[%.3f…%.3f] y[%.3f…%.3f]",
+                   tag, area, aspect, obs.confidence, inFrame ? "Y" : "N", c.x, c.y, minX, maxX, minY, maxY))
+    }
+
+    let rect = VNDetectRectanglesRequest()
+    rect.minimumAspectRatio = 0.2
+    rect.quadratureTolerance = 45
+    rect.minimumSize = 0.08
+    rect.minimumConfidence = 0.3
+    rect.maximumObservations = 20
+    let doc = VNDetectDocumentSegmentationRequest()
+    try VNImageRequestHandler(cgImage: upright, options: [:]).perform([rect, doc])
+
+    print("RAW RECTANGLES (\(rect.results?.count ?? 0)):")
+    for o in rect.results ?? [] { describe(o, "rect") }
+    print("RAW DOC-SEG (\(doc.results?.count ?? 0)):")
+    for o in (doc.results ?? []) { describe(o, "doc") }
+
+    let merged = try ScryCardDetector().detectCards(in: upright, orientation: .up)
+    print("MERGED (production filter) → \(merged.count) subject candidate(s), largest first:")
+    for card in merged {
+      let c = ScryCardDetector.centroid(card.normalizedCorners)
+      print(String(format: "  area=%.3f aspect=%.3f conf=%.2f center=(%.2f,%.2f)",
+                   card.areaFraction, card.aspectRatio, card.confidence, c.x, c.y))
     }
   }
 

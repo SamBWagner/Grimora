@@ -73,24 +73,19 @@ public struct ScryCardResolver: Sendable {
         )
       }
 
-      // The name doesn't match the keyed printing. Two reasons are possible:
-      //  - the OCR'd "name" is noise (a borderless promo's decorative banner, or
-      //    flavor text) that matches no real card — then the unique set+number key
-      //    is authoritative, so auto-accept it; or
-      //  - the name strongly matches a *different* card, which means a digit was
-      //    likely mis-read — that's a real conflict, so disambiguate.
+      // A name was read but it doesn't match the keyed printing. That happens two
+      // ways and they're indistinguishable locally: a sharp borderless-promo scan
+      // whose "name" is a decorative banner (the key is right), or a blurred scan
+      // whose set+number itself mis-read into a *different* real card while the
+      // garbled title matched nothing (the key is wrong). A large catalog makes
+      // that wrong key land on a real card, so trusting it auto-accepts the wrong
+      // printing (a blurred "224" → "226" gave a wrong Fallen Shinobi). We never
+      // guess here: surface the keyed printing — plus any card the name really
+      // does match — as a picker. (An empty/unreadable name is handled above,
+      // where there is genuinely nothing to contradict the key.)
       let nameMatches = try nameCandidates(for: name)
       let conflicting = nameMatches.filter {
         $0.id != keyed.id && ScryStringSimilarity.multifaceNameSimilarity($0.name, name) >= autoAcceptNameSimilarity
-      }
-      if conflicting.isEmpty {
-        return ScryResolution(
-          card: keyed,
-          candidates: [keyed],
-          confidence: .auto,
-          method: .exactKey,
-          signals: signals
-        )
       }
       return ScryResolution(
         card: nil,

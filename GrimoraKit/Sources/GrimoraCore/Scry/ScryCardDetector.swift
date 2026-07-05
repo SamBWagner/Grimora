@@ -36,7 +36,11 @@ public struct ScryCardDetector: Sendable {
   public var minimumConfidence: VNConfidence
   public var maximumObservations: Int
   /// Corners must sit at least this far (fractional) inside every edge to count
-  /// as "fully in frame".
+  /// as "fully in frame". Kept small: its job is to reject a *neighbor card cut
+  /// off by the frame* — whose cut corners clamp to ~0.000/1.000 — not a fully
+  /// visible card that merely sits close to an edge (a large or tilted card on a
+  /// bulk rig has a real corner ~1% from the frame, and a stricter margin
+  /// wrongly rejected the whole card, leaving only its high-contrast text box).
   public var edgeMargin: Double
   /// Acceptable card aspect (shorter/longer). A Magic card is ~0.714; the range
   /// allows perspective foreshortening while still rejecting wide/odd shapes.
@@ -48,7 +52,7 @@ public struct ScryCardDetector: Sendable {
     minimumSize: Float = 0.08,
     minimumConfidence: VNConfidence = 0.3,
     maximumObservations: Int = 20,
-    edgeMargin: Double = 0.015,
+    edgeMargin: Double = 0.008,
     cardAspectRange: ClosedRange<Double> = 0.5...0.92
   ) {
     self.minimumAspectRatio = minimumAspectRatio
@@ -88,10 +92,8 @@ public struct ScryCardDetector: Sendable {
 
     let width = Double(image.width)
     let height = Double(image.height)
-    let observations = (rectangles.results ?? [])
-      + (includeDocumentSegmentation ? (documentSegmentation.results ?? []) : [])
 
-    let cards: [ScryDetectedCard] = observations.compactMap { observation in
+    func card(from observation: VNRectangleObservation) -> ScryDetectedCard? {
       let corners = [observation.topLeft, observation.topRight, observation.bottomRight, observation.bottomLeft]
 
       // Fully in frame: every corner comfortably inside all four edges.
@@ -114,7 +116,23 @@ public struct ScryCardDetector: Sendable {
       )
     }
 
-    return Self.deduplicated(cards.sorted { $0.areaFraction > $1.areaFraction })
+    let rectangleCards = (rectangles.results ?? []).compactMap(card(from:))
+    // Document segmentation is a FALLBACK for steeply-angled single cards, not a
+    // co-equal source: its region can swell to swallow an overlapping neighbor —
+    // a bigger, still card-shaped quad that beats the tight rectangle and makes
+    // OCR read the neighbor's title (a real cluttered scene picked up "Arch of
+    // Orazca" beneath the Terastodon this way). So keep only doc-seg regions that
+    // no rectangle already covers.
+    let documentCards = includeDocumentSegmentation
+      ? (documentSegmentation.results ?? []).compactMap(card(from:))
+      : []
+    let rectangleCentroids = rectangleCards.map { Self.centroid($0.normalizedCorners) }
+    let documentFallback = documentCards.filter { document in
+      let center = Self.centroid(document.normalizedCorners)
+      return !rectangleCentroids.contains { hypot($0.x - center.x, $0.y - center.y) < 0.06 }
+    }
+
+    return Self.deduplicated((rectangleCards + documentFallback).sorted { $0.areaFraction > $1.areaFraction })
   }
 
   /// Drops near-duplicate detections (the two requests often find the same card),

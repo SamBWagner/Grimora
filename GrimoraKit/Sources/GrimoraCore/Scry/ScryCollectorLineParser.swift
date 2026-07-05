@@ -63,7 +63,7 @@ public enum ScryCollectorLineParser {
     return Parsed(
       setCode: setCode(in: lines),
       collectorNumber: slash?.number ?? collectorNumber(in: lines),
-      setTotal: slash?.total,
+      setTotal: slash.flatMap(\.total),
       copyrightYear: copyrightYear(in: lines)
     )
   }
@@ -91,12 +91,18 @@ public enum ScryCollectorLineParser {
         if let number = number(fromToken: token) { return number }
       }
     }
-    // 3. A number immediately following a lone rarity letter (e.g. "U 263").
+    // 3. A number immediately following a lone rarity letter (e.g. "U 263") —
+    //    but never a 4-digit copyright year. A copyright line whose "Wizards of
+    //    the Coast" garbled in OCR won't be caught by `isCopyrightLine` above, so
+    //    "© 2018" (the © read as a lone "C", a rarity letter) would otherwise slip
+    //    the year through here as a collector number.
     for line in unmarkedLines {
       let tokens = tokenize(line)
       for index in tokens.indices.dropFirst()
       where tokens[index - 1].count == 1 && rarityLetters.contains(tokens[index - 1].lowercased()) {
-        if let number = number(fromToken: tokens[index]) { return number }
+        let token = tokens[index]
+        if token.count == 4, let year = Int(token), copyrightYearRange.contains(year) { continue }
+        if let number = number(fromToken: token) { return number }
       }
     }
     // 4. Retro (1997) frame reprints — e.g. Innistrad Remastered's old-border
@@ -131,7 +137,9 @@ public enum ScryCollectorLineParser {
   }
 
   /// The first `number/total` token in any line (see `slashCollectorNumber`).
-  static func slashCollector(in lines: [String]) -> (number: String, total: Int)? {
+  /// `total` is `nil` when the numerator is trustworthy but the denominator OCR'd
+  /// implausibly (a dropped digit), so it must not be used as the set total.
+  static func slashCollector(in lines: [String]) -> (number: String, total: Int?)? {
     for line in lines {
       for token in tokenize(line) where token.contains("/") {
         if let slash = slashCollector(token) { return slash }
@@ -140,17 +148,23 @@ public enum ScryCollectorLineParser {
     return nil
   }
 
-  /// A `number/total` token, accepted only when `total` looks like a set size
-  /// (≥ 20 and ≥ number) — which rejects power/toughness like `2/2` or `6/5`.
-  static func slashCollector(_ token: String) -> (number: String, total: Int)? {
+  /// A `number/total` token. Accepted when the `total` looks like a set size
+  /// (≥ 20 and ≥ number) — which rejects power/toughness like `2/2` or `6/5` —
+  /// **or** when the numerator alone is unambiguously a collector number (≥ 100:
+  /// no card has power/toughness in the hundreds), which recovers a real
+  /// collector line whose denominator lost a digit in OCR (`185/249` → `185/19`).
+  /// In that recovery case the corrupt denominator is dropped (`total` = nil) so
+  /// it can't poison set-total resolution; the resolver still corroborates the
+  /// number against the name before auto-accepting.
+  static func slashCollector(_ token: String) -> (number: String, total: Int?)? {
     let parts = token.split(separator: "/", maxSplits: 1)
     guard parts.count == 2,
           let number = number(fromToken: String(parts[0])),
           let total = Int(parts[1].filter(\.isNumber)),
-          total >= 20,
-          let numeric = Int(number.filter(\.isNumber)),
-          numeric <= total else { return nil }
-    return (number, total)
+          let numeric = Int(number.filter(\.isNumber)) else { return nil }
+    if total >= 20, numeric <= total { return (number, total) }
+    if numeric >= 100 { return (number, nil) }
+    return nil
   }
 
   /// Accepts `123`, `0123`, `123a`, `123/350`. Returns the number with leading
