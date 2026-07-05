@@ -58,7 +58,11 @@ final class CollectionsResponsiveScreenshotTests: XCTestCase {
         let app = try launchSeededApp(contentSizeCategory: contentSizeCategory)
 
         // Land on the Collections tab (the app opens on the Cards/search tab).
-        let collectionsTab = app.buttons["Collections"]
+        // Use the label-matching helper (first match) rather than the `buttons["Collections"]`
+        // subscript: on the iPadOS 26 floating tab bar the tab item nests two "Collections"
+        // buttons (_UIFloatingTabBarItemCell), so the subscript resolves to multiple elements
+        // and `.tap()` throws on ambiguity. This mirrors how AdvancedSearchUITests taps.
+        let collectionsTab = button(app, labeled: "Collections")
         XCTAssertTrue(collectionsTab.waitForExistence(timeout: 20), "Collections tab button not found")
         activate(collectionsTab)
 

@@ -1,6 +1,6 @@
 # Grimora App Store Listing Copy
 
-Use this copy for version 1.4 (build 2026070301). All public screenshots use
+Use this copy for version 1.5 (build 2026070501). All public screenshots use
 the clean fictional-card screenshot set.
 
 ## App Name
@@ -18,7 +18,7 @@ Card Library & Lists
 ## Promotional Text
 
 ```text
-New in 1.4: point your camera at a card and Grimora recognises it on-device and files it into your collection, plus living foil that shimmers as you tilt.
+New in 1.5: Scry now shows each scanned card's value and celebrates your best pulls, and you can re-scan a whole Commander deck to reconcile it against your list.
 ```
 
 ## Keywords
@@ -49,24 +49,22 @@ Grimora is independently developed and is not affiliated with or endorsed by any
 ## What's New
 
 ```text
-Version 1.4 brings camera card recognition and living foil to your whole library.
+Version 1.5 makes Scry more rewarding and Grimora easier to use on iPhone.
 
-- Scry: point your camera at a card and Grimora recognises it on-device, then files it into a new Scanned collection. Scan one card at a time, or a whole stack in bulk mode
-- When a card could be more than one printing, Grimora shows you the likely candidates to pick from rather than guessing
-- Foil comes to life: foil, etched, and special-treatment cards shimmer as you tilt on iPhone and iPad, with a new finish picker in the card detail
-- Foil now renders in search, collection grids, and detail alike, so foil cards read as foil everywhere
-- Pull down to sync: refresh any collection to sync with iCloud, or pull on the Cards screen to check for new card data
-- On Mac, sync with iCloud from the File menu or toolbar, and drag the card detail pane to the width you want
-- A new animated launch screen, plus Favourites and Scanned now lead the sidebar as built-in lists
-- Opening a collection is now instant, with artwork loading in the background
+- Scry shows the value: every scanned card displays its price, and valuable pulls light up with a colour tier and a celebratory sound. Set your own alert thresholds in Settings
+- Re-scan a Commander deck: point the camera at your physical deck and Grimora reconciles it against your saved list, so you can accept every change at once
+- Bulk scanning holds focus more reliably, with a tap-to-focus hint, and now reads collector numbers on old-border retro reprints
+- Rearrange your dashboard: drag collection tiles into any order, and drop one onto a pinned tile to pin or unpin it
+- Collections and the New List source picker now lay out cleanly on small iPhones, with full-width cards that no longer clip at the edges
+- Aftermath cards now turn the right way so both halves read upright, with clearer rotate and flip controls
 ```
 
 ## App Review Notes
 
 ```text
-Version 1.4 (2026070301) requires no account or reviewer credentials. iCloud sync is optional.
+Version 1.5 (2026070501) requires no account or reviewer credentials. iCloud sync is optional. This release adds no new permissions.
 
-Scry, the new camera "Scry" tab on iPhone and iPad, uses the device camera to recognise cards. All recognition runs on-device with the Vision framework; the camera image is used only to read a card's name and set or collector number and is never uploaded. Grant camera access when prompted to try it, or skip it and the rest of the app works unchanged. Recognised cards are filed into a local "Scanned" collection.
+Scry, the camera "Scry" tab on iPhone and iPad, uses the device camera to recognise cards. All recognition runs on-device with the Vision framework; the camera image is used only to read a card's name and set or collector number and is never uploaded. Grant camera access when prompted to try it, or skip it and the rest of the app works unchanged. Recognised cards are filed into a local "Scanned" collection. New in 1.5, a Commander deck's menu offers "Re-scan Deck", which uses the same on-device camera recognition to reconcile a physical deck against the saved list; it needs no new permissions.
 
 Grimora's card catalogue is a managed, prebuilt database. For an existing installation, the current library stays fully usable while any catalogue update stages on an allowed network and activates atomically on the next cold launch. A failed download, validation, or activation leaves the existing library untouched. A manual refresh (pull-to-refresh on the Cards screen, or the Library menu on Mac) may use any network.
 
