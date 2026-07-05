@@ -475,6 +475,829 @@
       "expectation": "knownFailure",
       "foil": true,
       "notes": "Oil-slick raised-foil Phyrexian-language Mountain (ONE Compleat bundle). Entirely Phyrexian script — no Latin text exists on the card, so OCR is structurally impossible; wants an art/frame-based fallback someday. — GrimoraScry 2026-07-02T14:38:18Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "sword-of-war-and-peace-mps-51-fullres.jpg",
+      "name": "Sword of War and Peace",
+      "setCode": "mps",
+      "collectorNumber": "51",
+      "notes": "GrimoraScry 2026-07-05T09:36:28Z; engine: exactKey/auto → Sword of War and Peace [mps 51]"
+    },
+    {
+      "image": "temple-of-the-false-god-c13-327-fullres.jpg",
+      "name": "Temple of the False God",
+      "setCode": "c13",
+      "collectorNumber": "327",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:36:43Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "brainstorm-40k-192-fullres.jpg",
+      "name": "Brainstorm",
+      "setCode": "40k",
+      "collectorNumber": "192",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:36:57Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "archmage-emeritus-stx-37-fullres.jpg",
+      "name": "Archmage Emeritus",
+      "setCode": "stx",
+      "collectorNumber": "37",
+      "notes": "GrimoraScry 2026-07-05T09:37:17Z; engine: exactKey/auto → Archmage Emeritus [stx 37]"
+    },
+    {
+      "image": "sword-of-forge-and-frontier-one-359-fullres.jpg",
+      "name": "Sword of Forge and Frontier",
+      "setCode": "one",
+      "collectorNumber": "359",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:37:30Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "sword-of-truth-and-justice-sld-1096-fullres.jpg",
+      "name": "Sword of Truth and Justice",
+      "setCode": "sld",
+      "collectorNumber": "1096",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:37:43Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "pyromancers-goggles-c21-259-fullres.jpg",
+      "name": "Pyromancer's Goggles",
+      "setCode": "c21",
+      "collectorNumber": "259",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:37:54Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "ghost-quarter-isd-240-fullres.jpg",
+      "name": "Ghost Quarter",
+      "setCode": "isd",
+      "collectorNumber": "240",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:38:04Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "sword-of-kaldra-mrd-251-fullres.jpg",
+      "name": "Sword of Kaldra",
+      "setCode": "mrd",
+      "collectorNumber": "251",
+      "notes": "GrimoraScry 2026-07-05T09:38:16Z; engine: nameAndNumber/auto → Sword of Kaldra [mrd 251]"
+    },
+    {
+      "image": "flusterstorm-mh3-496-fullres.jpg",
+      "name": "Flusterstorm",
+      "setCode": "mh3",
+      "collectorNumber": "496",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:38:29Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "baral-and-kari-zev-mom-302-fullres.jpg",
+      "name": "Baral and Kari Zev",
+      "setCode": "mom",
+      "collectorNumber": "302",
+      "notes": "GrimoraScry 2026-07-05T09:38:36Z; engine: exactKey/auto → Baral and Kari Zev [mom 302]"
+    },
+    {
+      "image": "faithless-looting-cmm-642-fullres.jpg",
+      "name": "Faithless Looting",
+      "setCode": "cmm",
+      "collectorNumber": "642",
+      "notes": "GrimoraScry 2026-07-05T09:38:44Z; engine: exactKey/auto → Faithless Looting [cmm 642]"
+    },
+    {
+      "image": "ledger-shredder-snc-46-fullres.jpg",
+      "name": "Ledger Shredder",
+      "setCode": "snc",
+      "collectorNumber": "46",
+      "notes": "GrimoraScry 2026-07-05T09:38:53Z; engine: exactKey/auto → Ledger Shredder [snc 46]"
+    },
+    {
+      "image": "currency-converter-soc-345-fullres.jpg",
+      "name": "Currency Converter",
+      "setCode": "soc",
+      "collectorNumber": "345",
+      "notes": "GrimoraScry 2026-07-05T09:39:05Z; engine: exactKey/auto → Currency Converter [soc 345]"
+    },
+    {
+      "image": "restless-spire-woe-260-fullres.jpg",
+      "name": "Restless Spire",
+      "setCode": "woe",
+      "collectorNumber": "260",
+      "notes": "GrimoraScry 2026-07-05T09:39:12Z; engine: exactKey/auto → Restless Spire [woe 260]"
+    },
+    {
+      "image": "choreographed-sparks-sos-111-fullres.jpg",
+      "name": "Choreographed Sparks",
+      "setCode": "sos",
+      "collectorNumber": "111",
+      "notes": "GrimoraScry 2026-07-05T09:39:18Z; engine: exactKey/auto → Choreographed Sparks [sos 111]"
+    },
+    {
+      "image": "opt-dom-60-fullres.jpg",
+      "name": "Opt",
+      "setCode": "dom",
+      "collectorNumber": "60",
+      "notes": "GrimoraScry 2026-07-05T09:39:25Z; engine: exactKey/auto → Opt [dom 60]"
+    },
+    {
+      "image": "drake-hatcher-fdn-35-fullres.jpg",
+      "name": "Drake Hatcher",
+      "setCode": "fdn",
+      "collectorNumber": "35",
+      "notes": "GrimoraScry 2026-07-05T09:39:31Z; engine: exactKey/auto → Drake Hatcher [fdn 35]"
+    },
+    {
+      "image": "malcolm-alluring-scoundrel-lci-63-fullres.jpg",
+      "name": "Malcolm, Alluring Scoundrel",
+      "setCode": "lci",
+      "collectorNumber": "63",
+      "notes": "GrimoraScry 2026-07-05T09:39:37Z; engine: exactKey/auto → Malcolm, Alluring Scoundrel [lci 63]"
+    },
+    {
+      "image": "kitsa-otterball-elite-blb-54-fullres.jpg",
+      "name": "Kitsa, Otterball Elite",
+      "setCode": "blb",
+      "collectorNumber": "54",
+      "notes": "GrimoraScry 2026-07-05T09:39:42Z; engine: exactKey/auto → Kitsa, Otterball Elite [blb 54]"
+    },
+    {
+      "image": "ashling-rekindled-ashling-rimebound-ecl-290-fullres.jpg",
+      "name": "Ashling, Rekindled // Ashling, Rimebound",
+      "setCode": "ecl",
+      "collectorNumber": "290",
+      "notes": "GrimoraScry 2026-07-05T09:39:48Z; engine: exactKey/auto → Ashling, Rekindled // Ashling, Rimebound [ecl 290]"
+    },
+    {
+      "image": "strix-serenade-mh3-71-fullres.jpg",
+      "name": "Strix Serenade",
+      "setCode": "mh3",
+      "collectorNumber": "71",
+      "notes": "GrimoraScry 2026-07-05T09:39:53Z; engine: exactKey/auto → Strix Serenade [mh3 71]"
+    },
+    {
+      "image": "rogues-passage-fdn-264-foil-fullres.jpg",
+      "name": "Rogue's Passage",
+      "setCode": "fdn",
+      "collectorNumber": "264",
+      "foil": true,
+      "notes": "GrimoraScry 2026-07-05T09:40:05Z; engine: exactKey/auto → Rogue's Passage [fdn 264]"
+    },
+    {
+      "image": "island-eoe-263-fullres.jpg",
+      "name": "Island",
+      "setCode": "eoe",
+      "collectorNumber": "263",
+      "notes": "GrimoraScry 2026-07-05T09:40:14Z; engine: exactKey/auto → Island [eoe 263]"
+    },
+    {
+      "image": "counterspell-cmm-630-fullres.jpg",
+      "name": "Counterspell",
+      "setCode": "cmm",
+      "collectorNumber": "630",
+      "notes": "GrimoraScry 2026-07-05T09:41:02Z; engine: exactKey/auto → Counterspell [cmm 630]"
+    },
+    {
+      "image": "fear-of-missing-out-dsk-136-fullres.jpg",
+      "name": "Fear of Missing Out",
+      "setCode": "dsk",
+      "collectorNumber": "136",
+      "notes": "GrimoraScry 2026-07-05T09:41:09Z; engine: exactKey/auto → Fear of Missing Out [dsk 136]"
+    },
+    {
+      "image": "the-reality-chip-neo-74-fullres.jpg",
+      "name": "The Reality Chip",
+      "setCode": "neo",
+      "collectorNumber": "74",
+      "notes": "GrimoraScry 2026-07-05T09:41:15Z; engine: exactKey/auto → The Reality Chip [neo 74]"
+    },
+    {
+      "image": "inti-seneschal-of-the-sun-lci-156-fullres.jpg",
+      "name": "Inti, Seneschal of the Sun",
+      "setCode": "lci",
+      "collectorNumber": "156",
+      "notes": "GrimoraScry 2026-07-05T09:41:20Z; engine: exactKey/auto → Inti, Seneschal of the Sun [lci 156]"
+    },
+    {
+      "image": "abrade-fdn-327-fullres.jpg",
+      "name": "Abrade",
+      "setCode": "fdn",
+      "collectorNumber": "327",
+      "notes": "GrimoraScry 2026-07-05T09:41:27Z; engine: exactKey/auto → Abrade [fdn 327]"
+    },
+    {
+      "image": "spectacle-summit-sos-262-fullres.jpg",
+      "name": "Spectacle Summit",
+      "setCode": "sos",
+      "collectorNumber": "262",
+      "notes": "GrimoraScry 2026-07-05T09:41:33Z; engine: exactKey/auto → Spectacle Summit [sos 262]"
+    },
+    {
+      "image": "training-center-cmm-665-fullres.jpg",
+      "name": "Training Center",
+      "setCode": "cmm",
+      "collectorNumber": "665",
+      "notes": "GrimoraScry 2026-07-05T09:41:38Z; engine: exactKey/auto → Training Center [cmm 665]"
+    },
+    {
+      "image": "command-tower-blc-130-fullres.jpg",
+      "name": "Command Tower",
+      "setCode": "blc",
+      "collectorNumber": "130",
+      "notes": "GrimoraScry 2026-07-05T09:41:44Z; engine: exactKey/auto → Command Tower [blc 130]"
+    },
+    {
+      "image": "sword-of-wealth-and-power-big-56-fullres.jpg",
+      "name": "Sword of Wealth and Power",
+      "setCode": "big",
+      "collectorNumber": "56",
+      "notes": "GrimoraScry 2026-07-05T09:41:48Z; engine: exactKey/auto → Sword of Wealth and Power [big 56]"
+    },
+    {
+      "image": "alania-divergent-storm-blb-204-fullres.jpg",
+      "name": "Alania, Divergent Storm",
+      "setCode": "blb",
+      "collectorNumber": "204",
+      "notes": "GrimoraScry 2026-07-05T09:41:53Z; engine: exactKey/auto → Alania, Divergent Storm [blb 204]"
+    },
+    {
+      "image": "sulfur-falls-eoc-184-fullres.jpg",
+      "name": "Sulfur Falls",
+      "setCode": "eoc",
+      "collectorNumber": "184",
+      "notes": "GrimoraScry 2026-07-05T09:42:00Z; engine: exactKey/auto → Sulfur Falls [eoc 184]"
+    },
+    {
+      "image": "sword-of-feast-and-famine-mps-28-fullres.jpg",
+      "name": "Sword of Feast and Famine",
+      "setCode": "mps",
+      "collectorNumber": "28",
+      "notes": "GrimoraScry 2026-07-05T09:42:06Z; engine: exactKey/auto → Sword of Feast and Famine [mps 28]"
+    },
+    {
+      "image": "flashback-sos-115-fullres.jpg",
+      "name": "Flashback",
+      "setCode": "sos",
+      "collectorNumber": "115",
+      "notes": "GrimoraScry 2026-07-05T09:42:12Z; engine: exactKey/auto → Flashback [sos 115]"
+    },
+    {
+      "image": "talisman-of-creativity-soc-357-fullres.jpg",
+      "name": "Talisman of Creativity",
+      "setCode": "soc",
+      "collectorNumber": "357",
+      "notes": "GrimoraScry 2026-07-05T09:42:17Z; engine: exactKey/auto → Talisman of Creativity [soc 357]"
+    },
+    {
+      "image": "frostboil-snarl-lcc-332-fullres.jpg",
+      "name": "Frostboil Snarl",
+      "setCode": "lcc",
+      "collectorNumber": "332",
+      "notes": "GrimoraScry 2026-07-05T09:42:23Z; engine: exactKey/auto → Frostboil Snarl [lcc 332]"
+    },
+    {
+      "image": "ponder-c18-96-fullres.jpg",
+      "name": "Ponder",
+      "setCode": "c18",
+      "collectorNumber": "96",
+      "notes": "GrimoraScry 2026-07-05T09:42:28Z; engine: exactKey/auto → Ponder [c18 96]"
+    },
+    {
+      "image": "expressive-iteration-otc-224-fullres.jpg",
+      "name": "Expressive Iteration",
+      "setCode": "otc",
+      "collectorNumber": "224",
+      "notes": "GrimoraScry 2026-07-05T09:42:34Z; engine: exactKey/auto → Expressive Iteration [otc 224]"
+    },
+    {
+      "image": "blasphemous-act-cmm-872-fullres.jpg",
+      "name": "Blasphemous Act",
+      "setCode": "cmm",
+      "collectorNumber": "872",
+      "notes": "GrimoraScry 2026-07-05T09:42:41Z; engine: exactKey/auto → Blasphemous Act [cmm 872]"
+    },
+    {
+      "image": "balmor-battlemage-captain-fdn-237-fullres.jpg",
+      "name": "Balmor, Battlemage Captain",
+      "setCode": "fdn",
+      "collectorNumber": "237",
+      "notes": "GrimoraScry 2026-07-05T09:42:47Z; engine: exactKey/auto → Balmor, Battlemage Captain [fdn 237]"
+    },
+    {
+      "image": "pinnacle-monk-mystic-peak-mh3-246-fullres.jpg",
+      "name": "Pinnacle Monk // Mystic Peak",
+      "setCode": "mh3",
+      "collectorNumber": "246",
+      "notes": "GrimoraScry 2026-07-05T09:42:52Z; engine: exactKey/auto → Pinnacle Monk // Mystic Peak [mh3 246]"
+    },
+    {
+      "image": "exotic-orchard-blc-131-fullres.jpg",
+      "name": "Exotic Orchard",
+      "setCode": "blc",
+      "collectorNumber": "131",
+      "notes": "GrimoraScry 2026-07-05T09:42:56Z; engine: exactKey/auto → Exotic Orchard [blc 131]"
+    },
+    {
+      "image": "lizard-blades-neo-153-fullres.jpg",
+      "name": "Lizard Blades",
+      "setCode": "neo",
+      "collectorNumber": "153",
+      "notes": "GrimoraScry 2026-07-05T09:43:01Z; engine: exactKey/auto → Lizard Blades [neo 153]"
+    },
+    {
+      "image": "consult-the-star-charts-eoe-51-fullres.jpg",
+      "name": "Consult the Star Charts",
+      "setCode": "eoe",
+      "collectorNumber": "51",
+      "notes": "GrimoraScry 2026-07-05T09:43:05Z; engine: exactKey/auto → Consult the Star Charts [eoe 51]"
+    },
+    {
+      "image": "slickshot-show-off-otj-146-fullres.jpg",
+      "name": "Slickshot Show-Off",
+      "setCode": "otj",
+      "collectorNumber": "146",
+      "notes": "GrimoraScry 2026-07-05T09:43:09Z; engine: exactKey/auto → Slickshot Show-Off [otj 146]"
+    },
+    {
+      "image": "deduce-soa-146-fullres.jpg",
+      "name": "Deduce",
+      "setCode": "soa",
+      "collectorNumber": "146",
+      "notes": "GrimoraScry 2026-07-05T09:43:14Z; engine: exactKey/auto → Deduce [soa 146]"
+    },
+    {
+      "image": "hydroelectric-specimen-hydroelectric-laboratory-mh3-240-fullres.jpg",
+      "name": "Hydroelectric Specimen // Hydroelectric Laboratory",
+      "setCode": "mh3",
+      "collectorNumber": "240",
+      "notes": "GrimoraScry 2026-07-05T09:43:18Z; engine: exactKey/auto → Hydroelectric Specimen // Hydroelectric Laboratory [mh3 240]"
+    },
+    {
+      "image": "stormcarved-coast-sos-304-fullres.jpg",
+      "name": "Stormcarved Coast",
+      "setCode": "sos",
+      "collectorNumber": "304",
+      "notes": "GrimoraScry 2026-07-05T09:43:22Z; engine: exactKey/auto → Stormcarved Coast [sos 304]"
+    },
+    {
+      "image": "ragavan-nimble-pilferer-mh2-138-fullres.jpg",
+      "name": "Ragavan, Nimble Pilferer",
+      "setCode": "mh2",
+      "collectorNumber": "138",
+      "notes": "GrimoraScry 2026-07-05T09:43:30Z; engine: exactKey/auto → Ragavan, Nimble Pilferer [mh2 138]"
+    },
+    {
+      "image": "chrome-host-seedshark-mom-51-fullres.jpg",
+      "name": "Chrome Host Seedshark",
+      "setCode": "mom",
+      "collectorNumber": "51",
+      "notes": "GrimoraScry 2026-07-05T09:43:34Z; engine: exactKey/auto → Chrome Host Seedshark [mom 51]"
+    },
+    {
+      "image": "ral-crackling-wit-blb-341-fullres.jpg",
+      "name": "Ral, Crackling Wit",
+      "setCode": "blb",
+      "collectorNumber": "341",
+      "notes": "GrimoraScry 2026-07-05T09:43:39Z; engine: exactKey/auto → Ral, Crackling Wit [blb 341]"
+    },
+    {
+      "image": "sword-of-the-animist-cmm-413-fullres.jpg",
+      "name": "Sword of the Animist",
+      "setCode": "cmm",
+      "collectorNumber": "413",
+      "notes": "GrimoraScry 2026-07-05T09:43:48Z; engine: exactKey/auto → Sword of the Animist [cmm 413]"
+    },
+    {
+      "image": "demolition-field-bro-260-fullres.jpg",
+      "name": "Demolition Field",
+      "setCode": "bro",
+      "collectorNumber": "260",
+      "notes": "GrimoraScry 2026-07-05T09:44:01Z; engine: exactKey/auto → Demolition Field [bro 260]"
+    },
+    {
+      "image": "ingenious-prodigy-woe-56-fullres.jpg",
+      "name": "Ingenious Prodigy",
+      "setCode": "woe",
+      "collectorNumber": "56",
+      "notes": "GrimoraScry 2026-07-05T09:44:06Z; engine: exactKey/auto → Ingenious Prodigy [woe 56]"
+    },
+    {
+      "image": "sword-of-hearth-and-home-mh2-238-fullres.jpg",
+      "name": "Sword of Hearth and Home",
+      "setCode": "mh2",
+      "collectorNumber": "238",
+      "notes": "GrimoraScry 2026-07-05T09:44:11Z; engine: exactKey/auto → Sword of Hearth and Home [mh2 238]"
+    },
+    {
+      "image": "coastal-peak-soc-100-fullres.jpg",
+      "name": "Coastal Peak",
+      "setCode": "soc",
+      "collectorNumber": "100",
+      "notes": "GrimoraScry 2026-07-05T09:44:16Z; engine: exactKey/auto → Coastal Peak [soc 100]"
+    },
+    {
+      "image": "pongify-soa-20-fullres.jpg",
+      "name": "Pongify",
+      "setCode": "soa",
+      "collectorNumber": "20",
+      "notes": "GrimoraScry 2026-07-05T09:44:20Z; engine: exactKey/auto → Pongify [soa 20]"
+    },
+    {
+      "image": "great-train-heist-otj-125-fullres.jpg",
+      "name": "Great Train Heist",
+      "setCode": "otj",
+      "collectorNumber": "125",
+      "notes": "GrimoraScry 2026-07-05T09:44:35Z; engine: exactKey/auto → Great Train Heist [otj 125]"
+    },
+    {
+      "image": "bria-riptide-rogue-blb-379-fullres.jpg",
+      "name": "Bria, Riptide Rogue",
+      "setCode": "blb",
+      "collectorNumber": "379",
+      "notes": "GrimoraScry 2026-07-05T09:44:56Z; engine: exactKey/auto → Bria, Riptide Rogue [blb 379]"
+    },
+    {
+      "image": "overpowering-attack-acr-37-fullres.jpg",
+      "name": "Overpowering Attack",
+      "setCode": "acr",
+      "collectorNumber": "37",
+      "notes": "GrimoraScry 2026-07-05T09:45:03Z; engine: exactKey/auto → Overpowering Attack [acr 37]"
+    },
+    {
+      "image": "scavenger-grounds-pip-287-fullres.jpg",
+      "name": "Scavenger Grounds",
+      "setCode": "pip",
+      "collectorNumber": "287",
+      "notes": "GrimoraScry 2026-07-05T09:45:06Z; engine: exactKey/auto → Scavenger Grounds [pip 287]"
+    },
+    {
+      "image": "big-score-snc-102-fullres.jpg",
+      "name": "Big Score",
+      "setCode": "snc",
+      "collectorNumber": "102",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:45:16Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "stormcatch-mentor-blb-234-fullres.jpg",
+      "name": "Stormcatch Mentor",
+      "setCode": "blb",
+      "collectorNumber": "234",
+      "notes": "GrimoraScry 2026-07-05T09:45:31Z; engine: exactKey/auto → Stormcatch Mentor [blb 234]"
+    },
+    {
+      "image": "rograkh-son-of-rohgahh-cmr-197-fullres.jpg",
+      "name": "Rograkh, Son of Rohgahh",
+      "setCode": "cmr",
+      "collectorNumber": "197",
+      "notes": "GrimoraScry 2026-07-05T09:45:38Z; engine: exactKey/auto → Rograkh, Son of Rohgahh [cmr 197]"
+    },
+    {
+      "image": "treasure-cruise-uma-79-fullres.jpg",
+      "name": "Treasure Cruise",
+      "setCode": "uma",
+      "collectorNumber": "79",
+      "notes": "GrimoraScry 2026-07-05T09:45:48Z; engine: exactKey/auto → Treasure Cruise [uma 79]"
+    },
+    {
+      "image": "bitterthorn-nissas-animus-moc-132-fullres.jpg",
+      "name": "Bitterthorn, Nissa's Animus",
+      "setCode": "moc",
+      "collectorNumber": "132",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:45:56Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "ashling-flame-dancer-mh3-115-fullres.jpg",
+      "name": "Ashling, Flame Dancer",
+      "setCode": "mh3",
+      "collectorNumber": "115",
+      "notes": "GrimoraScry 2026-07-05T09:46:02Z; engine: exactKey/auto → Ashling, Flame Dancer [mh3 115]"
+    },
+    {
+      "image": "wavebreak-hippocamp-thb-80-fullres.jpg",
+      "name": "Wavebreak Hippocamp",
+      "setCode": "thb",
+      "collectorNumber": "80",
+      "notes": "GrimoraScry 2026-07-05T09:46:09Z; engine: exactKey/auto → Wavebreak Hippocamp [thb 80]"
+    },
+    {
+      "image": "arcane-signet-blc-127-fullres.jpg",
+      "name": "Arcane Signet",
+      "setCode": "blc",
+      "collectorNumber": "127",
+      "notes": "GrimoraScry 2026-07-05T09:46:14Z; engine: exactKey/auto → Arcane Signet [blc 127]"
+    },
+    {
+      "image": "cascade-bluffs-otc-276-fullres.jpg",
+      "name": "Cascade Bluffs",
+      "setCode": "otc",
+      "collectorNumber": "276",
+      "notes": "GrimoraScry 2026-07-05T09:46:21Z; engine: exactKey/auto → Cascade Bluffs [otc 276]"
+    },
+    {
+      "image": "faerie-mastermind-soc-114-fullres.jpg",
+      "name": "Faerie Mastermind",
+      "setCode": "soc",
+      "collectorNumber": "114",
+      "notes": "GrimoraScry 2026-07-05T09:46:26Z; engine: exactKey/auto → Faerie Mastermind [soc 114]"
+    },
+    {
+      "image": "port-razer-spg-33-fullres.jpg",
+      "name": "Port Razer",
+      "setCode": "spg",
+      "collectorNumber": "33",
+      "notes": "GrimoraScry 2026-07-05T09:46:32Z; engine: exactKey/auto → Port Razer [spg 33]"
+    },
+    {
+      "image": "spectacle-summit-sos-262-fullres-2.jpg",
+      "name": "Spectacle Summit",
+      "setCode": "sos",
+      "collectorNumber": "262",
+      "notes": "GrimoraScry 2026-07-05T09:46:38Z; engine: exactKey/auto → Spectacle Summit [sos 262]"
+    },
+    {
+      "image": "sol-ring-ecc-58-fullres.jpg",
+      "name": "Sol Ring",
+      "setCode": "ecc",
+      "collectorNumber": "58",
+      "notes": "GrimoraScry 2026-07-05T09:46:43Z; engine: exactKey/auto → Sol Ring [ecc 58]"
+    },
+    {
+      "image": "mystic-sanctuary-eld-247-fullres.jpg",
+      "name": "Mystic Sanctuary",
+      "setCode": "eld",
+      "collectorNumber": "247",
+      "notes": "GrimoraScry 2026-07-05T09:46:51Z; engine: exactKey/auto → Mystic Sanctuary [eld 247]"
+    },
+    {
+      "image": "archmages-newt-otj-39-fullres.jpg",
+      "name": "Archmage's Newt",
+      "setCode": "otj",
+      "collectorNumber": "39",
+      "notes": "GrimoraScry 2026-07-05T09:46:56Z; engine: exactKey/auto → Archmage's Newt [otj 39]"
+    },
+    {
+      "image": "ferrous-lake-blc-303-fullres.jpg",
+      "name": "Ferrous Lake",
+      "setCode": "blc",
+      "collectorNumber": "303",
+      "notes": "GrimoraScry 2026-07-05T09:47:01Z; engine: exactKey/auto → Ferrous Lake [blc 303]"
+    },
+    {
+      "image": "sword-of-once-and-future-mom-375-fullres.jpg",
+      "name": "Sword of Once and Future",
+      "setCode": "mom",
+      "collectorNumber": "375",
+      "notes": "GrimoraScry 2026-07-05T09:47:06Z; engine: exactKey/auto → Sword of Once and Future [mom 375]"
+    },
+    {
+      "image": "prismari-charm-sos-364-fullres.jpg",
+      "name": "Prismari Charm",
+      "setCode": "sos",
+      "collectorNumber": "364",
+      "notes": "GrimoraScry 2026-07-05T09:47:13Z; engine: exactKey/auto → Prismari Charm [sos 364]"
+    },
+    {
+      "image": "dragons-rage-channeler-mh2-121-fullres.jpg",
+      "name": "Dragon's Rage Channeler",
+      "setCode": "mh2",
+      "collectorNumber": "121",
+      "notes": "GrimoraScry 2026-07-05T09:47:17Z; engine: exactKey/auto → Dragon's Rage Channeler [mh2 121]"
+    },
+    {
+      "image": "sundering-eruption-volcanic-fissure-mh3-248-fullres.jpg",
+      "name": "Sundering Eruption // Volcanic Fissure",
+      "setCode": "mh3",
+      "collectorNumber": "248",
+      "notes": "GrimoraScry 2026-07-05T09:47:21Z; engine: exactKey/auto → Sundering Eruption // Volcanic Fissure [mh3 248]"
+    },
+    {
+      "image": "thrill-of-possibility-dmu-148-fullres-2.jpg",
+      "name": "Thrill of Possibility",
+      "setCode": "dmu",
+      "collectorNumber": "148",
+      "notes": "GrimoraScry 2026-07-05T09:48:00Z; engine: exactKey/auto → Thrill of Possibility [dmu 148]"
+    },
+    {
+      "image": "beamtown-beatstick-mom-131-fullres-3.jpg",
+      "name": "Beamtown Beatstick",
+      "setCode": "mom",
+      "collectorNumber": "131",
+      "notes": "GrimoraScry 2026-07-05T09:48:06Z; engine: exactKey/auto → Beamtown Beatstick [mom 131]"
+    },
+    {
+      "image": "demand-answers-mkm-306-fullres-2.jpg",
+      "name": "Demand Answers",
+      "setCode": "mkm",
+      "collectorNumber": "306",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:48:13Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "fellwar-stone-cmm-382-fullres-2.jpg",
+      "name": "Fellwar Stone",
+      "setCode": "cmm",
+      "collectorNumber": "382",
+      "notes": "GrimoraScry 2026-07-05T09:48:19Z; engine: exactKey/auto → Fellwar Stone [cmm 382]"
+    },
+    {
+      "image": "diamond-pick-axe-lci-143-fullres-2.jpg",
+      "name": "Diamond Pick-Axe",
+      "setCode": "lci",
+      "collectorNumber": "143",
+      "notes": "GrimoraScry 2026-07-05T09:48:24Z; engine: exactKey/auto → Diamond Pick-Axe [lci 143]"
+    },
+    {
+      "image": "sol-ring-dsc-94-fullres-2.jpg",
+      "name": "Sol Ring",
+      "setCode": "dsc",
+      "collectorNumber": "94",
+      "notes": "GrimoraScry 2026-07-05T09:48:31Z; engine: exactKey/auto → Sol Ring [dsc 94]"
+    },
+    {
+      "image": "thought-vessel-cmm-414-fullres-2.jpg",
+      "name": "Thought Vessel",
+      "setCode": "cmm",
+      "collectorNumber": "414",
+      "notes": "GrimoraScry 2026-07-05T09:48:36Z; engine: nameAndNumber/auto → Thought Vessel [cmm 414]"
+    },
+    {
+      "image": "arcane-signet-cmm-367-fullres-4.jpg",
+      "name": "Arcane Signet",
+      "setCode": "cmm",
+      "collectorNumber": "367",
+      "notes": "GrimoraScry 2026-07-05T09:48:42Z; engine: exactKey/auto → Arcane Signet [cmm 367]"
+    },
+    {
+      "image": "command-tower-cmm-420-fullres-3.jpg",
+      "name": "Command Tower",
+      "setCode": "cmm",
+      "collectorNumber": "420",
+      "notes": "GrimoraScry 2026-07-05T09:48:47Z; engine: exactKey/auto → Command Tower [cmm 420]"
+    },
+    {
+      "image": "wayfarers-bauble-pip-252-fullres-4.jpg",
+      "name": "Wayfarer's Bauble",
+      "setCode": "pip",
+      "collectorNumber": "252",
+      "notes": "GrimoraScry 2026-07-05T09:48:53Z; engine: exactKey/auto → Wayfarer's Bauble [pip 252]"
+    },
+    {
+      "image": "abrade-cmm-203-fullres-3.jpg",
+      "name": "Abrade",
+      "setCode": "cmm",
+      "collectorNumber": "203",
+      "notes": "GrimoraScry 2026-07-05T09:48:57Z; engine: exactKey/auto → Abrade [cmm 203]"
+    },
+    {
+      "image": "dispatch-c21-88-fullres-3.jpg",
+      "name": "Dispatch",
+      "setCode": "c21",
+      "collectorNumber": "88",
+      "notes": "GrimoraScry 2026-07-05T09:49:02Z; engine: exactKey/auto → Dispatch [c21 88]"
+    },
+    {
+      "image": "bureau-headmaster-acr-296-fullres-3.jpg",
+      "name": "Bureau Headmaster",
+      "setCode": "acr",
+      "collectorNumber": "296",
+      "notes": "GrimoraScry 2026-07-05T09:49:06Z; engine: nameAndNumber/auto → Bureau Headmaster [acr 296]"
+    },
+    {
+      "image": "generous-gift-blc-106-fullres-4.jpg",
+      "name": "Generous Gift",
+      "setCode": "blc",
+      "collectorNumber": "106",
+      "notes": "GrimoraScry 2026-07-05T09:49:11Z; engine: exactKey/auto → Generous Gift [blc 106]"
+    },
+    {
+      "image": "boros-signet-c20-239-fullres-3.jpg",
+      "name": "Boros Signet",
+      "setCode": "c20",
+      "collectorNumber": "239",
+      "notes": "GrimoraScry 2026-07-05T09:49:16Z; engine: nameAndNumber/auto → Boros Signet [c20 239]"
+    },
+    {
+      "image": "brilliant-restoration-neo-7-fullres-3.jpg",
+      "name": "Brilliant Restoration",
+      "setCode": "neo",
+      "collectorNumber": "7",
+      "notes": "GrimoraScry 2026-07-05T09:49:22Z; engine: exactKey/auto → Brilliant Restoration [neo 7]"
+    },
+    {
+      "image": "blacksmiths-skill-mh2-381-fullres.jpg",
+      "name": "Blacksmith's Skill",
+      "setCode": "mh2",
+      "collectorNumber": "381",
+      "notes": "GrimoraScry 2026-07-05T09:50:05Z; engine: nameAndNumber/auto → Blacksmith's Skill [mh2 381]"
+    },
+    {
+      "image": "edgar-markov-inr-428-fullres.jpg",
+      "name": "Edgar Markov",
+      "setCode": "inr",
+      "collectorNumber": "428",
+      "expectation": "knownFailure",
+      "notes": "GrimoraScry 2026-07-05T09:50:40Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "winter-moon-mh3-213-fullres.jpg",
+      "name": "Winter Moon",
+      "setCode": "mh3",
+      "collectorNumber": "213",
+      "notes": "GrimoraScry 2026-07-05T09:50:47Z; engine: nameAndNumber/auto → Winter Moon [mh3 213]"
+    },
+    {
+      "image": "resonating-lute-sos-221-fullres.jpg",
+      "name": "Resonating Lute",
+      "setCode": "sos",
+      "collectorNumber": "221",
+      "notes": "GrimoraScry 2026-07-05T09:50:53Z; engine: exactKey/auto → Resonating Lute [sos 221]"
+    },
+    {
+      "image": "goblin-glasswright-craft-with-pride-sos-117-fullres-2.jpg",
+      "name": "Goblin Glasswright // Craft with Pride",
+      "setCode": "sos",
+      "collectorNumber": "117",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:51:04Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "terastodon-wwk-115-fullres-2.jpg",
+      "name": "Terastodon",
+      "setCode": "wwk",
+      "collectorNumber": "115",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:51:19Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "arch-of-orazca-rix-185-fullres.jpg",
+      "name": "Arch of Orazca",
+      "setCode": "rix",
+      "collectorNumber": "185",
+      "notes": "GrimoraScry 2026-07-05T09:51:25Z; engine: nameAndNumber/auto → Arch of Orazca [rix 185]"
+    },
+    {
+      "image": "angelic-skirmisher-gtc-3-fullres-3.jpg",
+      "name": "Angelic Skirmisher",
+      "setCode": "gtc",
+      "collectorNumber": "3",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:51:37Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "zur-the-enchanter-dmr-206-fullres-2.jpg",
+      "name": "Zur the Enchanter",
+      "setCode": "dmr",
+      "collectorNumber": "206",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:51:56Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "last-chance-dmr-325-fullres.jpg",
+      "name": "Last Chance",
+      "setCode": "dmr",
+      "collectorNumber": "325",
+      "expectation": "knownFailure",
+      "notes": "GrimoraScry 2026-07-05T09:52:26Z; engine: unresolved/none → none"
+    },
+    {
+      "image": "monstrous-rage-woe-142-fullres.jpg",
+      "name": "Monstrous Rage",
+      "setCode": "woe",
+      "collectorNumber": "142",
+      "notes": "GrimoraScry 2026-07-05T09:52:32Z; engine: nameAndNumber/auto → Monstrous Rage [woe 142]"
+    },
+    {
+      "image": "full-throttle-dft-127-fullres.jpg",
+      "name": "Full Throttle",
+      "setCode": "dft",
+      "collectorNumber": "127",
+      "notes": "GrimoraScry 2026-07-05T09:52:43Z; engine: nameAndNumber/auto → Full Throttle [dft 127]"
+    },
+    {
+      "image": "silent-hallcreeper-dsk-72-fullres.jpg",
+      "name": "Silent Hallcreeper",
+      "setCode": "dsk",
+      "collectorNumber": "72",
+      "expectation": "disambiguation",
+      "notes": "GrimoraScry 2026-07-05T09:52:53Z; engine: nameOnly/ambiguous → ambiguous"
+    },
+    {
+      "image": "harmonized-crescendo-ecl-408-fullres.jpg",
+      "name": "Harmonized Crescendo",
+      "setCode": "ecl",
+      "collectorNumber": "408",
+      "notes": "GrimoraScry 2026-07-05T09:53:05Z; engine: nameAndNumber/auto → Harmonized Crescendo [ecl 408]"
+    },
+    {
+      "image": "venomous-brutalizer-one-193-fullres.jpg",
+      "name": "Venomous Brutalizer",
+      "setCode": "one",
+      "collectorNumber": "193",
+      "notes": "GrimoraScry 2026-07-05T09:53:33Z; engine: nameOnly/auto → Venomous Brutalizer [one 193]"
     }
   ]
 }
