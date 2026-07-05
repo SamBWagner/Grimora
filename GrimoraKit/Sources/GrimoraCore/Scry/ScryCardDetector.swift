@@ -92,8 +92,10 @@ public struct ScryCardDetector: Sendable {
 
     let width = Double(image.width)
     let height = Double(image.height)
+    let observations = (rectangles.results ?? [])
+      + (includeDocumentSegmentation ? (documentSegmentation.results ?? []) : [])
 
-    func card(from observation: VNRectangleObservation) -> ScryDetectedCard? {
+    let cards: [ScryDetectedCard] = observations.compactMap { observation in
       let corners = [observation.topLeft, observation.topRight, observation.bottomRight, observation.bottomLeft]
 
       // Fully in frame: every corner comfortably inside all four edges.
@@ -116,23 +118,7 @@ public struct ScryCardDetector: Sendable {
       )
     }
 
-    let rectangleCards = (rectangles.results ?? []).compactMap(card(from:))
-    // Document segmentation is a FALLBACK for steeply-angled single cards, not a
-    // co-equal source: its region can swell to swallow an overlapping neighbor —
-    // a bigger, still card-shaped quad that beats the tight rectangle and makes
-    // OCR read the neighbor's title (a real cluttered scene picked up "Arch of
-    // Orazca" beneath the Terastodon this way). So keep only doc-seg regions that
-    // no rectangle already covers.
-    let documentCards = includeDocumentSegmentation
-      ? (documentSegmentation.results ?? []).compactMap(card(from:))
-      : []
-    let rectangleCentroids = rectangleCards.map { Self.centroid($0.normalizedCorners) }
-    let documentFallback = documentCards.filter { document in
-      let center = Self.centroid(document.normalizedCorners)
-      return !rectangleCentroids.contains { hypot($0.x - center.x, $0.y - center.y) < 0.06 }
-    }
-
-    return Self.deduplicated((rectangleCards + documentFallback).sorted { $0.areaFraction > $1.areaFraction })
+    return Self.deduplicated(cards.sorted { $0.areaFraction > $1.areaFraction })
   }
 
   /// Drops near-duplicate detections (the two requests often find the same card),
