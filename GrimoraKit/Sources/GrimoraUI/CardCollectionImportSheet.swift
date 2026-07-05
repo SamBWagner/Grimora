@@ -235,7 +235,7 @@ private struct CardCollectionImportForm: View {
 
             Section("Source") {
                 sourcePicker
-                    .listRowInsets(EdgeInsets(top: 10, leading: 0, bottom: 10, trailing: 0))
+                    .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 6, trailing: 20))
             }
 
             if sourceMode != .blank {
@@ -591,35 +591,64 @@ private struct CardCollectionImportForm: View {
 }
 
 private struct ImportSourcePicker: View {
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
+
     var sources: [ImportSourceMode]
     @Binding var selection: ImportSourceMode
     var palette: GrimoraPalette
 
     var body: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-            ForEach(sources) { source in
-                Button {
-                    selection = source
-                } label: {
-                    ImportSourceOptionLabel(
-                        source: source,
-                        isSelected: selection == source,
-                        palette: palette
-                    )
+        if useVerticalRows {
+            // Compact widths (iPhone, down to the SE/Mini): a single column of
+            // full-width rows never clips its card borders and stays balanced.
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(sources) { source in
+                    optionButton(source, axis: .horizontal)
                 }
-                .buttonStyle(
-                    ImportSourceOptionButtonStyle(
-                        isSelected: selection == source,
-                        palette: palette
-                    )
-                )
-                .accessibilityIdentifier("list-import-source-option-\(source.id)")
-                .accessibilityValue(selection == source ? "Selected" : "Not selected")
-                #if os(macOS)
-                .help(source.title)
-                #endif
+            }
+        } else {
+            // Regular widths (iPad, macOS/visionOS panel): keep the card grid.
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                ForEach(sources) { source in
+                    optionButton(source, axis: .vertical)
+                }
             }
         }
+    }
+
+    @ViewBuilder
+    private func optionButton(_ source: ImportSourceMode, axis: Axis) -> some View {
+        Button {
+            selection = source
+        } label: {
+            ImportSourceOptionLabel(
+                source: source,
+                isSelected: selection == source,
+                axis: axis,
+                palette: palette
+            )
+        }
+        .buttonStyle(
+            ImportSourceOptionButtonStyle(
+                isSelected: selection == source,
+                palette: palette
+            )
+        )
+        .accessibilityIdentifier("list-import-source-option-\(source.id)")
+        .accessibilityValue(selection == source ? "Selected" : "Not selected")
+        #if os(macOS)
+        .help(source.title)
+        #endif
+    }
+
+    private var useVerticalRows: Bool {
+        #if os(iOS)
+        horizontalSizeClass == .compact
+        #else
+        false
+        #endif
     }
 
     private var columns: [GridItem] {
@@ -636,40 +665,76 @@ private struct ImportSourcePicker: View {
 private struct ImportSourceOptionLabel: View {
     var source: ImportSourceMode
     var isSelected: Bool
+    var axis: Axis
     var palette: GrimoraPalette
 
     var body: some View {
+        switch axis {
+        case .vertical:
+            verticalLayout
+        case .horizontal:
+            horizontalLayout
+        }
+    }
+
+    // Card layout for the grid (iPad / macOS / visionOS): icon top-leading,
+    // selection indicator top-trailing, title + subtitle beneath.
+    private var verticalLayout: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 8) {
-                Image(systemName: source.systemImage)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(isSelected ? palette.primaryText.color : palette.accent.color)
-                    .frame(width: 22, height: 22)
-                    .accessibilityHidden(true)
-
+                icon
                 Spacer(minLength: 0)
-
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(isSelected ? palette.accent.color : palette.secondaryText.color.opacity(0.6))
-                    .accessibilityHidden(true)
+                selectionIndicator
             }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(source.title)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(palette.primaryText.color)
-                    .lineLimit(1)
-
-                Text(source.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(palette.secondaryText.color)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            titleBlock
         }
         .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
         .padding(12)
+    }
+
+    // Full-width row layout for compact widths (iPhone): icon leading,
+    // title + subtitle, selection indicator trailing.
+    private var horizontalLayout: some View {
+        HStack(alignment: .center, spacing: 12) {
+            icon
+            titleBlock
+            Spacer(minLength: 12)
+            selectionIndicator
+        }
+        .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    private var icon: some View {
+        Image(systemName: source.systemImage)
+            .font(.headline.weight(.semibold))
+            .foregroundStyle(isSelected ? palette.primaryText.color : palette.accent.color)
+            .frame(width: 22, height: 22)
+            .accessibilityHidden(true)
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(source.title)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(palette.primaryText.color)
+                .lineLimit(1)
+
+            Text(source.subtitle)
+                .font(.caption)
+                .foregroundStyle(palette.secondaryText.color)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var selectionIndicator: some View {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(isSelected ? palette.accent.color : palette.secondaryText.color.opacity(0.6))
+            .accessibilityHidden(true)
     }
 }
 
