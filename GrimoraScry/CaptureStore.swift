@@ -82,15 +82,43 @@ struct CaptureRecord: Codable, Identifiable, Equatable, Sendable {
   var capture: CaptureMeta
 }
 
-/// Writes captures into Documents/Captures. That folder is the entire export
-/// story: UIFileSharingEnabled makes it visible under the phone in Finder, and
-/// dragging it out feeds `Tools/scry_import_captures.py`.
+/// Writes captures into a Captures folder. When iCloud is available that folder
+/// lives in the app's iCloud Drive ubiquity container, so every capture syncs to
+/// the Mac on its own — no dragging. `Tools/scry_import_captures.py` then reads
+/// the synced folder directly. The local Documents fallback (still surfaced via
+/// UIFileSharingEnabled) is the safety net when iCloud is unavailable.
 struct CaptureStore: Sendable {
   let root: URL
+  /// True when `root` lives in the iCloud Drive ubiquity container (captures sync
+  /// to the Mac by themselves); false for the local Documents fallback.
+  let isICloud: Bool
 
   static func documents(fileManager: FileManager = .default) -> CaptureStore {
     let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    return CaptureStore(root: documents.appendingPathComponent("Captures", isDirectory: true))
+    return CaptureStore(
+      root: documents.appendingPathComponent("Captures", isDirectory: true),
+      isICloud: false
+    )
+  }
+
+  /// The Captures folder inside the app's iCloud Drive ubiquity container, so each
+  /// capture syncs to the Mac at
+  /// `~/Library/Mobile Documents/iCloud~com~samwagner~GrimoraScry/Documents/Captures`
+  /// with no manual transfer. Resolving the container touches the filesystem and
+  /// can block on first access — **call this off the main thread**. Falls back to
+  /// the local Documents store when iCloud is unavailable (not signed in), so a
+  /// capture is never lost.
+  static func iCloudBacked(
+    containerID: String = "iCloud.com.samwagner.GrimoraScry",
+    fileManager: FileManager = .default
+  ) -> CaptureStore {
+    guard let container = fileManager.url(forUbiquityContainerIdentifier: containerID) else {
+      return documents(fileManager: fileManager)
+    }
+    let captures = container
+      .appendingPathComponent("Documents", isDirectory: true)
+      .appendingPathComponent("Captures", isDirectory: true)
+    return CaptureStore(root: captures, isICloud: true)
   }
 
   static func makeID(date: Date = Date()) -> String {
@@ -129,7 +157,10 @@ struct CaptureStore: Sendable {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     encoder.dateEncodingStrategy = .iso8601
-    try encoder.encode(record).write(to: sidecarURL(for: record.id), options: .atomic)
+    let data = try encoder.encode(record)
+    try Self.coordinatedWrite(to: sidecarURL(for: record.id)) { url in
+      try data.write(to: url, options: .atomic)
+    }
   }
 
   /// All saved captures, newest first. Unreadable sidecars are skipped.
@@ -149,7 +180,10 @@ struct CaptureStore: Sendable {
 
   func delete(id: String) {
     for url in [sidecarURL(for: id), stillURL(for: id), cropURL(for: id)] {
-      try? FileManager.default.removeItem(at: url)
+      var coordinatorError: NSError?
+      NSFileCoordinator().coordinate(writingItemAt: url, options: .forDeleting, error: &coordinatorError) { target in
+        try? FileManager.default.removeItem(at: target)
+      }
     }
   }
 
@@ -174,18 +208,33 @@ struct CaptureStore: Sendable {
     orientation: CGImagePropertyOrientation,
     to url: URL
   ) throws {
-    guard let destination = CGImageDestinationCreateWithURL(
-      url as CFURL, UTType.jpeg.identifier as CFString, 1, nil
-    ) else {
-      throw CocoaError(.fileWriteUnknown)
+    try coordinatedWrite(to: url) { target in
+      guard let destination = CGImageDestinationCreateWithURL(
+        target as CFURL, UTType.jpeg.identifier as CFString, 1, nil
+      ) else {
+        throw CocoaError(.fileWriteUnknown)
+      }
+      let properties: [CFString: Any] = [
+        kCGImageDestinationLossyCompressionQuality: 0.9,
+        kCGImagePropertyOrientation: orientation.rawValue,
+      ]
+      CGImageDestinationAddImage(destination, image, properties as CFDictionary)
+      guard CGImageDestinationFinalize(destination) else {
+        throw CocoaError(.fileWriteUnknown)
+      }
     }
-    let properties: [CFString: Any] = [
-      kCGImageDestinationLossyCompressionQuality: 0.9,
-      kCGImagePropertyOrientation: orientation.rawValue,
-    ]
-    CGImageDestinationAddImage(destination, image, properties as CFDictionary)
-    guard CGImageDestinationFinalize(destination) else {
-      throw CocoaError(.fileWriteUnknown)
+  }
+
+  /// Serialize a write through `NSFileCoordinator` so iCloud sees a clean,
+  /// fully-written file (and never races the daemon uploading it). A no-op cost
+  /// for the local fallback store.
+  private static func coordinatedWrite(to url: URL, _ body: (URL) throws -> Void) throws {
+    var coordinatorError: NSError?
+    var thrownError: Error?
+    NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordinatorError) { target in
+      do { try body(target) } catch { thrownError = error }
     }
+    if let thrownError { throw thrownError }
+    if let coordinatorError { throw coordinatorError }
   }
 }

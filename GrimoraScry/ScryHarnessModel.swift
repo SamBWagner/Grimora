@@ -29,13 +29,23 @@ final class ScryHarnessModel {
   var showsCaptureList = false
 
   let camera = ScryCameraController()
-  let store = CaptureStore.documents()
+  /// Starts as the local Documents fallback (instant, safe) and is upgraded to the
+  /// iCloud-backed store during `launch()` — resolving the ubiquity container can
+  /// block, so it happens off the main thread. All real captures happen after
+  /// `launch()` (scanning is gated on `.ready`), so they land in iCloud.
+  private(set) var store = CaptureStore.documents()
 
   // Sticky per-session labeling defaults — most scanning sessions run through
   // one binder or box, so these rarely change capture to capture.
   var foil: Bool { didSet { UserDefaults.standard.set(foil, forKey: "capture.foil") } }
   var sleeved: Bool { didSet { UserDefaults.standard.set(sleeved, forKey: "capture.sleeved") } }
   var background: String { didSet { UserDefaults.standard.set(background, forKey: "capture.background") } }
+  /// Which shared scan entry point to exercise: the deliberate high-res still
+  /// (`true`, matches the real app's manual/single scans) or the live video frame
+  /// (`false`, matches the real app's bulk/passive commit inputs). Both run the
+  /// identical `ScryScanner`; the toggle just controls the input the corpus
+  /// captures, so tests cover both regular and bulk scanning quality.
+  var useStillCapture: Bool { didSet { UserDefaults.standard.set(useStillCapture, forKey: "capture.useStill") } }
 
   static let backgroundOptions = ["black", "wood", "white", "other"]
 
@@ -43,11 +53,16 @@ final class ScryHarnessModel {
     foil = UserDefaults.standard.bool(forKey: "capture.foil")
     sleeved = UserDefaults.standard.bool(forKey: "capture.sleeved")
     background = UserDefaults.standard.string(forKey: "capture.background") ?? "black"
+    // Default to Still (the prior behavior) when unset.
+    useStillCapture = UserDefaults.standard.object(forKey: "capture.useStill") as? Bool ?? true
   }
 
   // MARK: - Launch
 
   func launch() async {
+    // Resolve the iCloud-backed store off the main thread (touching the ubiquity
+    // container can block on first access), then read whatever is already there.
+    store = await Task.detached(priority: .userInitiated) { CaptureStore.iCloudBacked() }.value
     captures = store.listRecords()
     let environment: HarnessEnvironment
     do {
@@ -117,7 +132,7 @@ final class ScryHarnessModel {
     guard phase == .ready, !isScanning else { return }
     isScanning = true
     defer { isScanning = false }
-    let capture = await camera.scanCapturingInput(usingStillCapture: true)
+    let capture = await camera.scanCapturingInput(usingStillCapture: useStillCapture)
     pendingReview = PendingReview(capture: capture)
   }
 

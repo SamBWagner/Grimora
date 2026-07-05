@@ -78,15 +78,29 @@ struct ContentView: View {
 
   private var controls: some View {
     VStack(spacing: 14) {
-      HStack(spacing: 10) {
-        Toggle("Foil", isOn: $model.foil)
-          .toggleStyle(.button)
-        Toggle("Sleeved", isOn: $model.sleeved)
-          .toggleStyle(.button)
-        Picker("Background", selection: $model.background) {
-          ForEach(ScryHarnessModel.backgroundOptions, id: \.self) { Text($0) }
+      VStack(spacing: 8) {
+        HStack(spacing: 10) {
+          // Which shared scan path to feed: the deliberate high-res still
+          // (≈ regular scan) or the live video frame (≈ bulk/passive input).
+          Picker("Source", selection: $model.useStillCapture) {
+            Text("Still").tag(true)
+            Text("Live").tag(false)
+          }
+          .pickerStyle(.segmented)
+          .frame(maxWidth: 180)
+          Spacer(minLength: 0)
+          storageBadge
         }
-        .pickerStyle(.menu)
+        HStack(spacing: 10) {
+          Toggle("Foil", isOn: $model.foil)
+            .toggleStyle(.button)
+          Toggle("Sleeved", isOn: $model.sleeved)
+            .toggleStyle(.button)
+          Picker("Background", selection: $model.background) {
+            ForEach(ScryHarnessModel.backgroundOptions, id: \.self) { Text($0) }
+          }
+          .pickerStyle(.menu)
+        }
       }
       .font(.subheadline)
       .padding(8)
@@ -129,6 +143,22 @@ struct ContentView: View {
         Color.clear.frame(width: 64, height: 1)
       }
     }
+  }
+
+  /// Shows where captures are going: iCloud (auto-syncs to the Mac) or a
+  /// local-only fallback the user still has to pull off by hand.
+  private var storageBadge: some View {
+    Group {
+      if model.store.isICloud {
+        Label("iCloud", systemImage: "checkmark.icloud")
+          .foregroundStyle(.green)
+      } else {
+        Label("Local only", systemImage: "icloud.slash")
+          .foregroundStyle(.orange)
+      }
+    }
+    .font(.caption.weight(.semibold))
+    .labelStyle(.titleAndIcon)
   }
 
   private var captureThumbnail: some View {

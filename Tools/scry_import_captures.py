@@ -103,6 +103,64 @@ def expectation_for(capture: dict) -> str | None:
     return None
 
 
+def engine_answer(capture: dict) -> str:
+    engine = capture.get("engine") or {}
+    card = engine.get("card")
+    method = engine.get("method", "—")
+    confidence = engine.get("confidence", "—")
+    if card:
+        return f"{method}/{confidence} → {card['name']} [{card['setCode']} {card['collectorNumber']}]"
+    return f"{method}/{confidence} → no card"
+
+
+def truth_label(capture: dict) -> str:
+    truth = capture["groundTruth"]
+    return f"{truth['name']} [{truth['setCode'].lower()} {strip_leading_zeros(truth['collectorNumber'])}]"
+
+
+def engine_matched_truth(capture: dict) -> bool:
+    truth = capture["groundTruth"]
+    card = (capture.get("engine") or {}).get("card")
+    if not card:
+        return False
+    return (
+        card["setCode"].lower() == truth["setCode"].lower()
+        and strip_leading_zeros(card["collectorNumber"]) == strip_leading_zeros(truth["collectorNumber"])
+    )
+
+
+def summary_row(capture: dict, slug: str, expectation: str) -> dict:
+    """A machine- and human-readable record of one imported capture, so an agent
+    can read off exactly which new cards entered the pool and how they resolved."""
+    return {
+        "slug": slug,
+        "truth": truth_label(capture),
+        "name": capture["groundTruth"]["name"],
+        "setCode": capture["groundTruth"]["setCode"].lower(),
+        "collectorNumber": strip_leading_zeros(capture["groundTruth"]["collectorNumber"]),
+        "verdict": capture["verdict"],
+        "expectation": expectation,
+        "source": (capture.get("capture") or {}).get("source", "—"),
+        "foil": bool(capture.get("foil")),
+        "sleeved": bool(capture.get("sleeved")),
+        "engine": engine_answer(capture),
+        "engineMatchedTruth": engine_matched_truth(capture),
+    }
+
+
+def print_summary(rows: list[dict]) -> None:
+    if not rows:
+        return
+    print(f"\nNew cards now under test ({len(rows)}):")
+    for r in rows:
+        mark = "✓" if r["engineMatchedTruth"] else ("✗" if r["verdict"] == "wrong" else "?")
+        tags = "".join(t for t, on in ((" foil", r["foil"]), (" sleeved", r["sleeved"])) if on)
+        print(
+            f"  {mark} {r['truth']}  ({r['verdict']}→{r['expectation']}, {r['source']}{tags})\n"
+            f"      engine: {r['engine']}"
+        )
+
+
 def notes_for(capture: dict) -> str:
     engine = capture.get("engine") or {}
     engine_card = engine.get("card")
@@ -155,7 +213,7 @@ def scene_entry(capture: dict, image_name: str) -> dict:
     return entry
 
 
-def import_captures(captures_dir: Path, dry_run: bool) -> int:
+def import_captures(captures_dir: Path, dry_run: bool, summary_json: Path | None = None) -> int:
     sidecars = sorted(captures_dir.glob("*.json"))
     if not sidecars:
         print(f"No capture sidecars (*.json) found in {captures_dir}")
@@ -168,6 +226,7 @@ def import_captures(captures_dir: Path, dry_run: bool) -> int:
     imported_dir = captures_dir / "imported"
 
     imported = skipped = 0
+    summary_rows: list[dict] = []
     for sidecar in sidecars:
         capture = json.loads(sidecar.read_text())
         capture_id = capture.get("id", sidecar.stem)
@@ -205,6 +264,7 @@ def import_captures(captures_dir: Path, dry_run: bool) -> int:
             moves.append((still_path, SCENES_DIR / scene_name))
 
         print(f"  + {capture_id} → {slug}  [{expectation}]")
+        summary_rows.append(summary_row(capture, slug, expectation))
         if not dry_run:
             for source, destination in moves:
                 destination.parent.mkdir(parents=True, exist_ok=True)
@@ -216,6 +276,11 @@ def import_captures(captures_dir: Path, dry_run: bool) -> int:
         imported += 1
 
     print(f"\n{'Would import' if dry_run else 'Imported'} {imported} capture(s), skipped {skipped}.")
+    print_summary(summary_rows)
+    if summary_json is not None and summary_rows:
+        summary_json.parent.mkdir(parents=True, exist_ok=True)
+        summary_json.write_text(json.dumps(summary_rows, indent=2, ensure_ascii=False) + "\n")
+        print(f"\nWrote machine-readable summary → {summary_json}")
     if imported == 0:
         return 0
     if dry_run:
@@ -246,16 +311,19 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("captures", type=Path,
-                        help="the Captures folder dragged off the phone")
+                        help="the Captures folder (iCloud-synced, or dragged off the phone)")
     parser.add_argument("--dry-run", action="store_true",
                         help="print what would be imported without writing anything")
+    parser.add_argument("--summary-json", type=Path, default=None,
+                        help="also write the imported-cards summary as JSON to this path")
     args = parser.parse_args()
 
     captures_dir = args.captures.expanduser()
     if not captures_dir.is_dir():
         print(f"Not a directory: {captures_dir}")
         return 1
-    return import_captures(captures_dir, args.dry_run)
+    summary_json = args.summary_json.expanduser() if args.summary_json else None
+    return import_captures(captures_dir, args.dry_run, summary_json)
 
 
 if __name__ == "__main__":
