@@ -148,11 +148,16 @@ public enum CardCollectionRulesetValidator {
         }
     }
 
-    private static func identityKey(for card: CardRecord) -> String {
+    /// The oracle identity used to group printings of the same card. Two different
+    /// printings share an identity, so singleton/copy limits apply across art swaps.
+    public static func identityKey(for card: CardRecord) -> String {
         card.oracleID ?? (card.displayNameKey.isEmpty ? card.name.sortKey : card.displayNameKey)
     }
 
-    private static func isCopyLimitExempt(_ card: CardRecord) -> Bool {
+    /// Whether a card may appear in unlimited quantity regardless of a format's copy
+    /// limit — basic lands and cards that say "a deck can have any number of cards
+    /// named …" (e.g. Relentless Rats). Everything else is a singleton in Commander.
+    public static func isCopyLimitExempt(_ card: CardRecord) -> Bool {
         let typeLine = card.typeLine.sortKey
         let oracleText = card.oracleText.sortKey
         return typeLine.contains("basic") && typeLine.contains("land")

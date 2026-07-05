@@ -31,16 +31,12 @@ struct ScryTabView: View {
   // Shared review sheet (single "Add to Scanned" + bulk Correct/Incorrect).
   @State private var review: Review?
 
-  // Bulk-mode workflow.
+  // Bulk-mode workflow. The tuned state machine lives in ScryBulkCoordinator so the
+  // Commander Re-scan flow shares one implementation; the tab keeps only the running
+  // count for its "Auto-adding to Scanned" status.
   @State private var scannedCount = 0
   @State private var lastAddedName: String?
-  @State private var armed = true
-  @State private var isScanning = false
-  @State private var stableKey: String?
-  @State private var stableCount = 0
-  @State private var committedCentroid: CGPoint?
-  @State private var committedCardID: CardRecord.ID?
-  @State private var rejectedIDs: Set<CardRecord.ID> = []
+  @State private var bulk = ScryBulkCoordinator()
 
   private enum Mode: String { case single, bulk }
 
@@ -66,7 +62,11 @@ struct ScryTabView: View {
       case .undetermined: ProgressView().tint(.white)
       }
     }
-    .onAppear { syncCamera() }
+    .onAppear {
+      bulk.onScanned = { addToScanned($0) }
+      bulk.onNeedsReview = { card in review = Review(kind: .bulkUncertain, card: card) }
+      syncCamera()
+    }
     .onDisappear { controller.stop() }
     .onChange(of: isActive) { _, _ in syncCamera() }
     .onChange(of: scenePhase) { _, _ in syncCamera() }
@@ -74,20 +74,20 @@ struct ScryTabView: View {
     // looking at a card, not the viewfinder, so there's no reason to keep the
     // capture session and Vision running under load.
     .onChange(of: model.selectedCard?.id) { _, _ in syncCamera() }
-    .onChange(of: mode) { _, m in applyFocus(for: m); resetBulk(); resetSingle() }
+    .onChange(of: mode) { _, m in applyFocus(for: m); bulk.reset(); resetSingle() }
     // Drive stability off the per-cycle generation, not previewGuess —
     // a stably-recognized card produces an unchanged guess, so onChange(of:
     // previewGuess) would never fire the follow-up cycles and never commit.
     .onChange(of: controller.previewGeneration) { _, _ in
       switch mode {
       case .single: applySingle(previewTickEvent())
-      case .bulk: considerForBulk(controller.previewGuess)
+      case .bulk: bulk.consider(guess: controller.previewGuess, controller: controller)
       }
     }
     .onChange(of: controller.detectedCards) { _, cards in
       switch mode {
       case .single: trackSingleMovement(cards)
-      case .bulk: trackMovement(cards)
+      case .bulk: bulk.trackMovement(cards: cards, controller: controller)
       }
     }
     .sheet(
@@ -112,6 +112,8 @@ struct ScryTabView: View {
         // event is a no-op — so sending it unconditionally is safe.
         if mode == .single {
           applySingle(.reviewClosed(added: false))
+        } else {
+          bulk.reviewDismissed()
         }
       }
     ) { item in
@@ -121,8 +123,8 @@ struct ScryTabView: View {
         kind: item.kind,
         onAddToScanned: { acceptSingle(item.card) },
         onFullDetails: { review = nil; model.selectCard(item.card) },
-        onCorrect: { commit(item.card); review = nil },
-        onIncorrect: { rejectAndResume(item.card) },
+        onCorrect: { bulk.acceptUncertain(item.card, controller: controller); review = nil },
+        onIncorrect: { bulk.rejectUncertain(item.card); review = nil },
         onDismiss: { review = nil }
       )
     }
@@ -365,93 +367,8 @@ struct ScryTabView: View {
 
   // MARK: - Bulk mode
 
-  private func considerForBulk(_ guess: ScryCameraController.PreviewGuess?) {
-    guard mode == .bulk, review == nil, !isScanning else { return }
-    guard let guess else { stableKey = nil; stableCount = 0; return }
-
-    let key = guess.card?.id ?? guess.name
-    if key == stableKey { stableCount += 1 } else { stableKey = key; stableCount = 1 }
-    guard stableCount >= 2 else { return }
-
-    // Re-arm when a *different* confident card appears — a new card was placed,
-    // even if it landed in the same spot (centroid movement can miss that). Safe
-    // against stationary flicker because it requires a different confident id.
-    if !armed, guess.confident, let card = guess.card, card.id != committedCardID {
-      armed = true
-      rejectedIDs = []
-    }
-    guard armed else { return }
-
-    if guess.confident, let card = guess.card, !rejectedIDs.contains(card.id) {
-      commit(card)  // confident → straight to Scanned
-    } else if !guess.confident {
-      runUncertainScan()  // need candidates for the Correct/Incorrect pass
-    }
-  }
-
-  /// A full scan to get ranked candidates for an uncertain card.
-  private func runUncertainScan() {
-    isScanning = true
-    Task {
-      let result = await controller.scan()
-      isScanning = false
-      guard mode == .bulk, armed, review == nil, let result else { return }
-      switch result.resolution.confidence {
-      case .auto:
-        if let card = result.resolution.card, !rejectedIDs.contains(card.id) { commit(card) }
-      case .ambiguous:
-        if let next = result.resolution.candidates.first(where: { !rejectedIDs.contains($0.id) }) {
-          review = Review(kind: .bulkUncertain, card: next)
-        }
-      case .none:
-        break
-      }
-    }
-  }
-
-  /// Commits a card to Scanned and waits for the card to move before the next.
-  private func commit(_ card: CardRecord) {
-    addToScanned(card)
-    committedCentroid = subjectCentroid(controller.detectedCards)
-    committedCardID = card.id
-    armed = false
-    stableKey = nil
-    stableCount = 0
-  }
-
-  private func rejectAndResume(_ card: CardRecord) {
-    rejectedIDs.insert(card.id)
-    review = nil
-    stableKey = nil
-    stableCount = 0  // re-trigger a scan for the next-best candidate
-  }
-
-  /// Re-arms only when the card actually moves (or leaves), so a stationary card
-  /// is never scanned twice — and a swap/duplicate is picked up immediately.
-  private func trackMovement(_ cards: [ScryDetectedCard]) {
-    guard mode == .bulk, !armed else { return }
-    switch ScryBulkPlacement.movement(
-      detectedCentroid: subjectCentroid(cards),
-      committedCentroid: committedCentroid,
-      hasCommittedCard: committedCardID != nil,
-      threshold: movementThreshold
-    ) {
-    case .adoptBaseline(let centroid):
-      // Commit didn't capture a baseline; lock onto the card now in frame instead of
-      // re-arming, so it isn't rescanned. A genuine swap is still caught by
-      // considerForBulk (a different confident card re-arms regardless).
-      committedCentroid = centroid
-    case .rearm:
-      armed = true
-      committedCentroid = nil
-      rejectedIDs = []
-      stableKey = nil
-      stableCount = 0
-    case .hold:
-      break
-    }
-  }
-
+  /// The bulk sink: persist to the Scanned collection and give scan feedback. The
+  /// stability/placement machinery lives in `ScryBulkCoordinator`.
   private func addToScanned(_ card: CardRecord) {
     guard model.addCardToScanned(card) else {
       ScrySound.failed()
@@ -461,16 +378,6 @@ struct ScryTabView: View {
     lastAddedName = card.name
     ScrySound.scanned()
     UINotificationFeedbackGenerator().notificationOccurred(.success)
-  }
-
-  private func resetBulk() {
-    armed = true
-    isScanning = false
-    stableKey = nil
-    stableCount = 0
-    committedCentroid = nil
-    committedCardID = nil
-    rejectedIDs = []
   }
 
   // MARK: - Geometry
@@ -509,7 +416,7 @@ struct ScryTabView: View {
 }
 
 /// Confirmation card shown after a scan (single) or for an uncertain bulk card.
-private struct ScryReviewSheet: View {
+struct ScryReviewSheet: View {
   let card: CardRecord
   let tier: ScryPriceTier
   let kind: ScryReviewKind
@@ -597,10 +504,10 @@ private struct ScryReviewSheet: View {
   }
 }
 
-private enum ScryReviewKind { case single, bulkUncertain }
+enum ScryReviewKind { case single, bulkUncertain }
 
 /// Shown when camera access is denied — routes the user to Settings.
-private struct ScryPermissionDeniedView: View {
+struct ScryPermissionDeniedView: View {
   var body: some View {
     VStack(spacing: 16) {
       Image(systemName: "eye.slash").font(.system(size: 44)).foregroundStyle(.secondary)

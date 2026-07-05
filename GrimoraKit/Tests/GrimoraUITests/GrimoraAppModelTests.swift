@@ -6528,3 +6528,92 @@ extension GrimoraAppModelTests {
     XCTAssertEqual(model.onboardingReplayRequestID, 2)
   }
 }
+
+extension GrimoraAppModelTests {
+  func testApplyCommanderRescanAddsRemovesAndUndoes() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let list = try XCTUnwrap(model.createCardCollection(named: "Cmdr", selectAfterCreate: true))
+    model.setCardCollectionRuleset(id: list.id, ruleset: .commander)
+    _ = try database.appendCard("beta", toList: list.id, zone: .mainboard)
+    _ = try database.appendCard("alchemy", toList: list.id, zone: .mainboard)
+
+    let beta = try XCTUnwrap(database.card(id: "beta"))
+    let forest = try XCTUnwrap(database.card(id: "forest"))
+    let diff = CommanderRescan.diff(
+      deckEntries: try database.cardCollectionEntries(forListID: list.id),
+      scanned: [
+        CommanderRescanScannedCard(card: beta, count: 1),   // kept
+        CommanderRescanScannedCard(card: forest, count: 1),  // new
+      ]  // alchemy not scanned → removed
+    )
+    XCTAssertEqual(Set(diff.additions.map(\.cardID)), ["forest"])
+    XCTAssertEqual(Set(diff.removals.map(\.cardID)), ["alchemy"])
+
+    model.applyCommanderRescan(listID: list.id, diff: diff)
+
+    let after = try database.cardCollectionEntries(forListID: list.id)
+    XCTAssertEqual(Set(after.map(\.cardID)), ["beta", "forest"])
+    XCTAssertEqual(after.first { $0.cardID == "forest" }?.zone, .mainboard)
+
+    XCTAssertTrue(model.canUndoListAction)
+    model.undoLastListAction()
+    let restored = try database.cardCollectionEntries(forListID: list.id)
+    XCTAssertEqual(Set(restored.map(\.cardID)), ["beta", "alchemy"])
+  }
+
+  func testApplyCommanderRescanReconcilesQuantities() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let list = try XCTUnwrap(model.createCardCollection(named: "Cmdr", selectAfterCreate: true))
+    model.setCardCollectionRuleset(id: list.id, ruleset: .commander)
+    _ = try database.appendCard("forest", toList: list.id, zone: .mainboard, quantity: 3)
+
+    let forest = try XCTUnwrap(database.card(id: "forest"))
+    let diff = CommanderRescan.diff(
+      deckEntries: try database.cardCollectionEntries(forListID: list.id),
+      scanned: [CommanderRescanScannedCard(card: forest, count: 1)]
+    )
+    XCTAssertEqual(diff.removals.first?.delta, -2)
+
+    model.applyCommanderRescan(listID: list.id, diff: diff)
+
+    let after = try database.cardCollectionEntries(forListID: list.id)
+    XCTAssertEqual(after.count, 1)
+    XCTAssertEqual(after.first?.quantity, 1)
+  }
+
+  func testApplyCommanderRescanEmptyDiffIsNoOp() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let list = try XCTUnwrap(model.createCardCollection(named: "Cmdr", selectAfterCreate: true))
+    model.setCardCollectionRuleset(id: list.id, ruleset: .commander)
+    _ = try database.appendCard("beta", toList: list.id, zone: .mainboard)
+
+    let beta = try XCTUnwrap(database.card(id: "beta"))
+    let diff = CommanderRescan.diff(
+      deckEntries: try database.cardCollectionEntries(forListID: list.id),
+      scanned: [CommanderRescanScannedCard(card: beta, count: 1)]
+    )
+    XCTAssertTrue(diff.isEmpty)
+
+    let undoBefore = model.canUndoListAction
+    model.applyCommanderRescan(listID: list.id, diff: diff)
+
+    XCTAssertEqual(model.canUndoListAction, undoBefore, "Empty re-scan must not push an undo step")
+    let after = try database.cardCollectionEntries(forListID: list.id)
+    XCTAssertEqual(after.map(\.cardID), ["beta"])
+  }
+}

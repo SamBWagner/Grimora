@@ -34,6 +34,9 @@ struct CardCollectionDetailView: View {
     @State var listJumpToTopState = JumpToTopScrollState.top
     @State var renderedListEntryIDs: [CardCollectionEntryRecord.ID] = []
     @State var isConfirmingClearScanned = false
+    #if os(iOS)
+    @State var rescanTarget: CardCollectionRecord?
+    #endif
 
     var onSelect: (CardRecord) -> Void
     var onCreateListForCard: (CardRecord) -> Void
@@ -118,6 +121,11 @@ struct CardCollectionDetailView: View {
         } message: {
             Text("This removes every scanned card. They won't be added to any collection.")
         }
+        #if os(iOS)
+        .fullScreenCover(item: $rescanTarget) { list in
+            CommanderRescanView(list: list, entries: model.selectedCollectionEntries)
+        }
+        #endif
         .onAppear {
             syncDescriptionDraftIfNeeded()
             renderedListEntryIDs = snapshot.expandedEntryIDs

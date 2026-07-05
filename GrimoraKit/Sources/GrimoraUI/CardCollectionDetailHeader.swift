@@ -522,6 +522,17 @@ extension CardCollectionDetailView {
         snapshot: CardCollectionDetailSnapshot
     ) -> some View {
         Section("Collection") {
+            #if os(iOS)
+            if selectedCollection.ruleset == .commander {
+                Button {
+                    rescanTarget = selectedCollection
+                } label: {
+                    Label("Re-scan Deck", systemImage: "camera.viewfinder")
+                }
+                .accessibilityIdentifier("rescan-deck-button")
+            }
+            #endif
+
             Button {
                 onRenameList(selectedCollection)
             } label: {
