@@ -133,4 +133,30 @@ public enum CardCollectionRulesetValidator {
         return typeLine.contains("basic") && typeLine.contains("land")
             || oracleText.contains("a deck can have any number of cards named")
     }
+
+    /// Whether Commander's 1-copy singleton rule still allows adding `quantity` copies of `card`,
+    /// given the deck's current `entries`. Copy-limit-exempt cards (basic lands, "any number" cards)
+    /// are always allowed. Identity is by oracle id, so a *different printing* of a card already in
+    /// the deck still counts as a duplicate. Only the `.commander` and `.mainboard` zones count —
+    /// the maybeboard is scratch space and never triggers the guard.
+    public static func commanderSingletonAllowsAdding(
+        _ card: CardRecord,
+        quantity: Int = 1,
+        toExisting entries: [CardCollectionEntryRecord]
+    ) -> Bool {
+        guard !isCopyLimitExempt(card) else {
+            return true
+        }
+        let identity = identityKey(for: card)
+        let existingTotal = entries.reduce(0) { total, entry in
+            guard entry.zone == .commander || entry.zone == .mainboard else {
+                return total
+            }
+            guard let entryCard = entry.card, identityKey(for: entryCard) == identity else {
+                return total
+            }
+            return total + entry.quantity
+        }
+        return existingTotal + quantity <= 1
+    }
 }

@@ -981,8 +981,10 @@ final class CardDatabaseTests: XCTestCase {
             id: "dup", oracleID: "oracle-dup", name: "Duplicated", legalities: ["commander": "legal"])
         try database.replaceAllCards([card])
         let list = try database.createCardCollection(named: "Deck", ruleset: .commander)
-        try database.appendCard("dup", toList: list.id, zone: .commander)
-        try database.appendCard("dup", toList: list.id, zone: .mainboard)
+        // Deliberately put the same card in two zones to exercise per-zone hydration; bypass the
+        // singleton guard since this is low-level setup, not an interactive add.
+        try database.appendCard("dup", toList: list.id, zone: .commander, enforceRulesetLimits: false)
+        try database.appendCard("dup", toList: list.id, zone: .mainboard, enforceRulesetLimits: false)
 
         let entries = try database.cardCollectionEntries(forListID: list.id)
         XCTAssertEqual(entries.count, 2)
@@ -2013,9 +2015,12 @@ final class CardDatabaseTests: XCTestCase {
         // Same-named categories can coexist across distinct zones.
         let mainCategory = try database.createCardCollectionCategory(inList: list.id, named: "Core")
         let maybeCategory = try database.createCardCollectionCategory(inList: list.id, zone: .maybeboard, named: "Core")
-        let mainEntry = try database.appendCard(alpha.id, toList: list.id, categoryID: mainCategory.id, quantity: 2)
-        _ = try database.appendCard(beta.id, toList: list.id, categoryID: maybeCategory.id, quantity: 1)
-        let commanderEntry = try database.appendCard(alpha.id, toList: list.id, zone: .commander, quantity: 1)
+        let mainEntry = try database.appendCard(
+            alpha.id, toList: list.id, categoryID: mainCategory.id, quantity: 2, enforceRulesetLimits: false)
+        _ = try database.appendCard(
+            beta.id, toList: list.id, categoryID: maybeCategory.id, quantity: 1, enforceRulesetLimits: false)
+        let commanderEntry = try database.appendCard(
+            alpha.id, toList: list.id, zone: .commander, quantity: 1, enforceRulesetLimits: false)
 
         let updatedMainEntry = try database.setCardCollectionEntryQuantity(id: mainEntry.id, quantity: 4)
         let movedEntry = try database.moveCardCollectionEntry(id: commanderEntry.id, toZone: .maybeboard)
@@ -2200,6 +2205,60 @@ final class CardDatabaseTests: XCTestCase {
                 normalImagePath: "/tmp/fr.jpg"
             )
         ]
+    }
+
+    func testAppendCardEnforcesCommanderSingletonWithForceAndBasicExemptions() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CommanderSingletonTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let database = try CardDatabase(
+            storage: .file(temporaryDirectory.appendingPathComponent("singleton.sqlite")))
+        let bolt = preferredTestCard(id: "bolt", oracleID: "bolt-oracle", name: "Bolt", typeLine: "Instant")
+        let island = preferredTestCard(
+            id: "island",
+            oracleID: "island-oracle",
+            name: "Island",
+            typeLine: "Basic Land — Island",
+            oracleText: ""
+        )
+        try database.replaceAllCards([bolt, island])
+
+        let deck = try database.createCardCollection(named: "EDH", ruleset: .commander)
+        let binder = try database.createCardCollection(named: "Binder")  // .none ruleset
+
+        // First copy lands; a second is refused.
+        _ = try database.appendCard(bolt.id, toList: deck.id)
+        XCTAssertThrowsError(try database.appendCard(bolt.id, toList: deck.id)) { error in
+            XCTAssertEqual(error as? CardCollectionDatabaseError, .commanderSingletonLimit)
+        }
+
+        // Forcing (enforceRulesetLimits: false) increments to two copies.
+        _ = try database.appendCard(bolt.id, toList: deck.id, enforceRulesetLimits: false)
+        XCTAssertEqual(
+            try database.cardCollectionEntries(forListID: deck.id)
+                .first(where: { $0.cardID == bolt.id })?.quantity,
+            2
+        )
+
+        // Basic lands stack freely even with the guard on.
+        _ = try database.appendCard(island.id, toList: deck.id)
+        _ = try database.appendCard(island.id, toList: deck.id)
+        XCTAssertEqual(
+            try database.cardCollectionEntries(forListID: deck.id)
+                .first(where: { $0.cardID == island.id })?.quantity,
+            2
+        )
+
+        // A plain Collection is unaffected by the guard.
+        _ = try database.appendCard(bolt.id, toList: binder.id)
+        _ = try database.appendCard(bolt.id, toList: binder.id)
+        XCTAssertEqual(
+            try database.cardCollectionEntries(forListID: binder.id)
+                .first(where: { $0.cardID == bolt.id })?.quantity,
+            2
+        )
     }
 
     private func preferredTestCard(

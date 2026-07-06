@@ -939,6 +939,7 @@ extension CardDatabase {
     zone requestedZone: CardCollectionZone = .mainboard,
     categoryID: String? = nil,
     quantity requestedQuantity: Int = 1,
+    enforceRulesetLimits: Bool = true,
     now: Date = Date()
   ) throws
     -> CardCollectionEntryRecord
@@ -948,6 +949,23 @@ extension CardDatabase {
       guard let list = try cardCollectionUnlocked(id: listID) else {
         throw CardCollectionDatabaseError.listNotFound
       }
+
+      // Guard-rail against duplicate adds that would break a Commander deck's singleton rule.
+      // Interactive callers leave this on; bulk/import/rescan paths pass `false` (and a "force"
+      // add flips it off) so they never abort mid-batch. Only enforced when the card resolves —
+      // an unknown card falls through to the lenient legacy behavior.
+      if enforceRulesetLimits,
+        list.ruleset == .commander,
+        let card = try card(id: cardID),
+        !CardCollectionRulesetValidator.commanderSingletonAllowsAdding(
+          card,
+          quantity: quantity,
+          toExisting: try cardCollectionEntriesUnlocked(forListID: listID)
+        )
+      {
+        throw CardCollectionDatabaseError.commanderSingletonLimit
+      }
+
       var zone = list.ruleset.normalizedZone(requestedZone)
       var categoryID = categoryID
       if let resolvedCategoryID = categoryID {

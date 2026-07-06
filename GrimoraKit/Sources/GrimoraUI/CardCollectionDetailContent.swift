@@ -525,8 +525,23 @@ extension CardCollectionDetailView {
 }
 
 private struct CardCollectionRulesetWarningPanel: View {
+    @Environment(GrimoraAppModel.self) private var model
+
     var warnings: [CardCollectionRulesetWarning]
     var palette: GrimoraPalette
+
+    private var hasCommanderMissing: Bool {
+        warnings.contains { $0.id == "commander-missing" }
+    }
+
+    private var hasSingletonDuplicates: Bool {
+        warnings.contains { $0.id.hasPrefix("commander-singleton") }
+    }
+
+    /// Mainboard cards eligible to be promoted to the commander zone.
+    private var commanderCandidates: [CardCollectionEntryRecord] {
+        model.selectedCollectionEntries.filter { $0.zone == .mainboard }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -542,6 +557,18 @@ private struct CardCollectionRulesetWarningPanel: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            if hasCommanderMissing || hasSingletonDuplicates {
+                HStack(spacing: 10) {
+                    if hasCommanderMissing {
+                        chooseCommanderMenu
+                    }
+                    if hasSingletonDuplicates {
+                        removeDuplicatesButton
+                    }
+                }
+                .font(.caption.weight(.semibold))
+            }
         }
         .padding(14)
         .frame(maxWidth: 720, alignment: .leading)
@@ -553,5 +580,34 @@ private struct CardCollectionRulesetWarningPanel: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("list-ruleset-warning-panel")
+    }
+
+    @ViewBuilder
+    private var chooseCommanderMenu: some View {
+        Menu {
+            if commanderCandidates.isEmpty {
+                Text("Add a card to the deck first")
+            } else {
+                ForEach(commanderCandidates) { entry in
+                    Button(entry.card?.name ?? "Card") {
+                        model.moveCardCollectionEntry(id: entry.id, toZone: .commander)
+                    }
+                }
+            }
+        } label: {
+            Label("Choose Commander", systemImage: "crown")
+        }
+        .accessibilityIdentifier("list-fix-commander-missing")
+    }
+
+    private var removeDuplicatesButton: some View {
+        Button {
+            if let listID = model.selectedCollectionID {
+                model.deduplicateCommander(listID: listID)
+            }
+        } label: {
+            Label("Remove Duplicate Copies", systemImage: "rectangle.stack.badge.minus")
+        }
+        .accessibilityIdentifier("list-fix-commander-duplicates")
     }
 }

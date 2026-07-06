@@ -287,7 +287,7 @@ extension GrimoraAppModel {
       let list = try performListMutation {
         let list = try database.createCardCollection(named: name)
         for cardID in requestedCardIDs {
-          try database.appendCard(cardID, toList: list.id)
+          try database.appendCard(cardID, toList: list.id, enforceRulesetLimits: false)
         }
         return list
       }
@@ -362,7 +362,7 @@ extension GrimoraAppModel {
           }
           let list = try database.createCardCollection(named: normalizedName)
           for card in cards {
-            try database.appendCard(card.id, toList: list.id)
+            try database.appendCard(card.id, toList: list.id, enforceRulesetLimits: false)
           }
           return SearchListCreationResult.success(listID: list.id, cardCount: cards.count)
         case .unsupported:
@@ -621,7 +621,8 @@ extension GrimoraAppModel {
             toList: list.id,
             zone: entry.zone,
             categoryID: entry.categoryID.flatMap { categoryIDMap[$0] },
-            quantity: entry.quantity
+            quantity: entry.quantity,
+            enforceRulesetLimits: false
           )
         }
 
@@ -810,8 +811,78 @@ extension GrimoraAppModel {
     }
   }
 
-  public func addCard(_ card: CardRecord, toListID listID: CardCollectionRecord.ID) {
-    addCardID(card.id, named: card.name, toListID: listID)
+  public func addCard(
+    _ card: CardRecord,
+    toListID listID: CardCollectionRecord.ID,
+    allowingDuplicates: Bool = false
+  ) {
+    addCardID(card.id, named: card.name, toListID: listID, allowingDuplicates: allowingDuplicates)
+  }
+
+  /// Re-runs the add that the Commander singleton guard refused, this time forcing it through.
+  public func confirmPendingDuplicateAdd() {
+    guard let pending = pendingDuplicateAdd else { return }
+    pendingDuplicateAdd = nil
+    if pending.cardIDs.count == 1, let cardID = pending.cardIDs.first {
+      addCardID(cardID, named: pending.displayName, toListID: pending.listID, allowingDuplicates: true)
+    } else {
+      addCards(pending.cardIDs, toListID: pending.listID, allowingDuplicates: true)
+    }
+  }
+
+  public func cancelPendingDuplicateAdd() {
+    pendingDuplicateAdd = nil
+  }
+
+  /// Trims a Commander deck down to a single copy of each non-exempt card, clearing the
+  /// `commander-singleton-*` warnings. Basics and "any number" cards are left alone. Keeps a
+  /// commander-zone copy when one exists so the designated commander survives the cleanup.
+  public func deduplicateCommander(listID: CardCollectionRecord.ID) {
+    do {
+      let entries = try database.cardCollectionEntries(forListID: listID)
+      var groups: [String: [CardCollectionEntryRecord]] = [:]
+      for entry in entries where entry.zone == .commander || entry.zone == .mainboard {
+        guard let card = entry.card,
+          !CardCollectionRulesetValidator.isCopyLimitExempt(card)
+        else {
+          continue
+        }
+        groups[CardCollectionRulesetValidator.identityKey(for: card), default: []].append(entry)
+      }
+
+      var quantityFixes: [(id: CardCollectionEntryRecord.ID, quantity: Int)] = []
+      var removals: [CardCollectionEntryRecord.ID] = []
+      for group in groups.values {
+        let totalQuantity = group.reduce(0) { $0 + $1.quantity }
+        guard totalQuantity > 1 else { continue }
+        // Prefer keeping a commander-zone entry so we never strip the designated commander.
+        let keeper = group.first(where: { $0.zone == .commander }) ?? group[0]
+        if keeper.quantity != 1 {
+          quantityFixes.append((keeper.id, 1))
+        }
+        for entry in group where entry.id != keeper.id {
+          removals.append(entry.id)
+        }
+      }
+
+      guard !quantityFixes.isEmpty || !removals.isEmpty else {
+        statusMessage = "No duplicate cards to remove."
+        return
+      }
+
+      try performListMutation {
+        for fix in quantityFixes {
+          try database.setCardCollectionEntryQuantity(id: fix.id, quantity: fix.quantity)
+        }
+        for id in removals {
+          try database.removeCardCollectionEntryCompletely(id: id)
+        }
+      }
+      reloadCardCollections(selecting: selectedCollectionID)
+      statusMessage = "Removed duplicate copies."
+    } catch {
+      statusMessage = "Collection update failed."
+    }
   }
 
   public func addCardToFavourites(_ card: CardRecord) {
@@ -931,30 +1002,89 @@ extension GrimoraAppModel {
     addCardID(cardID, named: nil, toListID: listID)
   }
 
-  public func addCards(_ cardIDs: [CardRecord.ID], toListID listID: CardCollectionRecord.ID) {
+  public func addCards(
+    _ cardIDs: [CardRecord.ID],
+    toListID listID: CardCollectionRecord.ID,
+    allowingDuplicates: Bool = false
+  ) {
     let requestedCardIDs = cardIDs
     guard !requestedCardIDs.isEmpty else {
       return
     }
 
     do {
+      var resolvedCards: [CardRecord.ID: CardRecord] = [:]
       for cardID in requestedCardIDs {
-        guard try database.card(id: cardID) != nil else {
+        guard let card = try database.card(id: cardID) else {
           statusMessage = "One of those cards is no longer in the local library."
           return
         }
+        resolvedCards[cardID] = card
       }
 
-      try performListMutation {
+      let listName = cardCollections.first(where: { $0.id == listID })?.name ?? "the deck"
+
+      // In a Commander deck, partition out cards that would break the singleton rule so a single
+      // duplicate doesn't roll back the whole batch. Forcing (Add Anyway) skips the partition.
+      var acceptedIDs = requestedCardIDs
+      var skippedIDs: [CardRecord.ID] = []
+      if !allowingDuplicates,
+        cardCollections.first(where: { $0.id == listID })?.ruleset == .commander
+      {
+        var running = try database.cardCollectionEntries(forListID: listID)
+        acceptedIDs = []
         for cardID in requestedCardIDs {
-          try database.appendCard(cardID, toList: listID)
+          guard let card = resolvedCards[cardID] else { continue }
+          if CardCollectionRulesetValidator.commanderSingletonAllowsAdding(card, toExisting: running) {
+            acceptedIDs.append(cardID)
+            // Reflect the pending accept so in-batch duplicates are caught too.
+            running.append(
+              CardCollectionEntryRecord(
+                id: UUID().uuidString,
+                listID: listID,
+                zone: .mainboard,
+                cardID: card.id,
+                position: running.count,
+                createdAt: Date(),
+                card: card
+              )
+            )
+          } else {
+            skippedIDs.append(cardID)
+          }
         }
       }
-      reloadCardCollections(selecting: selectedCollectionID)
-      if let list = cardCollections.first(where: { $0.id == listID }) {
-        let noun = requestedCardIDs.count == 1 ? "card" : "cards"
-        statusMessage =
-          "Added \(formatted(requestedCardIDs.count)) \(noun) to \(list.name)."
+
+      if !acceptedIDs.isEmpty {
+        try performListMutation {
+          for cardID in acceptedIDs {
+            try database.appendCard(cardID, toList: listID, enforceRulesetLimits: !allowingDuplicates)
+          }
+        }
+        reloadCardCollections(selecting: selectedCollectionID)
+      }
+
+      if skippedIDs.isEmpty {
+        let noun = acceptedIDs.count == 1 ? "card" : "cards"
+        statusMessage = "Added \(formatted(acceptedIDs.count)) \(noun) to \(listName)."
+      } else {
+        let skippedName =
+          skippedIDs.count == 1
+          ? (resolvedCards[skippedIDs[0]]?.name ?? "That card")
+          : "\(formatted(skippedIDs.count)) cards"
+        if acceptedIDs.isEmpty {
+          statusMessage =
+            "\(skippedName) already in \(listName). Commander decks allow only one copy of each card."
+        } else {
+          statusMessage =
+            "Added \(formatted(acceptedIDs.count)); skipped \(formatted(skippedIDs.count)) already in \(listName)."
+        }
+        pendingDuplicateAdd = PendingDuplicateAdd(
+          listID: listID,
+          listName: listName,
+          cardIDs: skippedIDs,
+          displayName: skippedName
+        )
       }
     } catch {
       statusMessage = "Collection update failed."
@@ -975,17 +1105,34 @@ extension GrimoraAppModel {
       return
     }
 
+    // In a Commander deck the "+1" would break the singleton rule for non-exempt cards in the
+    // commander/mainboard zones. Skip those; basics, "any number" cards, and the maybeboard pass.
+    var targetIDs = uniqueIDs
+    if selectedCollection?.ruleset == .commander {
+      let blocked = Set(
+        selectedCollectionEntries.filter { entry in
+          uniqueIDs.contains(entry.id)
+            && (entry.zone == .commander || entry.zone == .mainboard)
+            && !(entry.card.map(CardCollectionRulesetValidator.isCopyLimitExempt) ?? true)
+        }.map(\.id))
+      targetIDs = uniqueIDs.filter { !blocked.contains($0) }
+      guard !targetIDs.isEmpty else {
+        statusMessage = "Commander decks allow only one copy of each card."
+        return
+      }
+    }
+
     do {
       try performListMutation {
-        for id in uniqueIDs {
+        for id in targetIDs {
           try database.incrementCardCollectionEntryQuantity(id: id)
         }
       }
       reloadCardCollections(selecting: selectedCollectionID)
       statusMessage =
-        uniqueIDs.count == 1
+        targetIDs.count == 1
         ? "Increased card quantity."
-        : "Increased \(formatted(uniqueIDs.count)) card quantities."
+        : "Increased \(formatted(targetIDs.count)) card quantities."
     } catch {
       statusMessage = "Collection update failed."
     }
@@ -1189,5 +1336,29 @@ extension GrimoraAppModel {
     cardCollections.first(where: { Self.isCanonicalFavouritesListName($0.name) })?.name
       ?? cardCollections.first(where: { Self.isFavouritesListName($0.name) })?.name
       ?? fallback
+  }
+}
+
+/// A duplicate add refused by the Commander singleton guard, captured so the UI can offer to
+/// force it through. `displayName` is the card name for a single add, or "N cards" for a batch.
+public struct PendingDuplicateAdd: Identifiable, Equatable, Sendable {
+  public var id = UUID()
+  public var listID: CardCollectionRecord.ID
+  public var listName: String
+  public var cardIDs: [CardRecord.ID]
+  public var displayName: String
+
+  public init(
+    id: UUID = UUID(),
+    listID: CardCollectionRecord.ID,
+    listName: String,
+    cardIDs: [CardRecord.ID],
+    displayName: String
+  ) {
+    self.id = id
+    self.listID = listID
+    self.listName = listName
+    self.cardIDs = cardIDs
+    self.displayName = displayName
   }
 }

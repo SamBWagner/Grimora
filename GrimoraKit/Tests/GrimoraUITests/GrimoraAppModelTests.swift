@@ -980,6 +980,39 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.statusMessage, "Added 2 cards to Deck Box.")
   }
 
+  func testCommanderDeckGuardsDuplicateAddsForceAndDedupe() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let deck = try XCTUnwrap(
+      model.createCardCollection(named: "EDH", ruleset: .commander, selectAfterCreate: true))
+
+    // First copy lands.
+    model.addCards(["forest"], toListID: deck.id)
+    XCTAssertEqual(model.selectedCollectionEntries.map(\.cardID), ["forest"])
+    XCTAssertEqual(model.selectedCollectionEntries.first?.quantity, 1)
+
+    // A duplicate is refused and offered as a forced add rather than silently doubling.
+    model.addCards(["forest"], toListID: deck.id)
+    XCTAssertEqual(model.selectedCollectionEntries.first?.quantity, 1)
+    XCTAssertEqual(model.pendingDuplicateAdd?.cardIDs, ["forest"])
+
+    // Forcing it through increments to two copies and clears the prompt.
+    model.confirmPendingDuplicateAdd()
+    XCTAssertNil(model.pendingDuplicateAdd)
+    XCTAssertEqual(
+      model.selectedCollectionEntries.first(where: { $0.cardID == "forest" })?.quantity, 2)
+
+    // Dedupe trims the deck back to a single copy.
+    model.deduplicateCommander(listID: deck.id)
+    XCTAssertEqual(
+      model.selectedCollectionEntries.first(where: { $0.cardID == "forest" })?.quantity, 1)
+    XCTAssertEqual(model.statusMessage, "Removed duplicate copies.")
+  }
+
   func testSelectingCollectionDefersLoadOffTheCallingThread() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
@@ -6592,7 +6625,10 @@ extension GrimoraAppModelTests {
 
     let list = try XCTUnwrap(model.createCardCollection(named: "Cmdr", selectAfterCreate: true))
     model.setCardCollectionRuleset(id: list.id, ruleset: .commander)
-    _ = try database.appendCard("forest", toList: list.id, zone: .mainboard, quantity: 3)
+    // Seed an over-limit state directly (bypassing the singleton guard) so the rescan has
+    // something to reconcile down.
+    _ = try database.appendCard(
+      "forest", toList: list.id, zone: .mainboard, quantity: 3, enforceRulesetLimits: false)
 
     let forest = try XCTUnwrap(database.card(id: "forest"))
     let diff = CommanderRescan.diff(

@@ -240,7 +240,8 @@ public struct GrimoraEnvironment: Sendable {
       try database.appendCard(
         card.id,
         toList: list.id,
-        categoryID: categories[index % categories.count].id
+        categoryID: categories[index % categories.count].id,
+        enforceRulesetLimits: false
       )
     }
   }

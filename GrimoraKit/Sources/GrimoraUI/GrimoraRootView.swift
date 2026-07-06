@@ -88,6 +88,25 @@ public struct GrimoraRootView: View {
             }
         }
         .animation(.spring(duration: 0.3), value: model.cloudSyncMergeNotice)
+        .confirmationDialog(
+            model.pendingDuplicateAdd.map { "\($0.displayName) already in \($0.listName)" } ?? "",
+            isPresented: Binding(
+                get: { model.pendingDuplicateAdd != nil },
+                set: { if !$0 { model.cancelPendingDuplicateAdd() } }
+            ),
+            titleVisibility: .visible,
+            presenting: model.pendingDuplicateAdd
+        ) { _ in
+            Button("Add Anyway") {
+                model.confirmPendingDuplicateAdd()
+            }
+            .accessibilityIdentifier("commander-duplicate-add-confirm")
+            Button("Cancel", role: .cancel) {
+                model.cancelPendingDuplicateAdd()
+            }
+        } message: { _ in
+            Text("Commander decks normally hold one copy of each card.")
+        }
         .onAppear {
             if cloudSyncModePreference == .undecided, model.cloudSyncMode == .enabled {
                 cloudSyncModeRawValue = GrimoraCloudSyncMode.enabled.rawValue

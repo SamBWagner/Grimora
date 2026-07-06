@@ -47,6 +47,63 @@ final class CardCollectionRulesetValidatorTests: XCTestCase {
         XCTAssertTrue(warningIDs.contains("commander-legality-banned-oracle"))
     }
 
+    func testCommanderSingletonBlocksSecondCopyOfSameCard() {
+        let bolt = card(id: "bolt", oracleID: "bolt-oracle", name: "Bolt", legalities: [:])
+        let existing = [entry(card: bolt, zone: .mainboard)]
+        XCTAssertFalse(
+            CardCollectionRulesetValidator.commanderSingletonAllowsAdding(bolt, toExisting: existing))
+    }
+
+    func testCommanderSingletonBlocksDifferentPrintingOfSameCard() {
+        let printingA = card(id: "bolt-a", oracleID: "bolt-oracle", name: "Bolt", legalities: [:])
+        let printingB = card(id: "bolt-b", oracleID: "bolt-oracle", name: "Bolt", legalities: [:])
+        let existing = [entry(card: printingA, zone: .commander)]
+        XCTAssertFalse(
+            CardCollectionRulesetValidator.commanderSingletonAllowsAdding(printingB, toExisting: existing))
+    }
+
+    func testCommanderSingletonAllowsDistinctNewCard() {
+        let existing = [entry(card: card(id: "bolt", oracleID: "bolt-oracle", name: "Bolt", legalities: [:]), zone: .mainboard)]
+        let shock = card(id: "shock", oracleID: "shock-oracle", name: "Shock", legalities: [:])
+        XCTAssertTrue(
+            CardCollectionRulesetValidator.commanderSingletonAllowsAdding(shock, toExisting: existing))
+    }
+
+    func testCommanderSingletonAllowsRepeatedBasicLand() {
+        let island = card(
+            id: "island",
+            oracleID: "island-oracle",
+            name: "Island",
+            legalities: [:],
+            typeLine: "Basic Land — Island",
+            oracleText: ""
+        )
+        let existing = [entry(card: island, zone: .mainboard, quantity: 30)]
+        XCTAssertTrue(
+            CardCollectionRulesetValidator.commanderSingletonAllowsAdding(island, toExisting: existing))
+    }
+
+    func testCommanderSingletonAllowsAnyNumberCards() {
+        let rats = card(
+            id: "rats",
+            oracleID: "rats-oracle",
+            name: "Relentless Rats",
+            legalities: [:],
+            typeLine: "Creature — Rat",
+            oracleText: "A deck can have any number of cards named Relentless Rats."
+        )
+        let existing = [entry(card: rats, zone: .mainboard, quantity: 12)]
+        XCTAssertTrue(
+            CardCollectionRulesetValidator.commanderSingletonAllowsAdding(rats, toExisting: existing))
+    }
+
+    func testCommanderSingletonIgnoresMaybeboardCopies() {
+        let bolt = card(id: "bolt", oracleID: "bolt-oracle", name: "Bolt", legalities: [:])
+        let existing = [entry(card: bolt, zone: .maybeboard)]
+        XCTAssertTrue(
+            CardCollectionRulesetValidator.commanderSingletonAllowsAdding(bolt, toExisting: existing))
+    }
+
     private func list(ruleset: CardCollectionRuleset) -> CardCollectionRecord {
         CardCollectionRecord(
             id: "list",

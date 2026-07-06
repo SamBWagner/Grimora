@@ -27,7 +27,8 @@ extension GrimoraAppModel {
             change.cardID,
             toList: listID,
             zone: change.zone,
-            quantity: change.delta
+            quantity: change.delta,
+            enforceRulesetLimits: false
           )
         }
 

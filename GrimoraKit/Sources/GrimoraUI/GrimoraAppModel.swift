@@ -68,6 +68,9 @@ public final class GrimoraAppModel {
   }
   public internal(set) var unsupportedSearchMessage: String?
   public internal(set) var statusMessage: String = ""
+  /// A duplicate add that the Commander singleton guard refused, held so the UI can offer an
+  /// "Add Anyway" confirmation. Set by the add methods; cleared when the user confirms or cancels.
+  public internal(set) var pendingDuplicateAdd: PendingDuplicateAdd?
   public internal(set) var libraryActivity: GrimoraLibraryActivity?
   /// Bumped whenever something (e.g. the Settings "Replay Tutorial" button) asks
   /// to replay onboarding; `GrimoraRootView` observes it and restarts the tour.

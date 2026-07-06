@@ -2,7 +2,12 @@ import Foundation
 import GrimoraCore
 
 extension GrimoraAppModel {
-  func addCardID(_ cardID: CardRecord.ID, named cardName: String?, toListID listID: CardCollectionRecord.ID) {
+  func addCardID(
+    _ cardID: CardRecord.ID,
+    named cardName: String?,
+    toListID listID: CardCollectionRecord.ID,
+    allowingDuplicates: Bool = false
+  ) {
     do {
       let resolvedCard = try database.card(id: cardID)
       guard resolvedCard != nil else {
@@ -11,13 +16,24 @@ extension GrimoraAppModel {
       }
 
       try performListMutation {
-        try database.appendCard(cardID, toList: listID)
+        try database.appendCard(cardID, toList: listID, enforceRulesetLimits: !allowingDuplicates)
       }
       reloadCardCollections(selecting: selectedCollectionID)
       if let list = cardCollections.first(where: { $0.id == listID }) {
         let name = cardName ?? resolvedCard?.name ?? "Card"
         statusMessage = "Added \(name) to \(list.name)."
       }
+    } catch CardCollectionDatabaseError.commanderSingletonLimit {
+      let name = cardName ?? (try? database.card(id: cardID))?.name ?? "That card"
+      let listName = cardCollections.first(where: { $0.id == listID })?.name ?? "this Commander deck"
+      statusMessage =
+        "\(name) is already in \(listName). Commander decks allow only one copy of each card."
+      pendingDuplicateAdd = PendingDuplicateAdd(
+        listID: listID,
+        listName: listName,
+        cardIDs: [cardID],
+        displayName: name
+      )
     } catch {
       statusMessage = "Collection update failed."
     }
@@ -94,7 +110,8 @@ extension GrimoraAppModel {
         toList: listID,
         zone: destination.zone,
         categoryID: categoryID,
-        quantity: reference.quantity
+        quantity: reference.quantity,
+        enforceRulesetLimits: false
       )
       importedEntryCount += reference.quantity
     }

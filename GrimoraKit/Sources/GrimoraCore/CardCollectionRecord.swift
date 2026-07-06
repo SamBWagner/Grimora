@@ -372,4 +372,7 @@ public enum CardCollectionDatabaseError: Error, Equatable, Sendable {
     case categoryNotFound
     case entryNotFound
     case duplicateName
+    /// Adding this card would break the list ruleset's copy limit (e.g. a second copy of a
+    /// non-basic card in a Commander deck). Thrown only when `enforceRulesetLimits` is on.
+    case commanderSingletonLimit
 }
