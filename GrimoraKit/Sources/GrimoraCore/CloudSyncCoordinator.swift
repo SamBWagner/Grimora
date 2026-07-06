@@ -432,6 +432,14 @@ public actor CloudSyncCoordinator {
     localRevision: Int,
     forceSave: Bool
   ) async throws -> CloudSyncStatus {
+    // Catch the local logical clock up to everything the remote side already holds, so any edit
+    // made after this reconcile is stamped *after* the remote records and wins the merge — even
+    // on the no-op path where `changed` is false and we never apply a snapshot. This is what
+    // stops a lagging-clock device from having its edits reverted on every sync.
+    if let newestRemote = remoteState.snapshots.compactMap(CardDatabase.newestInstant(in:)).max() {
+      try database.advanceSyncClock(toAtLeast: newestRemote)
+    }
+
     // CloudKit is the single source of truth. Reconciliation is always an automatic
     // per-entity last-writer-wins merge of the remote and local state — concurrent
     // edits converge deterministically and never surface an interactive prompt.
@@ -455,6 +463,11 @@ public actor CloudSyncCoordinator {
         expectedLocalRevision: localRevision
       )
     }
+
+    // Union the append-only change ledger regardless of whether content changed — on the no-op
+    // path we don't apply a snapshot, but history still needs to converge. Immutable, id-keyed
+    // rows mean this is INSERT OR IGNORE and can never revert content.
+    try database.mergeChangeLog(mergedSnapshot.changeLog)
 
     if forceSave || changed || !pendingChanges.isEmpty || !remoteHasCurrentData {
       let snapshotToSave = changed

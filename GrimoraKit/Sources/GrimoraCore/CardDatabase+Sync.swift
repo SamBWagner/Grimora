@@ -62,7 +62,8 @@ extension CardDatabase {
           searchSettings: searchSettings,
           listSnapshot: listSnapshot,
           deletedLists: deletedLists,
-          deletedEntities: deletedEntities
+          deletedEntities: deletedEntities,
+          changeLog: try changeLogEntriesUnlocked()
         )
       return (
         CloudSyncEntityCodec.canonicalizedSnapshot(snapshot),
@@ -113,6 +114,16 @@ extension CardDatabase {
             }
         )
         try saveLibraryIdentityUnlocked(snapshot.libraryIdentity)
+        // Union in any ledger rows carried by the snapshot. Immutable + id-keyed, so this can only
+        // add history, never revert content.
+        try mergeChangeLogUnlocked(snapshot.changeLog)
+        // Push the logical clock past the newest instant we just pulled in, so the next local
+        // edit is stamped *after* everything this snapshot carried and can win the merge. Without
+        // this, a device whose wall clock lags behind another's would keep issuing timestamps
+        // below what it just received and its edits would be reverted on every sync.
+        if let newest = Self.newestInstant(in: snapshot) {
+          try advanceSyncClockUnlocked(toAtLeast: newest)
+        }
         try pruneCloudSyncRecoverySnapshotsUnlocked()
       }
     }

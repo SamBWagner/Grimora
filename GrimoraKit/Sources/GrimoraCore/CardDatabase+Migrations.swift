@@ -270,6 +270,27 @@ extension CardDatabase {
       )
       """)
 
+    // Append-only, immutable log of every user action ("git-style changelog"). Each row has a
+    // globally-unique id, so it syncs as a pure union across devices with no conflict logic — it
+    // is history/observability only and is NOT the sync merge authority (that's the logical clock
+    // on updated_at). Rows are stamped at the point of interaction and never re-stamped on pull.
+    try database.execute(
+      """
+      CREATE TABLE IF NOT EXISTS change_log (
+          id TEXT PRIMARY KEY,
+          recorded_at TEXT NOT NULL,
+          device_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          entity_type TEXT NOT NULL,
+          entity_id TEXT NOT NULL,
+          list_id TEXT,
+          summary TEXT
+      )
+      """)
+    try database.execute(
+      "CREATE INDEX IF NOT EXISTS idx_change_log_recorded ON change_log(recorded_at)"
+    )
+
     try database.execute(
       """
       CREATE TABLE IF NOT EXISTS cloud_sync_recovery_snapshots (
@@ -619,6 +640,31 @@ extension CardDatabase {
       WHEN NEW.sync_updated_at IS OLD.sync_updated_at
       BEGIN
           UPDATE card_list_categories
+          SET sync_updated_at = CASE
+              WHEN OLD.sync_updated_at IS NULL OR NEW.updated_at > OLD.sync_updated_at
+              THEN NEW.updated_at
+              ELSE strftime(
+                  '%Y-%m-%dT%H:%M:%fZ',
+                  julianday(OLD.sync_updated_at) + (0.001 / 86400.0)
+              )
+          END
+          WHERE id = NEW.id;
+      END
+      """)
+    // Entries need the same "advance the sync clock whenever updated_at changes" trigger that
+    // card_lists / card_list_categories already have. Without it, `sync_updated_at` was only ever
+    // set at INSERT and stayed frozen: every entry edit (quantity, finish, printing swap, zone /
+    // category move) bumps `updated_at` but the sync-visible timestamp — read via
+    // COALESCE(sync_updated_at, updated_at) — never moved, so the upload diff saw "no change" and
+    // the edit silently stopped syncing. This mirror keeps sync_updated_at in step, monotonically.
+    try database.execute("DROP TRIGGER IF EXISTS trg_card_list_entries_sync_updated_at")
+    try database.execute(
+      """
+      CREATE TRIGGER trg_card_list_entries_sync_updated_at
+      AFTER UPDATE OF updated_at ON card_list_entries
+      WHEN NEW.sync_updated_at IS OLD.sync_updated_at
+      BEGIN
+          UPDATE card_list_entries
           SET sync_updated_at = CASE
               WHEN OLD.sync_updated_at IS NULL OR NEW.updated_at > OLD.sync_updated_at
               THEN NEW.updated_at

@@ -312,6 +312,7 @@ extension CardDatabase {
     }
 
     return try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       let id = UUID().uuidString.lowercased()
       let date = Self.formattedListDate(now)
       let position = try nextCardCollectionPositionUnlocked(isPinned: false)
@@ -331,6 +332,14 @@ extension CardDatabase {
       guard let list = try cardCollectionUnlocked(id: id) else {
         throw CardCollectionDatabaseError.listNotFound
       }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.createList,
+        entityType: .cardCollection,
+        entityID: id,
+        listID: id,
+        summary: list.name,
+        date: now
+      )
       return list
     }
   }
@@ -343,6 +352,7 @@ extension CardDatabase {
     }
 
     return try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       let statement = try database.prepare(
         """
         UPDATE card_lists
@@ -357,6 +367,14 @@ extension CardDatabase {
       guard let list = try cardCollectionUnlocked(id: id) else {
         throw CardCollectionDatabaseError.listNotFound
       }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.renameList,
+        entityType: .cardCollection,
+        entityID: id,
+        listID: id,
+        summary: normalizedName,
+        date: now
+      )
       return list
     }
   }
@@ -369,6 +387,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       let statement = try database.prepare(
         """
         UPDATE card_lists
@@ -395,6 +414,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       let statement = try database.prepare(
         """
         UPDATE card_lists
@@ -420,6 +440,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       let statement = try database.prepare(
         """
         UPDATE card_lists
@@ -446,6 +467,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       let statement = try database.prepare(
         """
         UPDATE card_lists
@@ -472,6 +494,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       let statement = try database.prepare(
         """
         UPDATE card_lists
@@ -497,6 +520,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       let date = Self.formattedListDate(now)
       let statement = try database.prepare(
         """
@@ -520,13 +544,21 @@ extension CardDatabase {
     }
   }
 
-  public func deleteCardCollection(id: String) throws {
+  public func deleteCardCollection(id: String, now: Date = Date()) throws {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       try database.transaction {
         let statement = try database.prepare("DELETE FROM card_lists WHERE id = ?")
         try statement.bind(id, at: 1)
         try statement.step()
         try insertSyncTombstoneUnlocked(entityType: .cardCollection, recordID: id)
+        try recordChangeUnlocked(
+          action: ChangeLogAction.deleteList,
+          entityType: .cardCollection,
+          entityID: id,
+          listID: id,
+          date: now
+        )
       }
     }
   }
@@ -548,6 +580,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let list = try cardCollectionUnlocked(id: id) else {
         throw CardCollectionDatabaseError.listNotFound
       }
@@ -616,6 +649,7 @@ extension CardDatabase {
     }
 
     return try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let list = try cardCollectionUnlocked(id: listID) else {
         throw CardCollectionDatabaseError.listNotFound
       }
@@ -660,6 +694,14 @@ extension CardDatabase {
         try insert.step()
 
         try touchCardCollectionUnlocked(id: listID, date: date)
+        try recordChangeUnlocked(
+          action: ChangeLogAction.createCategory,
+          entityType: .cardCollectionCategory,
+          entityID: id,
+          listID: listID,
+          summary: normalizedName,
+          date: now
+        )
       }
 
       guard let category = try cardCollectionCategoryUnlocked(id: id) else {
@@ -684,6 +726,7 @@ extension CardDatabase {
     }
 
     return try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let category = try cardCollectionCategoryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.categoryNotFound
       }
@@ -710,6 +753,14 @@ extension CardDatabase {
         try statement.step()
 
         try touchCardCollectionUnlocked(id: category.listID, date: date)
+        try recordChangeUnlocked(
+          action: ChangeLogAction.renameCategory,
+          entityType: .cardCollectionCategory,
+          entityID: id,
+          listID: category.listID,
+          summary: normalizedName,
+          date: now
+        )
       }
 
       guard let renamed = try cardCollectionCategoryUnlocked(id: id) else {
@@ -721,6 +772,7 @@ extension CardDatabase {
 
   public func deleteCardCollectionCategory(id: String, now: Date = Date()) throws {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let category = try cardCollectionCategoryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.categoryNotFound
       }
@@ -730,15 +782,16 @@ extension CardDatabase {
         let uncategorizeEntries = try database.prepare(
           """
           UPDATE card_list_entries
-          SET category_id = NULL
+          SET category_id = NULL, updated_at = ?
           WHERE category_id = ?
           """)
-        try uncategorizeEntries.bind(id, at: 1)
+        try uncategorizeEntries.bind(date, at: 1)
+        try uncategorizeEntries.bind(id, at: 2)
         try uncategorizeEntries.step()
 
         // Also drop the deleted category from any entry that carried it as a secondary tag.
         // Secondary IDs are stored delimited as `|id1|id2|`, so `%|id|%` matches any position.
-        try stripSecondaryCategoryUnlocked(id, fromListID: category.listID)
+        try stripSecondaryCategoryUnlocked(id, fromListID: category.listID, date: date)
 
         let delete = try database.prepare("DELETE FROM card_list_categories WHERE id = ?")
         try delete.bind(id, at: 1)
@@ -748,6 +801,13 @@ extension CardDatabase {
         try consolidateDuplicateCardCollectionEntriesUnlocked(listID: category.listID)
         try normalizeCardCollectionCategoryPositionsUnlocked(listID: category.listID, date: date)
         try touchCardCollectionUnlocked(id: category.listID, date: date)
+        try recordChangeUnlocked(
+          action: ChangeLogAction.deleteCategory,
+          entityType: .cardCollectionCategory,
+          entityID: id,
+          listID: category.listID,
+          date: now
+        )
       }
     }
   }
@@ -759,6 +819,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionCategoryRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let category = try cardCollectionCategoryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.categoryNotFound
       }
@@ -792,6 +853,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionEntryRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
@@ -829,11 +891,12 @@ extension CardDatabase {
           let update = try database.prepare(
             """
             UPDATE card_list_entries
-            SET quantity = quantity + ?
+            SET quantity = quantity + ?, updated_at = ?
             WHERE id = ?
             """)
           try update.bind(entry.quantity, at: 1)
-          try update.bind(existingEntry.id, at: 2)
+          try update.bind(date, at: 2)
+          try update.bind(existingEntry.id, at: 3)
           try update.step()
 
           let delete = try database.prepare("DELETE FROM card_list_entries WHERE id = ?")
@@ -845,23 +908,25 @@ extension CardDatabase {
           let statement = try database.prepare(
             """
             UPDATE card_list_entries
-            SET zone = ?, category_id = ?, secondary_category_ids = ''
+            SET zone = ?, category_id = ?, secondary_category_ids = '', updated_at = ?
             WHERE id = ?
             """)
           try statement.bind(destinationZone.rawValue, at: 1)
           try statement.bind(categoryID, at: 2)
-          try statement.bind(id, at: 3)
+          try statement.bind(date, at: 3)
+          try statement.bind(id, at: 4)
           try statement.step()
         } else {
           let statement = try database.prepare(
             """
             UPDATE card_list_entries
-            SET zone = ?, category_id = ?
+            SET zone = ?, category_id = ?, updated_at = ?
             WHERE id = ?
             """)
           try statement.bind(destinationZone.rawValue, at: 1)
           try statement.bind(categoryID, at: 2)
-          try statement.bind(id, at: 3)
+          try statement.bind(date, at: 3)
+          try statement.bind(id, at: 4)
           try statement.step()
         }
 
@@ -878,6 +943,14 @@ extension CardDatabase {
       guard var moved = try cardCollectionEntryUnlocked(id: movedID) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.moveCategory,
+        entityType: .cardCollectionEntry,
+        entityID: moved.id,
+        listID: entry.listID,
+        summary: categoryID,
+        date: now
+      )
       moved.card = try card(id: moved.cardID)
       return moved
     }
@@ -895,6 +968,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionEntryRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
@@ -916,12 +990,13 @@ extension CardDatabase {
         let update = try database.prepare(
           """
           UPDATE card_list_entries
-          SET category_id = ?, secondary_category_ids = ?
+          SET category_id = ?, secondary_category_ids = ?, updated_at = ?
           WHERE id = ?
           """)
         try update.bind(categoryID, at: 1)
         try update.bind(Self.serializedList(remainingSecondaries), at: 2)
-        try update.bind(id, at: 3)
+        try update.bind(date, at: 3)
+        try update.bind(id, at: 4)
         try update.step()
         try touchCardCollectionUnlocked(id: entry.listID, date: date)
       }
@@ -943,6 +1018,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionEntryRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: entryID) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
@@ -974,6 +1050,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionEntryRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: entryID) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
@@ -996,9 +1073,10 @@ extension CardDatabase {
     let date = Self.formattedListDate(now)
     try database.transaction {
       let update = try database.prepare(
-        "UPDATE card_list_entries SET secondary_category_ids = ? WHERE id = ?")
+        "UPDATE card_list_entries SET secondary_category_ids = ?, updated_at = ? WHERE id = ?")
       try update.bind(Self.serializedList(secondaries), at: 1)
-      try update.bind(entryID, at: 2)
+      try update.bind(date, at: 2)
+      try update.bind(entryID, at: 3)
       try update.step()
       try touchCardCollectionUnlocked(id: listID, date: date)
     }
@@ -1012,7 +1090,7 @@ extension CardDatabase {
   /// Removes `categoryID` from every entry's secondary-tag list in `listID`. Called when a
   /// category is deleted. Must run inside an open transaction. Secondary IDs are stored as
   /// `|id1|id2|`, so `%|id|%` finds any entry that references the category.
-  private func stripSecondaryCategoryUnlocked(_ categoryID: String, fromListID listID: String) throws {
+  private func stripSecondaryCategoryUnlocked(_ categoryID: String, fromListID listID: String, date: String) throws {
     let select = try database.prepare(
       """
       SELECT id, secondary_category_ids
@@ -1029,10 +1107,11 @@ extension CardDatabase {
     }
     guard !updates.isEmpty else { return }
     let update = try database.prepare(
-      "UPDATE card_list_entries SET secondary_category_ids = ? WHERE id = ?")
+      "UPDATE card_list_entries SET secondary_category_ids = ?, updated_at = ? WHERE id = ?")
     for change in updates {
       try update.bind(Self.serializedList(change.remaining), at: 1)
-      try update.bind(change.id, at: 2)
+      try update.bind(date, at: 2)
+      try update.bind(change.id, at: 3)
       try update.step()
       try update.reset()
     }
@@ -1045,6 +1124,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionEntryRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
@@ -1065,11 +1145,12 @@ extension CardDatabase {
           let update = try database.prepare(
             """
             UPDATE card_list_entries
-            SET quantity = quantity + ?
+            SET quantity = quantity + ?, updated_at = ?
             WHERE id = ?
             """)
           try update.bind(entry.quantity, at: 1)
-          try update.bind(existingEntry.id, at: 2)
+          try update.bind(date, at: 2)
+          try update.bind(existingEntry.id, at: 3)
           try update.step()
 
           let delete = try database.prepare("DELETE FROM card_list_entries WHERE id = ?")
@@ -1080,11 +1161,12 @@ extension CardDatabase {
           let update = try database.prepare(
             """
             UPDATE card_list_entries
-            SET zone = ?, category_id = NULL, secondary_category_ids = ''
+            SET zone = ?, category_id = NULL, secondary_category_ids = '', updated_at = ?
             WHERE id = ?
             """)
           try update.bind(zone.rawValue, at: 1)
-          try update.bind(entry.id, at: 2)
+          try update.bind(date, at: 2)
+          try update.bind(entry.id, at: 3)
           try update.step()
         }
 
@@ -1101,6 +1183,14 @@ extension CardDatabase {
       guard var moved = try cardCollectionEntryUnlocked(id: movedID) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.moveZone,
+        entityType: .cardCollectionEntry,
+        entityID: moved.id,
+        listID: entry.listID,
+        summary: zone.rawValue,
+        date: now
+      )
       moved.card = try card(id: moved.cardID)
       return moved
     }
@@ -1120,6 +1210,7 @@ extension CardDatabase {
   {
     let quantity = max(1, requestedQuantity)
     return try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let list = try cardCollectionUnlocked(id: listID) else {
         throw CardCollectionDatabaseError.listNotFound
       }
@@ -1222,6 +1313,14 @@ extension CardDatabase {
       ) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.addCard,
+        entityType: .cardCollectionEntry,
+        entityID: entry.id,
+        listID: listID,
+        summary: cardID,
+        date: now
+      )
       entry.card = try card(id: cardID)
       return entry
     }
@@ -1234,6 +1333,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionEntryRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
@@ -1263,11 +1363,12 @@ extension CardDatabase {
           let update = try database.prepare(
             """
             UPDATE card_list_entries
-            SET quantity = quantity + ?
+            SET quantity = quantity + ?, updated_at = ?
             WHERE id = ?
             """)
           try update.bind(entry.quantity, at: 1)
-          try update.bind(existingEntry.id, at: 2)
+          try update.bind(date, at: 2)
+          try update.bind(existingEntry.id, at: 3)
           try update.step()
 
           let delete = try database.prepare("DELETE FROM card_list_entries WHERE id = ?")
@@ -1279,12 +1380,13 @@ extension CardDatabase {
           let update = try database.prepare(
             """
             UPDATE card_list_entries
-            SET card_id = ?, selected_finish = ?
+            SET card_id = ?, selected_finish = ?, updated_at = ?
             WHERE id = ?
             """)
           try update.bind(cardID, at: 1)
           try update.bind(carriedFinish, at: 2)
-          try update.bind(entry.id, at: 3)
+          try update.bind(date, at: 3)
+          try update.bind(entry.id, at: 4)
           try update.step()
         }
 
@@ -1294,6 +1396,14 @@ extension CardDatabase {
       guard var updatedEntry = try cardCollectionEntryUnlocked(id: updatedEntryID) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.changePrint,
+        entityType: .cardCollectionEntry,
+        entityID: updatedEntry.id,
+        listID: updatedEntry.listID,
+        summary: cardID,
+        date: now
+      )
       updatedEntry.card = try card(id: updatedEntry.cardID)
       return updatedEntry
     }
@@ -1308,6 +1418,7 @@ extension CardDatabase {
     now: Date = Date()
   ) throws -> CardCollectionEntryRecord {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
@@ -1328,6 +1439,14 @@ extension CardDatabase {
         try update.step()
 
         try touchCardCollectionUnlocked(id: entry.listID, date: date)
+        try recordChangeUnlocked(
+          action: ChangeLogAction.setFinish,
+          entityType: .cardCollectionEntry,
+          entityID: id,
+          listID: entry.listID,
+          summary: (finish ?? .normal).rawValue,
+          date: now
+        )
       }
 
       guard var updatedEntry = try cardCollectionEntryUnlocked(id: id) else {
@@ -1340,6 +1459,7 @@ extension CardDatabase {
 
   public func removeCardCollectionEntry(id: String, now: Date = Date()) throws {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         return
       }
@@ -1368,6 +1488,14 @@ extension CardDatabase {
         }
 
         try touchCardCollectionUnlocked(id: entry.listID, date: Self.formattedListDate(now))
+        try recordChangeUnlocked(
+          action: ChangeLogAction.removeCard,
+          entityType: .cardCollectionEntry,
+          entityID: entry.id,
+          listID: entry.listID,
+          summary: entry.cardID,
+          date: now
+        )
       }
     }
   }
@@ -1380,6 +1508,7 @@ extension CardDatabase {
   ) throws -> CardCollectionEntryRecord {
     let quantityDelta = max(1, amount)
     return try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
@@ -1396,6 +1525,14 @@ extension CardDatabase {
         try update.bind(id, at: 3)
         try update.step()
         try touchCardCollectionUnlocked(id: entry.listID, date: Self.formattedListDate(now))
+        try recordChangeUnlocked(
+          action: ChangeLogAction.setQuantity,
+          entityType: .cardCollectionEntry,
+          entityID: id,
+          listID: entry.listID,
+          summary: "+\(quantityDelta)",
+          date: now
+        )
       }
 
       guard var updatedEntry = try cardCollectionEntryUnlocked(id: id) else {
@@ -1414,6 +1551,7 @@ extension CardDatabase {
   ) throws -> CardCollectionEntryRecord {
     let quantity = max(1, requestedQuantity)
     return try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         throw CardCollectionDatabaseError.entryNotFound
       }
@@ -1430,6 +1568,14 @@ extension CardDatabase {
         try update.bind(id, at: 3)
         try update.step()
         try touchCardCollectionUnlocked(id: entry.listID, date: Self.formattedListDate(now))
+        try recordChangeUnlocked(
+          action: ChangeLogAction.setQuantity,
+          entityType: .cardCollectionEntry,
+          entityID: id,
+          listID: entry.listID,
+          summary: "×\(quantity)",
+          date: now
+        )
       }
 
       guard var updatedEntry = try cardCollectionEntryUnlocked(id: id) else {
@@ -1442,6 +1588,7 @@ extension CardDatabase {
 
   public func removeCardCollectionEntryCompletely(id: String, now: Date = Date()) throws {
     try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
       guard let entry = try cardCollectionEntryUnlocked(id: id) else {
         return
       }
@@ -1457,6 +1604,14 @@ extension CardDatabase {
           deletedAt: now
         )
         try touchCardCollectionUnlocked(id: entry.listID, date: Self.formattedListDate(now))
+        try recordChangeUnlocked(
+          action: ChangeLogAction.removeCard,
+          entityType: .cardCollectionEntry,
+          entityID: entry.id,
+          listID: entry.listID,
+          summary: entry.cardID,
+          date: now
+        )
       }
     }
   }

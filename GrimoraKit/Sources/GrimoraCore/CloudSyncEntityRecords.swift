@@ -50,12 +50,18 @@ public enum CloudSyncEntityCodec {
       records[record.id] = record
     }
 
+    // Stamp the library-metadata record from the newest *content* instant rather than "now".
+    // The identity payload almost never changes, so a `.now` stamp made this record differ on
+    // every sync and ping-pong between devices forever ("it keeps syncing over and over"). A
+    // content-derived stamp is identical on both devices once they've converged, so it stops
+    // being re-uploaded.
+    let libraryUpdatedAt = CardDatabase.newestInstant(in: snapshot) ?? snapshot.capturedAt
     insert(
       CloudSyncEntityRecord(
         entityType: .library,
         recordID: metadataRecordID,
         payload: try CardDatabase.syncJSONData(snapshot.libraryIdentity),
-        updatedAt: snapshot.capturedAt,
+        updatedAt: libraryUpdatedAt,
         sourceDeviceID: snapshot.id
       )
     )
@@ -117,6 +123,21 @@ public enum CloudSyncEntityCodec {
           payload: nil,
           updatedAt: tombstone.deletedAt,
           deletedAt: tombstone.deletedAt,
+          sourceDeviceID: snapshot.id
+        )
+      )
+    }
+
+    // Append-only change ledger: one record per row, keyed by its unique id so the merge is a pure
+    // union. `updatedAt` is the row's recorded instant; rows are immutable, so they are never
+    // re-uploaded once CloudKit has them.
+    for entry in snapshot.changeLog {
+      insert(
+        CloudSyncEntityRecord(
+          entityType: .changeLogEntry,
+          recordID: entry.id,
+          payload: try CardDatabase.syncJSONData(entry),
+          updatedAt: entry.recordedAt,
           sourceDeviceID: snapshot.id
         )
       )
@@ -227,6 +248,14 @@ public enum CloudSyncEntityCodec {
       .filter { $0.entityType == .cardCollection }
       .map { SyncListDeletion(id: $0.recordID, deletedAt: $0.deletedAt) }
 
+    let changeLog = try merged.compactMap { record -> ChangeLogEntry? in
+      guard record.entityType == .changeLogEntry, !record.isDeleted, let payload = record.payload
+      else {
+        return nil
+      }
+      return try CardDatabase.syncJSONValue(ChangeLogEntry.self, from: payload)
+    }
+
     return DeviceSyncSnapshot(
       id: entitySnapshotID,
       deviceName: "iCloud",
@@ -242,7 +271,8 @@ public enum CloudSyncEntityCodec {
         entries: entries
       ),
       deletedLists: deletedLists,
-      deletedEntities: tombstones
+      deletedEntities: tombstones,
+      changeLog: changeLog
     )
   }
 

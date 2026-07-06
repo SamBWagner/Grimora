@@ -152,6 +152,144 @@ final class CloudSyncConvergenceTests: XCTestCase {
     XCTAssertTrue(entries.isSuperset(of: ["beta", "gamma"]), "Both devices' adds must survive, got \(entries)")
   }
 
+  // MARK: - The reported bug: a lagging-clock device's edits must not revert
+
+  /// Reproduces "it syncs across, then keeps re-writing my list back to what it was."
+  ///
+  /// Device B's wall clock runs far behind Device A's. With a raw wall-clock last-writer-wins
+  /// merge, B can never stamp an edit newer than what it just pulled from A, so B's edits lose
+  /// the merge on every sync and the list is locked to A's version forever. The logical clock
+  /// advances B past the newest instant it observes from A on each pull, so B's subsequent edits
+  /// win — which is what this test proves.
+  func testLaggingClockDeviceEditsAreNotReverted() async throws {
+    let transport = SimulatedCloudKitTransport()
+    let deviceA = try makeDevice(id: "device-a", name: "iMac", transport: transport)
+    let deviceB = try makeDevice(id: "device-b", name: "iPhone", transport: transport)
+
+    // A's wall clock is ~11 days ahead of B's — the kind of skew that makes B always lose.
+    var aTick = 0.0
+    func aNow() -> Date {
+      aTick += 1
+      return Date(timeIntervalSince1970: 1_000_000 + aTick)
+    }
+    var bTick = 0.0
+    func bNow() -> Date {
+      bTick += 1
+      return Date(timeIntervalSince1970: 10 + bTick)
+    }
+
+    // A creates a list and publishes it; B pulls it down.
+    let list = try deviceA.database.createCardCollection(named: "Architect", now: aNow())
+    try deviceA.database.appendCard("alpha", toList: list.id, now: aNow())
+    try deviceA.database.recordLocalSyncSnapshotChange(reason: "seed")
+    try await settle([deviceA, deviceB])
+    XCTAssertTrue(
+      try deviceB.database.cardCollections().contains { $0.id == list.id },
+      "Device B should have received the shared list."
+    )
+
+    // B edits on its lagging clock — timestamps far *below* A's — then syncs.
+    try deviceB.database.renameCardCollection(id: list.id, to: "Architect (B)", now: bNow())
+    try deviceB.database.appendCard("beta", toList: list.id, now: bNow())
+    try deviceB.database.recordLocalSyncSnapshotChange(reason: "b-edit")
+    try await settle([deviceA, deviceB])
+
+    // B's edits must survive on *both* devices rather than reverting to A's version.
+    try assertConverged([deviceA, deviceB])
+    for device in [deviceA, deviceB] {
+      XCTAssertEqual(
+        try device.database.cardCollections().first { $0.id == list.id }?.name,
+        "Architect (B)",
+        "\(device.name) reverted B's rename — the lagging device lost the merge."
+      )
+      let cards = Set(try device.database.cardCollectionEntries(forListID: list.id).map(\.cardID))
+      XCTAssertTrue(cards.isSuperset(of: ["alpha", "beta"]), "\(device.name) lost an add: \(cards)")
+    }
+
+    // The report's loop: B keeps editing at lagging timestamps and each edit must stick.
+    for round in 0..<5 {
+      try deviceB.database.renameCardCollection(id: list.id, to: "Round \(round)", now: bNow())
+      try deviceB.database.recordLocalSyncSnapshotChange(reason: "round-\(round)")
+      try await settle([deviceA, deviceB])
+      try assertConverged([deviceA, deviceB])
+      for device in [deviceA, deviceB] {
+        XCTAssertEqual(
+          try device.database.cardCollections().first { $0.id == list.id }?.name,
+          "Round \(round)",
+          "\(device.name) reverted B's round-\(round) rename."
+        )
+      }
+    }
+  }
+
+  /// A printing swap (and other content-only entry edits) must actually propagate. These paths
+  /// historically changed the row without bumping its `updatedAt`, so after the upload diff
+  /// started skipping unchanged rows the edit silently stopped syncing.
+  func testPrintingSwapPropagatesAcrossDevices() async throws {
+    let transport = SimulatedCloudKitTransport()
+    let deviceA = try makeDevice(id: "device-a", name: "iPhone", transport: transport)
+    let deviceB = try makeDevice(id: "device-b", name: "iPad", transport: transport)
+
+    let list = try deviceA.database.createCardCollection(named: "Deck", now: nextDate())
+    let entry = try deviceA.database.appendCard("sol-ring-a", toList: list.id, now: nextDate())
+    try deviceA.database.recordLocalSyncSnapshotChange(reason: "seed")
+    try await settle([deviceA, deviceB])
+
+    // A swaps the printing; the entry keeps its id but points at a different card.
+    _ = try deviceA.database.replaceCardCollectionEntryPrint(
+      id: entry.id, withCardID: "sol-ring-b", now: nextDate()
+    )
+    try deviceA.database.recordLocalSyncSnapshotChange(reason: "swap-print")
+    try await settle([deviceA, deviceB])
+
+    try assertConverged([deviceA, deviceB])
+    for device in [deviceA, deviceB] {
+      XCTAssertEqual(
+        try device.database.cardCollectionEntries(forListID: list.id).map(\.cardID),
+        ["sol-ring-b"],
+        "\(device.name) did not receive the printing swap."
+      )
+    }
+  }
+
+  // MARK: - The change ledger unions across devices
+
+  /// The append-only change ledger syncs as a pure union: every device's history survives on
+  /// every device, pulling never drops or rewrites a peer's entries, and provenance is kept.
+  func testChangeLedgerUnionsAcrossDevices() async throws {
+    let transport = SimulatedCloudKitTransport()
+    let deviceA = try makeDevice(id: "device-a", name: "iPhone", transport: transport)
+    let deviceB = try makeDevice(id: "device-b", name: "iPad", transport: transport)
+
+    let list = try deviceA.database.createCardCollection(named: "Deck", now: nextDate())
+    try await settle([deviceA, deviceB])
+
+    // Each device performs a distinct, ledger-logged action before syncing.
+    try deviceA.database.appendCard("alpha", toList: list.id, now: nextDate())
+    _ = try deviceB.database.appendCard("beta", toList: list.id, now: nextDate())
+    try deviceA.database.recordLocalSyncSnapshotChange(reason: "a")
+    try deviceB.database.recordLocalSyncSnapshotChange(reason: "b")
+    try await settle([deviceA, deviceB])
+
+    try assertConverged([deviceA, deviceB])
+
+    let ledgerA = try deviceA.database.changeLogEntries()
+    let ledgerB = try deviceB.database.changeLogEntries()
+    XCTAssertEqual(Set(ledgerA.map(\.id)), Set(ledgerB.map(\.id)), "Ledgers did not converge")
+
+    let actions = ledgerA.map(\.action)
+    XCTAssertTrue(actions.contains(ChangeLogAction.createList), "createList missing: \(actions)")
+    XCTAssertEqual(
+      actions.filter { $0 == ChangeLogAction.addCard }.count, 2,
+      "Both devices' addCard events should survive the union, got \(actions)"
+    )
+    // Provenance is preserved: the two adds originated on two different devices.
+    let addDevices = Set(
+      ledgerA.filter { $0.action == ChangeLogAction.addCard }.map(\.deviceID)
+    )
+    XCTAssertEqual(addDevices.count, 2, "Each add should retain its origin device id")
+  }
+
   // MARK: - Bootstrap with a same-id divergence also never prompts
 
   func testBootstrapWithSameIdDivergenceMergesWithoutPrompt() async throws {

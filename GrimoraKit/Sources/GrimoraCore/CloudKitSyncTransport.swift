@@ -616,6 +616,8 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
       RecordType.cardCollectionCategory
     case .cardCollectionEntry:
       RecordType.cardCollectionEntry
+    case .changeLogEntry:
+      RecordType.changeLogEntry
     case .snapshot:
       RecordType.legacyDeviceSnapshot
     }
@@ -633,6 +635,8 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
       .cardCollectionCategory
     case RecordType.cardCollectionEntry:
       .cardCollectionEntry
+    case RecordType.changeLogEntry:
+      .changeLogEntry
     default:
       nil
     }
@@ -650,6 +654,8 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
       "category-\(entity.recordID)"
     case .cardCollectionEntry:
       "entry-\(entity.recordID)"
+    case .changeLogEntry:
+      "changelog-\(entity.recordID)"
     case .snapshot:
       "snapshot-\(entity.recordID)"
     }

@@ -31,6 +31,7 @@ final class CloudSyncTests: XCTestCase {
                 "GrimoraCardList",
                 "GrimoraCardListCategory",
                 "GrimoraCardListEntry",
+                "GrimoraChangeLogEntry",
                 "GrimoraRecoveryRevision",
             ]
         )

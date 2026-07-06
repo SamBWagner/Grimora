@@ -208,6 +208,9 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
   public var listSnapshot: CardCollectionLibrarySnapshot
   public var deletedLists: [SyncListDeletion]
   public var deletedEntities: [SyncTombstone]
+  /// Append-only ledger of user actions carried alongside the state. Syncs as a pure union; older
+  /// snapshots without it decode to an empty log.
+  public var changeLog: [ChangeLogEntry]
 
   public init(
     id: String,
@@ -217,7 +220,8 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
     searchSettings: SyncSearchSettings,
     listSnapshot: CardCollectionLibrarySnapshot,
     deletedLists: [SyncListDeletion] = [],
-    deletedEntities: [SyncTombstone] = []
+    deletedEntities: [SyncTombstone] = [],
+    changeLog: [ChangeLogEntry] = []
   ) {
     self.id = id
     self.deviceName = deviceName
@@ -227,6 +231,7 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
     self.listSnapshot = listSnapshot
     self.deletedLists = deletedLists
     self.deletedEntities = deletedEntities
+    self.changeLog = changeLog
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -238,6 +243,7 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
     case listSnapshot
     case deletedLists
     case deletedEntities
+    case changeLog
   }
 
   public init(from decoder: Decoder) throws {
@@ -251,6 +257,7 @@ public struct DeviceSyncSnapshot: Codable, Equatable, Identifiable, Sendable {
     deletedLists = try container.decodeIfPresent([SyncListDeletion].self, forKey: .deletedLists) ?? []
     deletedEntities =
       try container.decodeIfPresent([SyncTombstone].self, forKey: .deletedEntities) ?? []
+    changeLog = try container.decodeIfPresent([ChangeLogEntry].self, forKey: .changeLog) ?? []
   }
 
   public var listCount: Int {
@@ -631,6 +638,7 @@ public enum SyncEntityType: String, Codable, Equatable, Sendable {
   case cardCollection = "cardList"
   case cardCollectionCategory = "cardListCategory"
   case cardCollectionEntry = "cardListEntry"
+  case changeLogEntry = "changeLogEntry"
   case snapshot
 }
 
