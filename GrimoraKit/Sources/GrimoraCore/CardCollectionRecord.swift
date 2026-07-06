@@ -3,33 +3,15 @@ import Foundation
 public enum CardCollectionRuleset: String, CaseIterable, Codable, Identifiable, Sendable {
     case none
     case commander
-    case standard
-    case pioneer
-    case modern
-    case legacy
-    case vintage
-    case pauper
 
     public var id: Self { self }
 
     public var title: String {
         switch self {
         case .none:
-            "No Ruleset"
+            "Collection"
         case .commander:
             "Commander"
-        case .standard:
-            "Standard"
-        case .pioneer:
-            "Pioneer"
-        case .modern:
-            "Modern"
-        case .legacy:
-            "Legacy"
-        case .vintage:
-            "Vintage"
-        case .pauper:
-            "Pauper"
         }
     }
 
@@ -39,27 +21,6 @@ public enum CardCollectionRuleset: String, CaseIterable, Codable, Identifiable, 
             nil
         case .commander:
             "commander"
-        case .standard:
-            "standard"
-        case .pioneer:
-            "pioneer"
-        case .modern:
-            "modern"
-        case .legacy:
-            "legacy"
-        case .vintage:
-            "vintage"
-        case .pauper:
-            "pauper"
-        }
-    }
-
-    public var isConstructed: Bool {
-        switch self {
-        case .standard, .pioneer, .modern, .legacy, .vintage, .pauper:
-            true
-        case .none, .commander:
-            false
         }
     }
 
@@ -67,8 +28,6 @@ public enum CardCollectionRuleset: String, CaseIterable, Codable, Identifiable, 
         switch self {
         case .commander:
             [.commander, .mainboard, .maybeboard]
-        case .standard, .pioneer, .modern, .legacy, .vintage, .pauper:
-            [.mainboard, .sideboard, .maybeboard]
         case .none:
             [.mainboard, .maybeboard]
         }

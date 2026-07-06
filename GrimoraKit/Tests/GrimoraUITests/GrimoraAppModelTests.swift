@@ -5399,7 +5399,7 @@ final class GrimoraAppModelTests: XCTestCase {
         layout: "normal",
         typeLine: "Creature",
         oracleText: "Forest sample.",
-        legalities: ["modern": "legal"],
+        legalities: ["commander": "legal"],
         isRealCard: true
       ),
       CardRecord(
@@ -5418,7 +5418,7 @@ final class GrimoraAppModelTests: XCTestCase {
         layout: "normal",
         typeLine: "Creature",
         oracleText: "Mage sample.",
-        legalities: ["modern": "legal"],
+        legalities: ["commander": "legal"],
         isRealCard: true
       ),
     ])
@@ -5426,9 +5426,9 @@ final class GrimoraAppModelTests: XCTestCase {
     let model = GrimoraAppModel(environment: environment(database: database))
     await model.drainSearchForTesting()
 
-    let list = try XCTUnwrap(model.createCardCollection(named: "Modern Deck", selectAfterCreate: true))
-    model.setCardCollectionRuleset(id: list.id, ruleset: .modern)
-    XCTAssertEqual(model.statusMessage, "Set Modern Deck ruleset to Modern.")
+    let list = try XCTUnwrap(model.createCardCollection(named: "Commander Deck", selectAfterCreate: true))
+    model.setCardCollectionRuleset(id: list.id, ruleset: .commander)
+    XCTAssertEqual(model.statusMessage, "Set Commander Deck ruleset to Commander.")
 
     let forest = try XCTUnwrap(model.cards.first { $0.id == "forest" })
     let beta = try XCTUnwrap(model.cards.first { $0.id == "beta" })
@@ -5437,18 +5437,35 @@ final class GrimoraAppModelTests: XCTestCase {
 
     let forestEntryID = try XCTUnwrap(model.selectedCollectionEntries.first { $0.cardID == forest.id }?.id)
     let betaEntryID = try XCTUnwrap(model.selectedCollectionEntries.first { $0.cardID == beta.id }?.id)
-    model.moveCardCollectionEntry(id: betaEntryID, toZone: .sideboard)
+    model.moveCardCollectionEntry(id: betaEntryID, toZone: .commander)
     model.setCardCollectionEntryQuantities(ids: [forestEntryID, betaEntryID], quantity: 5)
 
-    XCTAssertEqual(model.selectedCollection?.ruleset, .modern)
-    XCTAssertEqual(model.selectedCollectionEntries.map(\.zone), [.mainboard, .sideboard])
+    XCTAssertEqual(model.selectedCollection?.ruleset, .commander)
+    XCTAssertEqual(Set(model.selectedCollectionEntries.map(\.zone)), [.commander, .mainboard])
     XCTAssertEqual(model.selectedCollectionEntries.map(\.quantity), [5, 5])
     XCTAssertEqual(model.selectedCollection?.entryCount, 10)
 
     let warningIDs = Set(model.selectedCollectionRulesetWarnings.map(\.id))
-    XCTAssertTrue(warningIDs.contains("modern-mainboard-size"))
-    XCTAssertTrue(warningIDs.contains("modern-copy-limit-forest-oracle"))
-    XCTAssertTrue(warningIDs.contains("modern-copy-limit-beta-oracle"))
+    XCTAssertTrue(warningIDs.contains("commander-size"))
+    XCTAssertTrue(warningIDs.contains("commander-singleton-forest-oracle"))
+    XCTAssertTrue(warningIDs.contains("commander-singleton-beta-oracle"))
+  }
+
+  func testCreatingCommanderDeckPersistsRulesetThroughModel() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let deck = try XCTUnwrap(
+      model.createCardCollection(named: "My Deck", ruleset: .commander, selectAfterCreate: true)
+    )
+    XCTAssertEqual(deck.ruleset, .commander)
+    XCTAssertEqual(model.selectedCollection?.ruleset, .commander)
+
+    // The default create path still produces a plain Collection.
+    let binder = try XCTUnwrap(model.createCardCollection(named: "My Binder"))
+    XCTAssertEqual(binder.ruleset, CardCollectionRuleset.none)
   }
 
   func testModelSavesDescriptionsAndImportsGrimoraArchives() async throws {

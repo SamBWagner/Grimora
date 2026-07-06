@@ -522,6 +522,11 @@ extension CardDatabase {
     try database.execute("UPDATE card_list_entries SET updated_at = created_at WHERE updated_at IS NULL")
     try database.execute(
       "UPDATE card_list_entries SET sync_updated_at = updated_at WHERE sync_updated_at IS NULL")
+    // Collections are now either a plain Collection (`none`) or a Commander deck.
+    // Coerce any list still tagged with a retired constructed format down to
+    // `none`; the zone normalization below then rehomes stranded sideboard cards
+    // into the mainboard. Idempotent — a no-op once every list is `none`/`commander`.
+    try database.execute("UPDATE card_lists SET ruleset = 'none' WHERE ruleset NOT IN ('none', 'commander')")
     try normalizeCardCollectionZonesForRulesetsUnlocked()
     try consolidateDuplicateCardCollectionEntriesUnlocked()
     try normalizeCardCollectionPositionsUnlocked(

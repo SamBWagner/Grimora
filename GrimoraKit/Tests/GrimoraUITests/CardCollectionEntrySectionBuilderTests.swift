@@ -141,39 +141,6 @@ final class CardCollectionEntrySectionBuilderTests: XCTestCase {
     XCTAssertEqual(sections[2].entries.map(\.id), ["maybe-0"])
   }
 
-  func testConstructedSectionsUseMainboardSideboardAndMaybeboardZones() {
-    let categories = [
-      category(id: "side", name: "Side", position: 0, zone: .sideboard),
-      category(id: "maybe", name: "Maybe", position: 0, zone: .maybeboard),
-    ]
-    let entries = [
-      entry(id: "commander-0", categoryID: nil, position: 0, zone: .commander),
-      entry(id: "side-0", categoryID: "side", position: 0, zone: .sideboard),
-      entry(id: "maybe-0", categoryID: nil, position: 0, zone: .maybeboard),
-    ]
-
-    let sections = CardCollectionEntrySectionBuilder.sections(
-      entries: entries,
-      categories: categories,
-      ruleset: .modern
-    )
-
-    XCTAssertEqual(
-      sections.map(\.id),
-      ["mainboard-uncategorized", "side", "maybeboard-uncategorized", "maybe"]
-    )
-    XCTAssertEqual(sections.map(\.zone), [.mainboard, .sideboard, .maybeboard, .maybeboard])
-    XCTAssertEqual(sections.map(\.title), [
-      "Uncategorized",
-      "Sideboard - Side",
-      "Maybeboard - Uncategorized",
-      "Maybeboard - Maybe",
-    ])
-    XCTAssertEqual(sections[0].entries.map(\.id), [])
-    XCTAssertEqual(sections[1].entries.map(\.id), ["side-0"])
-    XCTAssertEqual(sections[2].entries.map(\.id), ["maybe-0"])
-  }
-
   func testDetailSnapshotExcludesCollapsedEntriesFromExpandedSequence() {
     let categories = [
       category(id: "core", name: "Core", position: 0),

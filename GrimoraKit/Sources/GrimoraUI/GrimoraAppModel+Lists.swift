@@ -234,6 +234,7 @@ extension GrimoraAppModel {
   @discardableResult
   public func createCardCollection(
     named name: String,
+    ruleset: CardCollectionRuleset = .none,
     adding card: CardRecord? = nil,
     selectAfterCreate: Bool = false
   ) -> CardCollectionRecord? {
@@ -247,7 +248,7 @@ extension GrimoraAppModel {
 
     do {
       let list = try performListMutation {
-        let list = try database.createCardCollection(named: name)
+        let list = try database.createCardCollection(named: name, ruleset: ruleset)
         if let card {
           try database.appendCard(card.id, toList: list.id)
         }

@@ -145,7 +145,7 @@ extension CardCollectionDetailView {
                     }
                 } else {
                 listViewModePicker(for: selectedCollection)
-                rulesetMenu(for: selectedCollection)
+                commanderDeckToolbarToggle(for: selectedCollection)
                 listSortMenu(for: selectedCollection)
 
                 Button {
@@ -408,12 +408,7 @@ extension CardCollectionDetailView {
         }
         .accessibilityIdentifier("list-sort-menu")
 
-        Menu {
-            rulesetButtons(for: selectedCollection)
-        } label: {
-            Text("Ruleset")
-        }
-        .accessibilityIdentifier("list-ruleset-menu")
+        commanderDeckToggleButton(for: selectedCollection)
 
         Button {
             model.setCardCollectionDashboardVisibility(
@@ -683,8 +678,8 @@ extension CardCollectionDetailView {
             }
         }
 
-        Section("Ruleset") {
-            rulesetButtons(for: selectedCollection)
+        Section("Type") {
+            commanderDeckToggleButton(for: selectedCollection)
         }
     }
     #endif
@@ -721,15 +716,15 @@ extension CardCollectionDetailView {
     }
 
     @ViewBuilder
-    func rulesetMenu(for selectedCollection: CardCollectionRecord) -> some View {
-        Menu {
-            rulesetButtons(for: selectedCollection)
-        } label: {
-            Text(selectedCollection.ruleset.title)
+    func commanderDeckToolbarToggle(for selectedCollection: CardCollectionRecord) -> some View {
+        Toggle(isOn: commanderDeckBinding(for: selectedCollection)) {
+            Label("Commander Deck", systemImage: "crown")
+                .labelStyle(.iconOnly)
         }
-        .help("Ruleset")
-        .accessibilityIdentifier("list-ruleset-menu")
-        .accessibilityValue(selectedCollection.ruleset.title)
+        .toggleStyle(.button)
+        .help("Commander Deck")
+        .accessibilityIdentifier("list-commander-deck-toggle")
+        .accessibilityValue(selectedCollection.ruleset == .commander ? "On" : "Off")
     }
 
     @ViewBuilder
@@ -818,20 +813,33 @@ extension CardCollectionDetailView {
         }
     }
 
+    /// Menu row that flips a collection between a plain Collection (`.none`) and a
+    /// Commander deck (`.commander`). Used in the iOS actions sheet and visionOS menu.
     @ViewBuilder
-    func rulesetButtons(for selectedCollection: CardCollectionRecord) -> some View {
-        ForEach(CardCollectionRuleset.allCases) { ruleset in
-            Button {
-                model.setCardCollectionRuleset(id: selectedCollection.id, ruleset: ruleset)
-            } label: {
-                HStack {
-                    Text(ruleset.title)
-                    if selectedCollection.ruleset == ruleset {
-                        Image(systemName: "checkmark")
-                    }
-                }
-            }
-            .accessibilityIdentifier("list-ruleset-\(ruleset.rawValue)")
+    func commanderDeckToggleButton(for selectedCollection: CardCollectionRecord) -> some View {
+        let isCommanderDeck = selectedCollection.ruleset == .commander
+        Button {
+            setCommanderDeck(!isCommanderDeck, for: selectedCollection)
+        } label: {
+            GrimoraMenuSelectionLabel(title: "Commander Deck", isSelected: isCommanderDeck)
+        }
+        .accessibilityIdentifier("list-commander-deck-toggle")
+        .accessibilityValue(isCommanderDeck ? "On" : "Off")
+    }
+
+    func setCommanderDeck(_ isCommanderDeck: Bool, for selectedCollection: CardCollectionRecord) {
+        let ruleset: CardCollectionRuleset = isCommanderDeck ? .commander : .none
+        guard selectedCollection.ruleset != ruleset else {
+            return
+        }
+        model.setCardCollectionRuleset(id: selectedCollection.id, ruleset: ruleset)
+    }
+
+    func commanderDeckBinding(for selectedCollection: CardCollectionRecord) -> Binding<Bool> {
+        Binding {
+            (model.selectedCollection?.ruleset ?? selectedCollection.ruleset) == .commander
+        } set: { isCommanderDeck in
+            setCommanderDeck(isCommanderDeck, for: selectedCollection)
         }
     }
 

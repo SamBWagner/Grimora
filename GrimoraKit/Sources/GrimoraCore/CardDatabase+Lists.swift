@@ -300,7 +300,11 @@ extension CardDatabase {
   }
 
   @discardableResult
-  public func createCardCollection(named name: String, now: Date = Date()) throws -> CardCollectionRecord {
+  public func createCardCollection(
+    named name: String,
+    ruleset: CardCollectionRuleset = .none,
+    now: Date = Date()
+  ) throws -> CardCollectionRecord {
     let normalizedName = Self.normalizedListName(name)
     guard !normalizedName.isEmpty else {
       throw CardCollectionDatabaseError.emptyName
@@ -312,14 +316,15 @@ extension CardDatabase {
       let position = try nextCardCollectionPositionUnlocked(isPinned: false)
       let statement = try database.prepare(
         """
-        INSERT INTO card_lists (id, name, created_at, updated_at, position)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO card_lists (id, name, ruleset, created_at, updated_at, position)
+        VALUES (?, ?, ?, ?, ?, ?)
         """)
       try statement.bind(id, at: 1)
       try statement.bind(normalizedName, at: 2)
-      try statement.bind(date, at: 3)
+      try statement.bind(ruleset.rawValue, at: 3)
       try statement.bind(date, at: 4)
-      try statement.bind(position, at: 5)
+      try statement.bind(date, at: 5)
+      try statement.bind(position, at: 6)
       try statement.step()
 
       guard let list = try cardCollectionUnlocked(id: id) else {

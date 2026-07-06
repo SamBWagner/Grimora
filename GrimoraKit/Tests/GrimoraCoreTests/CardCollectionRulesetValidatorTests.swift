@@ -2,31 +2,17 @@
 import XCTest
 
 final class CardCollectionRulesetValidatorTests: XCTestCase {
-    func testConstructedRulesetWarningsCoverDeckSizeSideboardCopiesAndLegality() {
-        let list = list(ruleset: .modern)
+    func testCollectionRulesetProducesNoWarnings() {
+        let list = list(ruleset: .none)
         let entries = [
             entry(
-                card: card(id: "bolt", oracleID: "bolt-oracle", name: "Bolt Spell", legalities: ["modern": "legal"]),
+                card: card(id: "bolt", oracleID: "bolt-oracle", name: "Bolt Spell", legalities: [:]),
                 zone: .mainboard,
                 quantity: 5
             ),
-            entry(
-                card: card(id: "side", oracleID: "side-oracle", name: "Side Spell", legalities: ["modern": "legal"]),
-                zone: .sideboard,
-                quantity: 16
-            ),
-            entry(
-                card: card(id: "banned", oracleID: "banned-oracle", name: "Banned Spell", legalities: ["modern": "banned"]),
-                zone: .maybeboard
-            ),
         ]
 
-        let warningIDs = Set(CardCollectionRulesetValidator.warnings(for: list, entries: entries).map(\.id))
-
-        XCTAssertTrue(warningIDs.contains("modern-mainboard-size"))
-        XCTAssertTrue(warningIDs.contains("modern-sideboard-size"))
-        XCTAssertTrue(warningIDs.contains("modern-copy-limit-bolt-oracle"))
-        XCTAssertTrue(warningIDs.contains("modern-legality-banned-oracle"))
+        XCTAssertTrue(CardCollectionRulesetValidator.warnings(for: list, entries: entries).isEmpty)
     }
 
     func testCommanderRulesetWarningsCoverCommandersSizeSingletonAndLegality() {

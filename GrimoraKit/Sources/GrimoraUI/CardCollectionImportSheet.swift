@@ -140,6 +140,7 @@ private struct CardCollectionImportForm: View {
     var titleAccessibilityIdentifier: String?
 
     @State private var listName = ""
+    @State private var newCollectionRuleset: CardCollectionRuleset = .none
     @State private var sourceMode: ImportSourceMode
     @State private var sourceText = ""
     @State private var isShowingFileImporter = false
@@ -204,6 +205,9 @@ private struct CardCollectionImportForm: View {
             VStack(alignment: .leading, spacing: 18) {
                 if mode.isCreate {
                     listNameSection
+                    if sourceMode == .blank {
+                        collectionTypeSection
+                    }
                 }
 
                 sourceSection
@@ -230,6 +234,9 @@ private struct CardCollectionImportForm: View {
             if mode.isCreate {
                 Section("Details") {
                     listNameField
+                    if sourceMode == .blank {
+                        collectionTypePicker
+                    }
                 }
             }
 
@@ -302,6 +309,25 @@ private struct CardCollectionImportForm: View {
             }
             .accessibilityIdentifier("list-import-name-field")
         #endif
+    }
+
+    private var collectionTypeSection: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Type")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(palette.primaryText.color)
+
+            collectionTypePicker
+        }
+    }
+
+    private var collectionTypePicker: some View {
+        Picker("Type", selection: $newCollectionRuleset) {
+            Text("Collection").tag(CardCollectionRuleset.none)
+            Text("Commander Deck").tag(CardCollectionRuleset.commander)
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("list-import-type-picker")
     }
 
     private var sourceSection: some View {
@@ -490,7 +516,11 @@ private struct CardCollectionImportForm: View {
 
         switch mode {
         case .create where sourceMode == .blank:
-            if model.createCardCollection(named: normalizedListName, selectAfterCreate: true) != nil {
+            if model.createCardCollection(
+                named: normalizedListName,
+                ruleset: newCollectionRuleset,
+                selectAfterCreate: true
+            ) != nil {
                 onComplete()
             }
         case .create:

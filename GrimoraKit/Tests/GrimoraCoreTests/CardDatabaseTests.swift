@@ -978,12 +978,11 @@ final class CardDatabaseTests: XCTestCase {
     func testListEntriesWithSameCardAcrossZonesEachReceiveTheCard() throws {
         let database = try CardDatabase(storage: .inMemory)
         let card = preferredTestCard(
-            id: "dup", oracleID: "oracle-dup", name: "Duplicated", legalities: ["modern": "legal"])
+            id: "dup", oracleID: "oracle-dup", name: "Duplicated", legalities: ["commander": "legal"])
         try database.replaceAllCards([card])
-        let list = try database.createCardCollection(named: "Modern")
-        try database.setCardCollectionRuleset(id: list.id, ruleset: .modern)
+        let list = try database.createCardCollection(named: "Deck", ruleset: .commander)
+        try database.appendCard("dup", toList: list.id, zone: .commander)
         try database.appendCard("dup", toList: list.id, zone: .mainboard)
-        try database.appendCard("dup", toList: list.id, zone: .sideboard)
 
         let entries = try database.cardCollectionEntries(forListID: list.id)
         XCTAssertEqual(entries.count, 2)
@@ -2008,33 +2007,32 @@ final class CardDatabaseTests: XCTestCase {
         let beta = preferredTestCard(id: "beta-print", oracleID: "beta-oracle", name: "Beta Mage")
         try database.replaceAllCards([alpha, beta])
 
-        let list = try database.createCardCollection(named: "Modern")
-        let updatedList = try database.setCardCollectionRuleset(id: list.id, ruleset: .modern)
-        XCTAssertEqual(updatedList.ruleset, .modern)
+        let list = try database.createCardCollection(named: "Deck", ruleset: .commander)
+        XCTAssertEqual(list.ruleset, .commander)
 
+        // Same-named categories can coexist across distinct zones.
         let mainCategory = try database.createCardCollectionCategory(inList: list.id, named: "Core")
-        let sideCategory = try database.createCardCollectionCategory(inList: list.id, zone: .sideboard, named: "Core")
+        let maybeCategory = try database.createCardCollectionCategory(inList: list.id, zone: .maybeboard, named: "Core")
         let mainEntry = try database.appendCard(alpha.id, toList: list.id, categoryID: mainCategory.id, quantity: 2)
-        _ = try database.appendCard(beta.id, toList: list.id, categoryID: sideCategory.id, quantity: 1)
-        let maybeEntry = try database.appendCard(alpha.id, toList: list.id, zone: .maybeboard, quantity: 3)
+        _ = try database.appendCard(beta.id, toList: list.id, categoryID: maybeCategory.id, quantity: 1)
+        let commanderEntry = try database.appendCard(alpha.id, toList: list.id, zone: .commander, quantity: 1)
 
         let updatedMainEntry = try database.setCardCollectionEntryQuantity(id: mainEntry.id, quantity: 4)
-        let movedMaybeEntry = try database.moveCardCollectionEntry(id: maybeEntry.id, toZone: .sideboard)
+        let movedEntry = try database.moveCardCollectionEntry(id: commanderEntry.id, toZone: .maybeboard)
         let categories = try database.cardCollectionCategories(forListID: list.id)
         let entries = try database.cardCollectionEntries(forListID: list.id)
 
-        XCTAssertEqual(try database.cardCollection(id: list.id)?.ruleset, .modern)
+        XCTAssertEqual(try database.cardCollection(id: list.id)?.ruleset, .commander)
         XCTAssertEqual(categories.map(\.name), ["Core", "Core"])
-        XCTAssertEqual(categories.map(\.zone), [.mainboard, .sideboard])
+        XCTAssertEqual(Set(categories.map(\.zone)), [.mainboard, .maybeboard])
         XCTAssertEqual(updatedMainEntry.quantity, 4)
-        XCTAssertEqual(movedMaybeEntry.zone, .sideboard)
-        XCTAssertNil(movedMaybeEntry.categoryID)
-        XCTAssertEqual(entries.map(\.zone), [.mainboard, .sideboard, .sideboard])
-        XCTAssertEqual(entries.map(\.quantity), [4, 1, 3])
-        XCTAssertEqual(try database.cardCollection(id: list.id)?.entryCount, 8)
+        XCTAssertEqual(movedEntry.zone, .maybeboard)
+        XCTAssertNil(movedEntry.categoryID)
+        XCTAssertEqual(entries.reduce(0) { $0 + $1.quantity }, 6)
+        XCTAssertEqual(try database.cardCollection(id: list.id)?.entryCount, 6)
     }
 
-    func testSettingCommanderRulesetNormalizesSideboardIntoMainboardAndValidation() throws {
+    func testSwitchingCommanderDeckToCollectionNormalizesCommanderZoneAndValidation() throws {
         let database = try CardDatabase(storage: .inMemory)
         let commander = preferredTestCard(
             id: "commander-print",
@@ -2050,34 +2048,53 @@ final class CardDatabaseTests: XCTestCase {
             legalities: ["commander": "legal"],
             typeLine: "Basic Land"
         )
-        let sideboardCard = preferredTestCard(
-            id: "side-print",
-            oracleID: "side-oracle",
-            name: "Sideboard Spell",
-            legalities: ["commander": "legal"]
-        )
-        try database.replaceAllCards([commander, forest, sideboardCard])
+        try database.replaceAllCards([commander, forest])
 
-        let list = try database.createCardCollection(named: "Commander")
-        try database.setCardCollectionRuleset(id: list.id, ruleset: .modern)
+        let list = try database.createCardCollection(named: "Deck", ruleset: .commander)
         let mainCategory = try database.createCardCollectionCategory(inList: list.id, named: "Core")
-        let sideCategory = try database.createCardCollectionCategory(inList: list.id, zone: .sideboard, named: "Core")
-        try database.appendCard(forest.id, toList: list.id, categoryID: mainCategory.id, quantity: 98)
-        try database.appendCard(sideboardCard.id, toList: list.id, categoryID: sideCategory.id)
-
-        let updatedList = try database.setCardCollectionRuleset(id: list.id, ruleset: .commander)
+        try database.appendCard(forest.id, toList: list.id, categoryID: mainCategory.id, quantity: 99)
         try database.appendCard(commander.id, toList: list.id, zone: .commander)
-        let categories = try database.cardCollectionCategories(forListID: list.id)
-        let entries = try database.cardCollectionEntries(forListID: list.id)
-        let warningIDs = Set(CardCollectionRulesetValidator.warnings(for: updatedList, entries: entries).map(\.id))
 
-        XCTAssertEqual(updatedList.ruleset, .commander)
-        XCTAssertEqual(categories.map(\.name), ["Core"])
+        // A 100-card Commander deck (99 forests + commander) reports no size warning.
+        let commanderEntries = try database.cardCollectionEntries(forListID: list.id)
+        let commanderWarnings = Set(
+            CardCollectionRulesetValidator.warnings(for: list, entries: commanderEntries).map(\.id)
+        )
+        XCTAssertFalse(commanderWarnings.contains("commander-size"))
+        XCTAssertEqual(Set(commanderEntries.map(\.zone)), [.commander, .mainboard])
+
+        // Turning the deck back into a plain Collection rehomes the commander-zone card.
+        let updatedList = try database.setCardCollectionRuleset(id: list.id, ruleset: .none)
+        let entries = try database.cardCollectionEntries(forListID: list.id)
+        let categories = try database.cardCollectionCategories(forListID: list.id)
+
+        XCTAssertEqual(updatedList.ruleset, .none)
         XCTAssertEqual(categories.map(\.zone), [.mainboard])
-        XCTAssertEqual(categories.map(\.entryCount), [99])
-        XCTAssertEqual(entries.map(\.zone), [.commander, .mainboard, .mainboard])
+        XCTAssertEqual(Set(entries.map(\.zone)), [.mainboard])
         XCTAssertEqual(entries.reduce(0) { $0 + $1.quantity }, 100)
-        XCTAssertFalse(warningIDs.contains("commander-size"))
+    }
+
+    func testMigrationCoercesRetiredRulesetsAndRehomesSideboardEntries() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        let card = preferredTestCard(id: "c1", oracleID: "oracle-c1", name: "Card One")
+        try database.replaceAllCards([card])
+        let list = try database.createCardCollection(named: "Old Modern Deck")
+        let entry = try database.appendCard(card.id, toList: list.id)
+
+        // Simulate a pre-1.6 deck persisted as a retired constructed format with a
+        // sideboard entry — state that today's API can no longer produce.
+        try database.database.execute("UPDATE card_lists SET ruleset = 'modern' WHERE id = '\(list.id)'")
+        try database.database.execute("UPDATE card_list_entries SET zone = 'sideboard' WHERE id = '\(entry.id)'")
+
+        try database.migrate()
+
+        XCTAssertEqual(try database.cardCollection(id: list.id)?.ruleset, CardCollectionRuleset.none)
+        XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.zone), [.mainboard])
+
+        // Idempotent: a second pass leaves the healed state untouched.
+        try database.migrate()
+        XCTAssertEqual(try database.cardCollection(id: list.id)?.ruleset, CardCollectionRuleset.none)
+        XCTAssertEqual(try database.cardCollectionEntries(forListID: list.id).map(\.zone), [.mainboard])
     }
 
     private func names(

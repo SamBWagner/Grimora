@@ -20,8 +20,6 @@ public enum CardCollectionRulesetValidator {
             return []
         case .commander:
             return commanderWarnings(entries: entries)
-        case .standard, .pioneer, .modern, .legacy, .vintage, .pauper:
-            return constructedWarnings(ruleset: list.ruleset, entries: entries)
         }
     }
 
@@ -47,34 +45,6 @@ public enum CardCollectionRulesetValidator {
             warningIDPrefix: "commander-singleton",
             message: { name, quantity in
                 "Commander allows only 1 copy of \(name); this collection has \(quantity)."
-            }
-        ))
-
-        return warnings
-    }
-
-    private static func constructedWarnings(
-        ruleset: CardCollectionRuleset,
-        entries: [CardCollectionEntryRecord]
-    ) -> [CardCollectionRulesetWarning] {
-        var warnings: [CardCollectionRulesetWarning] = []
-        let mainboardQuantity = quantity(in: entries, zones: [.mainboard])
-        let sideboardQuantity = quantity(in: entries, zones: [.sideboard])
-
-        if mainboardQuantity < 60 {
-            warnings.append(.init(id: "\(ruleset.rawValue)-mainboard-size", message: "\(ruleset.title) decks need at least 60 mainboard cards."))
-        }
-        if sideboardQuantity > 15 {
-            warnings.append(.init(id: "\(ruleset.rawValue)-sideboard-size", message: "\(ruleset.title) sideboards can contain at most 15 cards."))
-        }
-
-        warnings.append(contentsOf: legalityWarnings(ruleset: ruleset, entries: entries))
-        warnings.append(contentsOf: copyLimitWarnings(
-            entries: entries.filter { [.mainboard, .sideboard].contains($0.zone) },
-            maximumCopies: 4,
-            warningIDPrefix: "\(ruleset.rawValue)-copy-limit",
-            message: { name, quantity in
-                "\(ruleset.title) allows at most 4 copies of \(name); this collection has \(quantity)."
             }
         ))
 

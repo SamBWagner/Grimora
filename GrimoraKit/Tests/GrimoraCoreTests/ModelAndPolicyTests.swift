@@ -16,13 +16,13 @@ final class ModelAndPolicyTests: XCTestCase {
     }
 
     func testCardCollectionRulesetsExposeAllowedZonesAndNormalizeInvalidZones() {
+        XCTAssertEqual(CardCollectionRuleset.allCases, [.none, .commander])
         XCTAssertEqual(CardCollectionRuleset.commander.allowedZones, [.commander, .mainboard, .maybeboard])
-        XCTAssertEqual(CardCollectionRuleset.modern.allowedZones, [.mainboard, .sideboard, .maybeboard])
         XCTAssertEqual(CardCollectionRuleset.none.allowedZones, [.mainboard, .maybeboard])
 
         XCTAssertEqual(CardCollectionRuleset.commander.normalizedZone(.sideboard), .mainboard)
-        XCTAssertEqual(CardCollectionRuleset.modern.normalizedZone(.commander), .mainboard)
         XCTAssertEqual(CardCollectionRuleset.none.normalizedZone(.sideboard), .mainboard)
+        XCTAssertEqual(CardCollectionRuleset.none.normalizedZone(.commander), .mainboard)
         XCTAssertEqual(CardCollectionRuleset.commander.normalizedZone(.maybeboard), .maybeboard)
     }
 
