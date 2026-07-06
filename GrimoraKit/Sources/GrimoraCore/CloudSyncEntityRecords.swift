@@ -203,6 +203,9 @@ public enum CloudSyncEntityCodec {
     }.map { entry in
       var entry = entry
       entry.card = nil
+      // Drop any secondary tags whose category didn't survive the merge, mirroring the
+      // primary-category validity check above.
+      entry.secondaryCategoryIDs = entry.secondaryCategoryIDs.filter { categoryIDs.contains($0) }
       return entry
     }
 
@@ -366,6 +369,7 @@ public enum CloudSyncEntityCodec {
       canonicalEntry.listID = favouritesListID
       canonicalEntry.zone = .mainboard
       canonicalEntry.categoryID = nil
+      canonicalEntry.secondaryCategoryIDs = []
       canonicalEntry.quantity = 1
       canonicalEntry.card = nil
       favouriteEntriesByCardID[entry.cardID] = canonicalEntry

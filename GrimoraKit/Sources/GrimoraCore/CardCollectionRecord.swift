@@ -202,7 +202,12 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
     public var id: String
     public var listID: String
     public var zone: CardCollectionZone
+    /// The card's primary category — the one that decides which section it appears under.
     public var categoryID: String?
+    /// Extra categories this card is tagged with, beyond its primary `categoryID`. These
+    /// are labels used for sorting/organizing; they do not create their own sections and
+    /// must belong to the same zone as the entry.
+    public var secondaryCategoryIDs: [String]
     public var cardID: String
     public var position: Int
     public var quantity: Int
@@ -218,6 +223,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         listID: String,
         zone: CardCollectionZone = .mainboard,
         categoryID: String? = nil,
+        secondaryCategoryIDs: [String] = [],
         cardID: String,
         position: Int,
         quantity: Int = 1,
@@ -230,6 +236,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         self.listID = listID
         self.zone = zone
         self.categoryID = categoryID
+        self.secondaryCategoryIDs = secondaryCategoryIDs
         self.cardID = cardID
         self.position = position
         self.quantity = quantity
@@ -244,6 +251,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         case listID
         case zone
         case categoryID
+        case secondaryCategoryIDs
         case cardID
         case position
         case quantity
@@ -259,6 +267,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         listID = try container.decode(String.self, forKey: .listID)
         zone = try container.decodeIfPresent(CardCollectionZone.self, forKey: .zone) ?? .mainboard
         categoryID = try container.decodeIfPresent(String.self, forKey: .categoryID)
+        secondaryCategoryIDs = try container.decodeIfPresent([String].self, forKey: .secondaryCategoryIDs) ?? []
         cardID = try container.decode(String.self, forKey: .cardID)
         position = try container.decode(Int.self, forKey: .position)
         quantity = max(1, try container.decodeIfPresent(Int.self, forKey: .quantity) ?? 1)
@@ -274,6 +283,9 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         try container.encode(listID, forKey: .listID)
         try container.encode(zone, forKey: .zone)
         try container.encodeIfPresent(categoryID, forKey: .categoryID)
+        if !secondaryCategoryIDs.isEmpty {
+            try container.encode(secondaryCategoryIDs, forKey: .secondaryCategoryIDs)
+        }
         try container.encode(cardID, forKey: .cardID)
         try container.encode(position, forKey: .position)
         try container.encode(quantity, forKey: .quantity)

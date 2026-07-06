@@ -616,7 +616,7 @@ extension GrimoraAppModel {
           if try database.card(id: entry.cardID) == nil {
             missingCardIDs.append(entry.cardID)
           }
-          try database.appendCard(
+          let appended = try database.appendCard(
             entry.cardID,
             toList: list.id,
             zone: entry.zone,
@@ -624,6 +624,11 @@ extension GrimoraAppModel {
             quantity: entry.quantity,
             enforceRulesetLimits: false
           )
+          // Re-apply any secondary-category tags, remapping the archive's category IDs to
+          // the freshly created ones. Same-zone/list validation is enforced by the DB call.
+          for secondaryID in entry.secondaryCategoryIDs.compactMap({ categoryIDMap[$0] }) {
+            try? database.addSecondaryCategory(entryID: appended.id, categoryID: secondaryID)
+          }
         }
 
         try database.updateCardCollectionDescription(
@@ -1252,6 +1257,247 @@ extension GrimoraAppModel {
     }
   }
 
+  // MARK: - Commander auto-categorize offer
+
+  private static let commanderAutoCategorizeHandledKey = "grimora.commander-auto-categorize-handled"
+
+  private var commanderAutoCategorizeHandledIDs: Set<String> {
+    Set(UserDefaults.standard.stringArray(forKey: Self.commanderAutoCategorizeHandledKey) ?? [])
+  }
+
+  /// Records that a deck's auto-categorize offer has been resolved (accepted or dismissed) so
+  /// it's never shown for that deck again.
+  private func markCommanderAutoCategorizeHandled(listID: CardCollectionRecord.ID) {
+    var handled = commanderAutoCategorizeHandledIDs
+    handled.insert(listID)
+    UserDefaults.standard.set(Array(handled), forKey: Self.commanderAutoCategorizeHandledKey)
+  }
+
+  /// After a Commander deck finishes loading, offer to sort it by type — but only once per
+  /// deck, and only when it's a Commander deck that still has uncategorized cards to sort.
+  func offerCommanderAutoCategorizeIfNeeded() {
+    guard let list = selectedCollection,
+      list.ruleset == .commander,
+      selectedCollectionCategories.isEmpty,
+      !commanderAutoCategorizeHandledIDs.contains(list.id),
+      hasReorganizableEntries
+    else {
+      return
+    }
+
+    let cardCount = selectedCollectionEntries.reduce(0) { partial, entry in
+      entry.zone == .mainboard ? partial + entry.quantity : partial
+    }
+    guard cardCount > 0 else {
+      return
+    }
+    pendingCommanderAutoCategorize = PendingCommanderAutoCategorize(
+      listID: list.id,
+      listName: list.name,
+      cardCount: cardCount
+    )
+  }
+
+  /// Accepts the auto-categorize offer: remembers the deck and reorganizes it by type.
+  public func confirmCommanderAutoCategorize() {
+    guard let pending = pendingCommanderAutoCategorize else {
+      return
+    }
+    pendingCommanderAutoCategorize = nil
+    markCommanderAutoCategorizeHandled(listID: pending.listID)
+    reorganizeCollectionByType(listID: pending.listID)
+  }
+
+  /// Dismisses the auto-categorize offer and remembers the deck so it isn't offered again.
+  public func dismissCommanderAutoCategorize() {
+    guard let pending = pendingCommanderAutoCategorize else {
+      return
+    }
+    pendingCommanderAutoCategorize = nil
+    markCommanderAutoCategorizeHandled(listID: pending.listID)
+  }
+
+  /// Whether the selected collection has any mainboard card that "Reorganize by Type" could
+  /// file — used to enable/disable the action.
+  public var hasReorganizableEntries: Bool {
+    selectedCollectionEntries.contains { entry in
+      entry.zone == .mainboard && entry.card.flatMap(MTGCardTypeCategory.primaryType(for:)) != nil
+    }
+  }
+
+  /// Files every mainboard card into a category named for its primary card type
+  /// (Creatures, Instants, Sorceries, …), creating those categories as needed and reusing
+  /// any that already match by name. Only the primary category changes — secondary tags,
+  /// the commander, and the maybeboard are left untouched. One undoable step.
+  public func reorganizeCollectionByType(listID: CardCollectionRecord.ID) {
+    let zone: CardCollectionZone = .mainboard
+    do {
+      let entries = try database.cardCollectionEntries(forListID: listID).filter { $0.zone == zone }
+      var entryTypes: [(entryID: CardCollectionEntryRecord.ID, type: String)] = []
+      var neededTypes: Set<String> = []
+      for entry in entries {
+        guard let card = entry.card, let type = MTGCardTypeCategory.primaryType(for: card) else {
+          continue
+        }
+        entryTypes.append((entry.id, type))
+        neededTypes.insert(type)
+      }
+
+      guard !entryTypes.isEmpty else {
+        statusMessage = "No cards to sort by type."
+        return
+      }
+
+      try performListMutation {
+        let existingCategories = try database.cardCollectionCategories(forListID: listID)
+          .filter { $0.zone == zone }
+        var categoryIDByName = Dictionary(
+          existingCategories.map { ($0.name, $0.id) },
+          uniquingKeysWith: { first, _ in first }
+        )
+
+        // Create categories in canonical order (Creatures → … → Lands) so the deck reads
+        // top-to-bottom in a familiar order; reuse any that already exist by name.
+        var categoryIDByType: [String: CardCollectionCategoryRecord.ID] = [:]
+        let orderedTypes = neededTypes.sorted {
+          MTGCardTypeCategory.canonicalIndex(forType: $0) < MTGCardTypeCategory.canonicalIndex(forType: $1)
+        }
+        for type in orderedTypes {
+          let name = MTGCardTypeCategory.categoryName(forType: type)
+          if let existingID = categoryIDByName[name] {
+            categoryIDByType[type] = existingID
+          } else {
+            let created = try database.createCardCollectionCategory(inList: listID, zone: zone, named: name)
+            categoryIDByType[type] = created.id
+            categoryIDByName[name] = created.id
+          }
+        }
+
+        for item in entryTypes {
+          if let categoryID = categoryIDByType[item.type] {
+            try database.setCardCollectionEntryPrimaryCategory(id: item.entryID, categoryID: categoryID)
+          }
+        }
+      }
+
+      reloadCardCollections(selecting: selectedCollectionID)
+      let cardNoun = entryTypes.count == 1 ? "card" : "cards"
+      let categoryNoun = neededTypes.count == 1 ? "category" : "categories"
+      statusMessage =
+        "Sorted \(formatted(entryTypes.count)) \(cardNoun) into \(formatted(neededTypes.count)) \(categoryNoun)."
+    } catch {
+      statusMessage = "Collection update failed."
+    }
+  }
+
+  /// Adds a secondary-category tag to one or more entries. Secondary tags don't change
+  /// which section a card appears under (that's the primary category) — they're labels for
+  /// organizing and filtering. The category must be in the entries' zone.
+  public func addSecondaryCategory(
+    entryIDs: [CardCollectionEntryRecord.ID],
+    categoryID: CardCollectionCategoryRecord.ID
+  ) {
+    let uniqueIDs = uniqueEntryIDs(entryIDs)
+    guard !uniqueIDs.isEmpty else {
+      return
+    }
+
+    do {
+      try performListMutation {
+        for id in uniqueIDs {
+          try database.addSecondaryCategory(entryID: id, categoryID: categoryID)
+        }
+      }
+      reloadCardCollections(selecting: selectedCollectionID)
+      let subject = uniqueIDs.count == 1 ? "card" : "\(formatted(uniqueIDs.count)) cards"
+      if let name = selectedCollectionCategories.first(where: { $0.id == categoryID })?.name {
+        statusMessage = "Tagged \(subject) with \(name)."
+      } else {
+        statusMessage = "Updated tags."
+      }
+    } catch CardCollectionDatabaseError.categoryNotFound {
+      statusMessage = "That category is in a different zone."
+    } catch {
+      statusMessage = "Category update failed."
+    }
+  }
+
+  /// Removes a secondary-category tag from one or more entries.
+  public func removeSecondaryCategory(
+    entryIDs: [CardCollectionEntryRecord.ID],
+    categoryID: CardCollectionCategoryRecord.ID
+  ) {
+    let uniqueIDs = uniqueEntryIDs(entryIDs)
+    guard !uniqueIDs.isEmpty else {
+      return
+    }
+
+    do {
+      try performListMutation {
+        for id in uniqueIDs {
+          try database.removeSecondaryCategory(entryID: id, categoryID: categoryID)
+        }
+      }
+      reloadCardCollections(selecting: selectedCollectionID)
+      let subject = uniqueIDs.count == 1 ? "card" : "\(formatted(uniqueIDs.count)) cards"
+      if let name = selectedCollectionCategories.first(where: { $0.id == categoryID })?.name {
+        statusMessage = "Removed \(name) tag from \(subject)."
+      } else {
+        statusMessage = "Updated tags."
+      }
+    } catch {
+      statusMessage = "Category update failed."
+    }
+  }
+
+  /// Toggles a single entry's secondary tag, for the card menu's "Also in…" checkmarks.
+  public func toggleSecondaryCategory(
+    entryID: CardCollectionEntryRecord.ID,
+    categoryID: CardCollectionCategoryRecord.ID
+  ) {
+    let isTagged =
+      selectedCollectionEntries.first { $0.id == entryID }?.secondaryCategoryIDs.contains(categoryID) ?? false
+    if isTagged {
+      removeSecondaryCategory(entryIDs: [entryID], categoryID: categoryID)
+    } else {
+      addSecondaryCategory(entryIDs: [entryID], categoryID: categoryID)
+    }
+  }
+
+  /// Promotes a category to be an entry's primary (the one that decides its section). The
+  /// previous primary, if any, is demoted to a secondary tag so the card keeps that
+  /// association. Passing `nil` clears the primary (card becomes Uncategorized).
+  public func makePrimaryCategory(
+    entryID: CardCollectionEntryRecord.ID,
+    categoryID: CardCollectionCategoryRecord.ID?
+  ) {
+    guard let entry = selectedCollectionEntries.first(where: { $0.id == entryID }) else {
+      return
+    }
+    let previousPrimary = entry.categoryID
+    guard previousPrimary != categoryID else {
+      return
+    }
+
+    do {
+      try performListMutation {
+        try database.setCardCollectionEntryPrimaryCategory(id: entryID, categoryID: categoryID)
+        // Keep the old grouping as a secondary tag (now that the primary differs from it).
+        if let previousPrimary {
+          try? database.addSecondaryCategory(entryID: entryID, categoryID: previousPrimary)
+        }
+      }
+      reloadCardCollections(selecting: selectedCollectionID)
+      if let categoryID, let name = selectedCollectionCategories.first(where: { $0.id == categoryID })?.name {
+        statusMessage = "Made \(name) the primary category."
+      } else {
+        statusMessage = "Cleared primary category."
+      }
+    } catch {
+      statusMessage = "Category update failed."
+    }
+  }
+
   public func moveCardCollectionEntry(
     id: CardCollectionEntryRecord.ID,
     toZone zone: CardCollectionZone
@@ -1336,6 +1582,27 @@ extension GrimoraAppModel {
     cardCollections.first(where: { Self.isCanonicalFavouritesListName($0.name) })?.name
       ?? cardCollections.first(where: { Self.isFavouritesListName($0.name) })?.name
       ?? fallback
+  }
+}
+
+/// A one-time prompt offering to sort a freshly-opened, uncategorized Commander deck into
+/// categories by card type. Held on the app model so the root view can present it.
+public struct PendingCommanderAutoCategorize: Identifiable, Equatable, Sendable {
+  public var id = UUID()
+  public var listID: CardCollectionRecord.ID
+  public var listName: String
+  public var cardCount: Int
+
+  public init(
+    id: UUID = UUID(),
+    listID: CardCollectionRecord.ID,
+    listName: String,
+    cardCount: Int
+  ) {
+    self.id = id
+    self.listID = listID
+    self.listName = listName
+    self.cardCount = cardCount
   }
 }
 

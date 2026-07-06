@@ -230,7 +230,7 @@ public struct CardCollectionDashboardStats: Equatable, Sendable {
         for part in typeLine.components(separatedBy: "//") {
             let frontMatter = part.components(separatedBy: "\u{2014}").first ?? part
             for word in frontMatter.split(whereSeparator: { !$0.isLetter }) {
-                if let type = recognizedTypeByLowercase[String(word).lowercased()] {
+                if let type = MTGCardTypeCategory.recognizedTypeByLowercase[String(word).lowercased()] {
                     types.insert(type)
                 }
             }
@@ -252,25 +252,4 @@ public struct CardCollectionDashboardStats: Equatable, Sendable {
         "R": .red,
         "G": .green,
     ]
-
-    private static let recognizedTypeByLowercase: [String: String] = {
-        let types = [
-            "Artifact",
-            "Battle",
-            "Conspiracy",
-            "Creature",
-            "Dungeon",
-            "Enchantment",
-            "Instant",
-            "Kindred",
-            "Land",
-            "Phenomenon",
-            "Plane",
-            "Planeswalker",
-            "Scheme",
-            "Sorcery",
-            "Vanguard",
-        ]
-        return Dictionary(uniqueKeysWithValues: types.map { ($0.lowercased(), $0) })
-    }()
 }

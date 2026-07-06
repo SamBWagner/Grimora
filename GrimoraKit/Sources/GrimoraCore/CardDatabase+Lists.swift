@@ -111,7 +111,7 @@ extension CardDatabase {
     let statement = try database.prepare(
       """
       SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
-          COALESCE(sync_updated_at, updated_at), selected_finish
+          COALESCE(sync_updated_at, updated_at), selected_finish, secondary_category_ids
       FROM card_list_entries
       WHERE 1 = 1
       \(searchClause)
@@ -168,7 +168,7 @@ extension CardDatabase {
     let statement = try database.prepare(
       """
       SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
-          COALESCE(sync_updated_at, updated_at), selected_finish
+          COALESCE(sync_updated_at, updated_at), selected_finish, secondary_category_ids
       FROM card_list_entries
       WHERE list_id = ?
       \(searchClause)
@@ -280,8 +280,8 @@ extension CardDatabase {
       """
       INSERT INTO card_list_entries (
           id, list_id, zone, category_id, card_id, position, quantity, created_at, updated_at,
-          selected_finish
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          selected_finish, secondary_category_ids
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """)
     for entry in snapshot.entries {
       try entryInsert.bind(entry.id, at: 1)
@@ -294,6 +294,7 @@ extension CardDatabase {
       try entryInsert.bind(Self.formattedListDate(entry.createdAt), at: 8)
       try entryInsert.bind(Self.formattedListDate(entry.updatedAt), at: 9)
       try entryInsert.bind(entry.selectedFinish?.rawValue, at: 10)
+      try entryInsert.bind(Self.serializedList(entry.secondaryCategoryIDs), at: 11)
       try entryInsert.step()
       try entryInsert.reset()
     }
@@ -735,6 +736,10 @@ extension CardDatabase {
         try uncategorizeEntries.bind(id, at: 1)
         try uncategorizeEntries.step()
 
+        // Also drop the deleted category from any entry that carried it as a secondary tag.
+        // Secondary IDs are stored delimited as `|id1|id2|`, so `%|id|%` matches any position.
+        try stripSecondaryCategoryUnlocked(id, fromListID: category.listID)
+
         let delete = try database.prepare("DELETE FROM card_list_categories WHERE id = ?")
         try delete.bind(id, at: 1)
         try delete.step()
@@ -834,6 +839,19 @@ extension CardDatabase {
           let delete = try database.prepare("DELETE FROM card_list_entries WHERE id = ?")
           try delete.bind(entry.id, at: 1)
           try delete.step()
+        } else if destinationZone != entry.zone {
+          // The primary category move also crossed zones, so the old-zone secondary tags
+          // no longer apply — clear them alongside the zone/category update.
+          let statement = try database.prepare(
+            """
+            UPDATE card_list_entries
+            SET zone = ?, category_id = ?, secondary_category_ids = ''
+            WHERE id = ?
+            """)
+          try statement.bind(destinationZone.rawValue, at: 1)
+          try statement.bind(categoryID, at: 2)
+          try statement.bind(id, at: 3)
+          try statement.step()
         } else {
           let statement = try database.prepare(
             """
@@ -862,6 +880,161 @@ extension CardDatabase {
       }
       moved.card = try card(id: moved.cardID)
       return moved
+    }
+  }
+
+  /// Sets an entry's primary category in place — no zone change and no duplicate-merge.
+  /// The bulk "Reorganize by Type" pass uses this so re-filing cards can't collapse rows.
+  /// The category must belong to the entry's list and zone; if the new primary was one of
+  /// the entry's secondary tags, it's removed from there (a card is filed under a category
+  /// once).
+  @discardableResult
+  public func setCardCollectionEntryPrimaryCategory(
+    id: String,
+    categoryID: String?,
+    now: Date = Date()
+  ) throws -> CardCollectionEntryRecord {
+    try withDatabaseLock {
+      guard let entry = try cardCollectionEntryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.entryNotFound
+      }
+      if let categoryID {
+        guard let category = try cardCollectionCategoryUnlocked(id: categoryID),
+          category.listID == entry.listID,
+          category.zone == entry.zone
+        else {
+          throw CardCollectionDatabaseError.categoryNotFound
+        }
+      }
+
+      let remainingSecondaries = categoryID
+        .map { primary in entry.secondaryCategoryIDs.filter { $0 != primary } }
+        ?? entry.secondaryCategoryIDs
+
+      let date = Self.formattedListDate(now)
+      try database.transaction {
+        let update = try database.prepare(
+          """
+          UPDATE card_list_entries
+          SET category_id = ?, secondary_category_ids = ?
+          WHERE id = ?
+          """)
+        try update.bind(categoryID, at: 1)
+        try update.bind(Self.serializedList(remainingSecondaries), at: 2)
+        try update.bind(id, at: 3)
+        try update.step()
+        try touchCardCollectionUnlocked(id: entry.listID, date: date)
+      }
+
+      guard var updated = try cardCollectionEntryUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.entryNotFound
+      }
+      updated.card = try card(id: updated.cardID)
+      return updated
+    }
+  }
+
+  /// Tags an entry with an extra (secondary) category. The category must belong to the
+  /// entry's list and zone; adding the primary category or an existing tag is a no-op.
+  @discardableResult
+  public func addSecondaryCategory(
+    entryID: String,
+    categoryID: String,
+    now: Date = Date()
+  ) throws -> CardCollectionEntryRecord {
+    try withDatabaseLock {
+      guard let entry = try cardCollectionEntryUnlocked(id: entryID) else {
+        throw CardCollectionDatabaseError.entryNotFound
+      }
+      guard let category = try cardCollectionCategoryUnlocked(id: categoryID),
+        category.listID == entry.listID,
+        category.zone == entry.zone
+      else {
+        throw CardCollectionDatabaseError.categoryNotFound
+      }
+
+      var secondaries = entry.secondaryCategoryIDs
+      if entry.categoryID != categoryID, !secondaries.contains(categoryID) {
+        secondaries.append(categoryID)
+      }
+      return try writeSecondaryCategoriesUnlocked(
+        entryID: entryID,
+        listID: entry.listID,
+        secondaries: secondaries,
+        now: now
+      )
+    }
+  }
+
+  /// Removes a secondary-category tag from an entry (a no-op if it wasn't tagged).
+  @discardableResult
+  public func removeSecondaryCategory(
+    entryID: String,
+    categoryID: String,
+    now: Date = Date()
+  ) throws -> CardCollectionEntryRecord {
+    try withDatabaseLock {
+      guard let entry = try cardCollectionEntryUnlocked(id: entryID) else {
+        throw CardCollectionDatabaseError.entryNotFound
+      }
+      let secondaries = entry.secondaryCategoryIDs.filter { $0 != categoryID }
+      return try writeSecondaryCategoriesUnlocked(
+        entryID: entryID,
+        listID: entry.listID,
+        secondaries: secondaries,
+        now: now
+      )
+    }
+  }
+
+  private func writeSecondaryCategoriesUnlocked(
+    entryID: String,
+    listID: String,
+    secondaries: [String],
+    now: Date
+  ) throws -> CardCollectionEntryRecord {
+    let date = Self.formattedListDate(now)
+    try database.transaction {
+      let update = try database.prepare(
+        "UPDATE card_list_entries SET secondary_category_ids = ? WHERE id = ?")
+      try update.bind(Self.serializedList(secondaries), at: 1)
+      try update.bind(entryID, at: 2)
+      try update.step()
+      try touchCardCollectionUnlocked(id: listID, date: date)
+    }
+    guard var updated = try cardCollectionEntryUnlocked(id: entryID) else {
+      throw CardCollectionDatabaseError.entryNotFound
+    }
+    updated.card = try card(id: updated.cardID)
+    return updated
+  }
+
+  /// Removes `categoryID` from every entry's secondary-tag list in `listID`. Called when a
+  /// category is deleted. Must run inside an open transaction. Secondary IDs are stored as
+  /// `|id1|id2|`, so `%|id|%` finds any entry that references the category.
+  private func stripSecondaryCategoryUnlocked(_ categoryID: String, fromListID listID: String) throws {
+    let select = try database.prepare(
+      """
+      SELECT id, secondary_category_ids
+      FROM card_list_entries
+      WHERE list_id = ? AND secondary_category_ids LIKE ?
+      """)
+    try select.bind(listID, at: 1)
+    try select.bind("%|\(categoryID)|%", at: 2)
+    var updates: [(id: String, remaining: [String])] = []
+    while try select.step() {
+      guard let entryID = select.string(at: 0) else { continue }
+      let remaining = Self.deserializedList(select.string(at: 1)).filter { $0 != categoryID }
+      updates.append((entryID, remaining))
+    }
+    guard !updates.isEmpty else { return }
+    let update = try database.prepare(
+      "UPDATE card_list_entries SET secondary_category_ids = ? WHERE id = ?")
+    for change in updates {
+      try update.bind(Self.serializedList(change.remaining), at: 1)
+      try update.bind(change.id, at: 2)
+      try update.step()
+      try update.reset()
     }
   }
 
@@ -903,10 +1076,11 @@ extension CardDatabase {
           try delete.bind(entry.id, at: 1)
           try delete.step()
         } else {
+          // Zone changed: the entry's secondary tags belonged to the old zone, so drop them.
           let update = try database.prepare(
             """
             UPDATE card_list_entries
-            SET zone = ?, category_id = NULL
+            SET zone = ?, category_id = NULL, secondary_category_ids = ''
             WHERE id = ?
             """)
           try update.bind(zone.rawValue, at: 1)

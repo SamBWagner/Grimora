@@ -172,6 +172,7 @@ public struct CardCollectionArchiveEntry: Codable, Equatable, Sendable {
     public var id: String
     public var zone: CardCollectionZone
     public var categoryID: String?
+    public var secondaryCategoryIDs: [String]
     public var cardID: String
     public var cardName: String?
     public var position: Int
@@ -182,6 +183,7 @@ public struct CardCollectionArchiveEntry: Codable, Equatable, Sendable {
         id: String,
         zone: CardCollectionZone = .mainboard,
         categoryID: String? = nil,
+        secondaryCategoryIDs: [String] = [],
         cardID: String,
         cardName: String? = nil,
         position: Int,
@@ -191,6 +193,7 @@ public struct CardCollectionArchiveEntry: Codable, Equatable, Sendable {
         self.id = id
         self.zone = zone
         self.categoryID = categoryID
+        self.secondaryCategoryIDs = secondaryCategoryIDs
         self.cardID = cardID
         self.cardName = cardName
         self.position = position
@@ -202,6 +205,7 @@ public struct CardCollectionArchiveEntry: Codable, Equatable, Sendable {
         case id
         case zone
         case categoryID
+        case secondaryCategoryIDs
         case cardID
         case cardName
         case position
@@ -214,6 +218,7 @@ public struct CardCollectionArchiveEntry: Codable, Equatable, Sendable {
         id = try container.decode(String.self, forKey: .id)
         zone = try container.decodeIfPresent(CardCollectionZone.self, forKey: .zone) ?? .mainboard
         categoryID = try container.decodeIfPresent(String.self, forKey: .categoryID)
+        secondaryCategoryIDs = try container.decodeIfPresent([String].self, forKey: .secondaryCategoryIDs) ?? []
         cardID = try container.decode(String.self, forKey: .cardID)
         cardName = try container.decodeIfPresent(String.self, forKey: .cardName)
         position = try container.decode(Int.self, forKey: .position)
@@ -226,6 +231,9 @@ public struct CardCollectionArchiveEntry: Codable, Equatable, Sendable {
         try container.encode(id, forKey: .id)
         try container.encode(zone, forKey: .zone)
         try container.encodeIfPresent(categoryID, forKey: .categoryID)
+        if !secondaryCategoryIDs.isEmpty {
+            try container.encode(secondaryCategoryIDs, forKey: .secondaryCategoryIDs)
+        }
         try container.encode(cardID, forKey: .cardID)
         try container.encodeIfPresent(cardName, forKey: .cardName)
         try container.encode(position, forKey: .position)
@@ -272,6 +280,7 @@ public enum CardCollectionArchiveCoder {
                     id: entry.id,
                     zone: entry.zone,
                     categoryID: entry.categoryID,
+                    secondaryCategoryIDs: entry.secondaryCategoryIDs,
                     cardID: entry.cardID,
                     cardName: entry.card?.name,
                     position: entry.position,

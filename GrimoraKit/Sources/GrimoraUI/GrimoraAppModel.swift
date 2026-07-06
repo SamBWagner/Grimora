@@ -71,6 +71,10 @@ public final class GrimoraAppModel {
   /// A duplicate add that the Commander singleton guard refused, held so the UI can offer an
   /// "Add Anyway" confirmation. Set by the add methods; cleared when the user confirms or cancels.
   public internal(set) var pendingDuplicateAdd: PendingDuplicateAdd?
+  /// A one-time offer to auto-organize a freshly-opened, uncategorized Commander deck by card
+  /// type. Set when such a deck loads; cleared when the user accepts or dismisses (either way
+  /// the deck is remembered so the offer never reappears).
+  public internal(set) var pendingCommanderAutoCategorize: PendingCommanderAutoCategorize?
   public internal(set) var libraryActivity: GrimoraLibraryActivity?
   /// Bumped whenever something (e.g. the Settings "Replay Tutorial" button) asks
   /// to replay onboarding; `GrimoraRootView` observes it and restarts the tour.

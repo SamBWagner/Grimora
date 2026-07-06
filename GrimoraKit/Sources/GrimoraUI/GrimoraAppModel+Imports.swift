@@ -449,6 +449,9 @@ extension GrimoraAppModel {
         return
       }
       self.publishSelectedListState(loaded, generation: generation, refreshesOverview: false)
+      // Only the open/navigation path offers to auto-categorize; mutation reloads use the
+      // synchronous `loadSelectedListState`, so editing a deck never re-triggers the prompt.
+      self.offerCommanderAutoCategorizeIfNeeded()
     }
   }
 

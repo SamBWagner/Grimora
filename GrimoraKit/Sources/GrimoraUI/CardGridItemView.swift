@@ -76,6 +76,11 @@ struct CardGridItemView: View {
                 selectionIndicator
                     .padding(11)
             }
+            .overlay(alignment: .topTrailing) {
+                secondaryCategoryBadge
+                    .padding(8)
+                    .allowsHitTesting(false)
+            }
             .contextMenu {
                 if let onEditQuantity {
                     Button {
@@ -341,6 +346,28 @@ struct CardGridItemView: View {
             onClick: handlePointerClick,
             onTouch: handleSelectionModeTap
         )
+    }
+
+    /// A small "tag ×N" badge marking cards that carry secondary-category tags, so grid users
+    /// get a signal that a card is filed under more than its primary category. Hidden on the
+    /// Scanned list (which suppresses category affordances) and when there are no tags.
+    @ViewBuilder
+    private var secondaryCategoryBadge: some View {
+        let count = hidesCategoryAndZone ? 0 : (categoryEntry?.secondaryCategoryIDs.count ?? 0)
+        if count > 0 {
+            HStack(spacing: 3) {
+                Image(systemName: "tag.fill")
+                    .font(.system(size: 9, weight: .bold))
+                Text(count.formatted())
+                    .font(.caption2.weight(.bold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(palette.accent.color.opacity(0.92), in: Capsule())
+            .accessibilityIdentifier("card-grid-item-\(categoryEntry?.id ?? card.id)-secondary-count")
+            .accessibilityLabel("In \(count.formatted()) extra \(count == 1 ? "category" : "categories")")
+        }
     }
 
     @ViewBuilder

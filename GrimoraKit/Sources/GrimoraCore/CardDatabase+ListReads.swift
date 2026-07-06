@@ -201,7 +201,7 @@ extension CardDatabase {
     let statement = try database.prepare(
       """
       SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
-          COALESCE(sync_updated_at, updated_at), selected_finish
+          COALESCE(sync_updated_at, updated_at), selected_finish, secondary_category_ids
       FROM card_list_entries
       WHERE id = ?
       LIMIT 1
@@ -218,7 +218,7 @@ extension CardDatabase {
     let statement = try database.prepare(
       """
       SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
-          COALESCE(sync_updated_at, updated_at), selected_finish
+          COALESCE(sync_updated_at, updated_at), selected_finish, secondary_category_ids
       FROM card_list_entries
       ORDER BY list_id ASC, zone ASC, position ASC, created_at ASC, id ASC
       """)
@@ -242,7 +242,7 @@ extension CardDatabase {
       statement = try database.prepare(
         """
         SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
-            COALESCE(sync_updated_at, updated_at), selected_finish
+            COALESCE(sync_updated_at, updated_at), selected_finish, secondary_category_ids
         FROM card_list_entries
         WHERE list_id = ? AND zone = ? AND category_id IS ? AND card_id = ? AND id != ?
         ORDER BY position ASC, created_at ASC, id ASC
@@ -257,7 +257,7 @@ extension CardDatabase {
       statement = try database.prepare(
         """
         SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
-            COALESCE(sync_updated_at, updated_at), selected_finish
+            COALESCE(sync_updated_at, updated_at), selected_finish, secondary_category_ids
         FROM card_list_entries
         WHERE list_id = ? AND zone = ? AND category_id IS ? AND card_id = ?
         ORDER BY position ASC, created_at ASC, id ASC
@@ -421,6 +421,7 @@ extension CardDatabase {
       listID: statement.string(at: 1) ?? "",
       zone: CardCollectionZone(rawValueOrDefault: statement.string(at: 2)),
       categoryID: statement.string(at: 3),
+      secondaryCategoryIDs: Self.deserializedList(statement.string(at: 10)),
       cardID: statement.string(at: 4) ?? "",
       position: statement.int(at: 5) ?? 0,
       quantity: max(1, statement.int(at: 6) ?? 1),

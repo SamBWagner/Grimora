@@ -51,6 +51,12 @@ struct CardCollectionMoveCategoryMenuContent: View {
             .disabled(isMoveDisabled(to: category.id))
             .accessibilityIdentifier("move-list-entry-\(entry.id)-category-\(category.name)")
         }
+
+        CardCollectionSecondaryCategoryMenuSection(
+            entry: entry,
+            categories: categories,
+            onChanged: onMoved
+        )
     }
 
     private func move(to categoryID: CardCollectionCategoryRecord.ID?) {
@@ -64,5 +70,51 @@ struct CardCollectionMoveCategoryMenuContent: View {
 
     private func isMoveDisabled(to categoryID: CardCollectionCategoryRecord.ID?) -> Bool {
         isDestinationDisabled?(categoryID) ?? (entry.categoryID == categoryID)
+    }
+}
+
+/// The "Also in…" portion of a card's category menu: toggle any number of secondary-category
+/// tags (same-zone categories other than the primary) and promote one to primary. Secondary
+/// tags don't move the card between sections — they're labels for organizing and filtering.
+struct CardCollectionSecondaryCategoryMenuSection: View {
+    @Environment(GrimoraAppModel.self) private var model
+
+    var entry: CardCollectionEntryRecord
+    var categories: [CardCollectionCategoryRecord]
+    var onChanged: () -> Void = {}
+
+    var body: some View {
+        let taggable = categories.filter { $0.zone == entry.zone && $0.id != entry.categoryID }
+        if !taggable.isEmpty {
+            Section("Also in") {
+                ForEach(taggable) { category in
+                    Button {
+                        model.toggleSecondaryCategory(entryID: entry.id, categoryID: category.id)
+                        onChanged()
+                    } label: {
+                        GrimoraMenuSelectionLabel(
+                            title: category.name,
+                            isSelected: entry.secondaryCategoryIDs.contains(category.id)
+                        )
+                    }
+                    .accessibilityIdentifier("tag-list-entry-\(entry.id)-category-\(category.name)")
+                }
+            }
+
+            let secondaryCategories = taggable.filter { entry.secondaryCategoryIDs.contains($0.id) }
+            if !secondaryCategories.isEmpty {
+                Menu("Make Primary") {
+                    ForEach(secondaryCategories) { category in
+                        Button {
+                            model.makePrimaryCategory(entryID: entry.id, categoryID: category.id)
+                            onChanged()
+                        } label: {
+                            Text(category.name)
+                        }
+                        .accessibilityIdentifier("make-primary-list-entry-\(entry.id)-category-\(category.name)")
+                    }
+                }
+            }
+        }
     }
 }

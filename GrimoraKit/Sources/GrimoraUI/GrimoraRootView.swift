@@ -107,6 +107,25 @@ public struct GrimoraRootView: View {
         } message: { _ in
             Text("Commander decks normally hold one copy of each card.")
         }
+        .confirmationDialog(
+            model.pendingCommanderAutoCategorize.map { "Sort \($0.listName) by card type?" } ?? "",
+            isPresented: Binding(
+                get: { model.pendingCommanderAutoCategorize != nil },
+                set: { if !$0 { model.dismissCommanderAutoCategorize() } }
+            ),
+            titleVisibility: .visible,
+            presenting: model.pendingCommanderAutoCategorize
+        ) { _ in
+            Button("Reorganize") {
+                model.confirmCommanderAutoCategorize()
+            }
+            .accessibilityIdentifier("commander-auto-categorize-confirm")
+            Button("Not Now", role: .cancel) {
+                model.dismissCommanderAutoCategorize()
+            }
+        } message: { pending in
+            Text("Grimora can group its \(pending.cardCount.formatted()) cards into categories like Creatures, Instants, and Lands.")
+        }
         .onAppear {
             if cloudSyncModePreference == .undecided, model.cloudSyncMode == .enabled {
                 cloudSyncModeRawValue = GrimoraCloudSyncMode.enabled.rawValue

@@ -478,6 +478,11 @@ extension CardDatabase {
       column: "selected_finish",
       definition: "selected_finish TEXT"
     )
+    try addColumnIfNeeded(
+      "card_list_entries",
+      column: "secondary_category_ids",
+      definition: "secondary_category_ids TEXT"
+    )
     try migrateCardValueMappingTablesIfNeeded()
 
     try database.execute(

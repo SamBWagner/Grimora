@@ -211,6 +211,14 @@ extension CardCollectionDetailView {
             }
 
             Section("Organize") {
+                Button {
+                    model.reorganizeCollectionByType(listID: selectedCollection.id)
+                } label: {
+                    Text("Reorganize by Type")
+                }
+                .disabled(!model.hasReorganizableEntries)
+                .accessibilityIdentifier("reorganize-list-by-type-button")
+
                 if model.selectedCollectionCategories.count > 1 {
                     Button {
                         if !isReorderingCategories {
@@ -449,6 +457,14 @@ extension CardCollectionDetailView {
         }
         .accessibilityIdentifier("create-list-category-button")
 
+        Button {
+            model.reorganizeCollectionByType(listID: selectedCollection.id)
+        } label: {
+            Text("Reorganize by Type")
+        }
+        .disabled(!model.hasReorganizableEntries)
+        .accessibilityIdentifier("reorganize-list-by-type-button")
+
         if model.selectedCollectionCategories.count > 1 {
             Button {
                 if !isReorderingCategories {
@@ -595,6 +611,14 @@ extension CardCollectionDetailView {
                 Text("New Category")
             }
             .accessibilityIdentifier("create-list-category-button")
+
+            Button {
+                model.reorganizeCollectionByType(listID: selectedCollection.id)
+            } label: {
+                Text("Reorganize by Type")
+            }
+            .disabled(!model.hasReorganizableEntries)
+            .accessibilityIdentifier("reorganize-list-by-type-button")
 
             if model.selectedCollectionCategories.count > 1 {
                 Button {

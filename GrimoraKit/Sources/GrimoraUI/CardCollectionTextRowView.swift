@@ -65,6 +65,19 @@ struct CardCollectionTextRowView: View {
                     .foregroundStyle(palette.secondaryText.color)
                     .lineLimit(1)
                     .truncationMode(.middle)
+
+                if !secondaryCategoryNames.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "tag")
+                            .font(.caption2)
+                        Text(secondaryCategoryNames.joined(separator: ", "))
+                            .font(.caption2.weight(.semibold))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    .foregroundStyle(palette.accent.color)
+                    .accessibilityIdentifier("list-entry-\(entry.id)-secondary-categories")
+                }
             }
 
             Spacer(minLength: 10)
@@ -216,6 +229,8 @@ struct CardCollectionTextRowView: View {
                     .disabled(isMoveDestinationDisabled(category.id))
                     .accessibilityIdentifier("move-list-entry-\(entry.id)-category-\(category.name)")
                 }
+
+                CardCollectionSecondaryCategoryMenuSection(entry: entry, categories: categories)
             } label: {
                 Text("Move to Category")
             }
@@ -247,6 +262,13 @@ struct CardCollectionTextRowView: View {
 
     private var primaryName: String {
         card?.name ?? entry.cardID
+    }
+
+    /// Names of the entry's secondary-category tags, in the categories' display order.
+    private var secondaryCategoryNames: [String] {
+        categories
+            .filter { entry.secondaryCategoryIDs.contains($0.id) }
+            .map(\.name)
     }
 
     /// The finish chip shown beside the name — the text row has no shimmer, so the badge is the
