@@ -70,9 +70,27 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
   }
 
   public func fetchRemoteState() async throws -> CloudRemoteState {
-    try await ensureZoneExists()
-    try await loadInitialRecordsIfNeeded()
+    do {
+      try await ensureZoneExists()
+    } catch {
+      logger.error("CloudSync ensureZoneExists failed: \(self.describe(error), privacy: .public)")
+      throw error
+    }
+    do {
+      try await loadInitialRecordsIfNeeded()
+    } catch {
+      logger.error("CloudSync fetchChanges failed: \(self.describe(error), privacy: .public)")
+      throw error
+    }
     return try remoteStateFromCache()
+  }
+
+  /// Describes an error with its underlying `CKError` code for diagnosis.
+  private func describe(_ error: Error) -> String {
+    if let ckError = error as? CKError {
+      return "CKError.\(ckError.code) (\(ckError.code.rawValue)): \(ckError.localizedDescription)"
+    }
+    return String(describing: error)
   }
 
   public func eventStream() async -> AsyncStream<CloudSyncTransportEvent> {
@@ -110,8 +128,14 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
     v4Identity.syncSchemaVersion = GrimoraCloudSyncConstants.currentSyncSchemaVersion
     v4Snapshot.libraryIdentity = v4Identity
 
+    // Only upload entity records that actually differ from what CloudKit already has, instead
+    // of re-sending the entire library on every sync. `cachedRecords` reflects the server state
+    // (populated by the preceding fetch and by prior successful sends); an entity whose
+    // updatedAt / deletedAt / sourceDeviceID all match the cached record is unchanged, so
+    // skipping it avoids the multi-thousand-record churn (and the conflicts it caused).
     let entities = try CloudSyncEntityCodec.records(from: v4Snapshot)
-    var records = try entities.map(record(from:))
+    let changedEntities = entities.filter { entityDiffersFromCache($0) }
+    var records = try changedEntities.map(record(from:))
     records.append(
       try legacyRecord(
         recordType: RecordType.legacyLibraryIdentity,
@@ -129,7 +153,42 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
       )
     )
 
+    logger.info(
+      "Uploading \(changedEntities.count, privacy: .public) of \(entities.count, privacy: .public) entity records (changes only)"
+    )
     try await send(records: records, deleting: [], using: syncEngine)
+  }
+
+  /// Whether an entity record differs from the copy CloudKit already holds. The known copy comes
+  /// from the persisted per-record archive (`restoredRecord`, written on every confirmed save and
+  /// fetch and durable across launches) or the in-session cache.
+  ///
+  /// Compares `updatedAt` (bumped on every local mutation) and deletion state — the signals of a
+  /// real content change. It deliberately does NOT compare `sourceDeviceID`: `records(from:)`
+  /// stamps every entity with the *current* device's id on re-encode, so comparing it would flag
+  /// every record that originated on another device (e.g. imported collections) as changed and
+  /// re-upload the whole library every sync.
+  ///
+  /// Safe against partial upload failures: a record CloudKit never confirmed is never
+  /// archived/cached, so it has no known copy here → counts as changed → re-uploaded. A record
+  /// with a genuine new local edit has a newer `updatedAt` than the archived copy → re-uploaded.
+  private func entityDiffersFromCache(_ entity: CloudSyncEntityRecord) -> Bool {
+    let recordType = recordType(for: entity.entityType)
+    let recordID = CKRecord.ID(recordName: recordName(for: entity), zoneID: zoneID)
+    let known =
+      (restoredRecord(recordType: recordType, recordID: recordID)
+      ?? lock.withLock { cachedRecords[recordID] })
+      .map {
+        CloudSyncUploadDiff.KnownRecord(
+          updatedAt: $0[Field.updatedAt] as? Date,
+          deletedAt: $0[Field.deletedAt] as? Date
+        )
+      }
+    return CloudSyncUploadDiff.needsUpload(
+      updatedAt: entity.updatedAt,
+      deletedAt: entity.deletedAt,
+      known: known
+    )
   }
 
   public func save(recoverySnapshots: [CloudSyncRecoverySnapshot]) async throws {
@@ -139,15 +198,26 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
     }
 
     let retained = CloudSyncRecoveryPolicy.retained(recoverySnapshots)
-    let records = try retained.map { snapshot in
-      try legacyRecord(
+    let retainedIDs = Set(
+      retained.map { CKRecord.ID(recordName: "recovery-\($0.id)", zoneID: zoneID) }
+    )
+    // Recovery snapshots are immutable once created, so only upload the ones CloudKit doesn't
+    // already hold instead of re-sending all retained copies (up to 200) on every sync.
+    let newRecords = try retained.compactMap { snapshot -> CKRecord? in
+      let recordID = CKRecord.ID(recordName: "recovery-\(snapshot.id)", zoneID: zoneID)
+      let alreadyOnServer =
+        restoredRecord(recordType: RecordType.recoveryRevision, recordID: recordID) != nil
+        || lock.withLock { cachedRecords[recordID] != nil }
+      guard !alreadyOnServer else {
+        return nil
+      }
+      return try legacyRecord(
         recordType: RecordType.recoveryRevision,
         recordName: "recovery-\(snapshot.id)",
         payload: snapshot,
         capturedAt: snapshot.createdAt
       )
     }
-    let retainedIDs = Set(records.map(\.recordID))
     let deletedIDs = lock.withLock {
       cachedRecords.values
         .filter {
@@ -156,7 +226,7 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
         }
         .map(\.recordID)
     }
-    try await send(records: records, deleting: deletedIDs, using: syncEngine)
+    try await send(records: newRecords, deleting: deletedIDs, using: syncEngine)
   }
 
   public func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
@@ -434,18 +504,40 @@ public final class CloudKitSyncTransport: NSObject, @unchecked Sendable, CloudSy
       "Queued \(records.count, privacy: .public) CloudKit saves and \(deletedRecordIDs.count, privacy: .public) deletes"
     )
 
-    try await syncEngine.sendChanges(
-      CKSyncEngine.SendChangesOptions(scope: .recordIDs(Array(recordIDs)))
-    )
+    // A partial failure is NOT fatal: CloudKit commits the records that saved and keeps the
+    // rest queued in the sync-engine state, so they retry on the next send. Treating it as a
+    // hard error blocked the *entire* sync (including the download) whenever any single record
+    // was rejected. Log it and let the sync complete; the outstanding records converge later.
+    do {
+      try await syncEngine.sendChanges(
+        CKSyncEngine.SendChangesOptions(scope: .recordIDs(Array(recordIDs)))
+      )
+    } catch let ckError as CKError where ckError.code == .partialFailure {
+      logCloudKitPartialFailure(ckError, attempted: recordIDs.count)
+    }
 
-    if let failure = lock.withLock({
-      recordIDs.compactMap { sendFailures[$0] }.first
-    }) {
+    // Only surface a *total* send failure (nothing saved) — a partial one leaves the failed
+    // records queued for retry rather than dead-ending the whole sync.
+    let failures = lock.withLock { recordIDs.compactMap { sendFailures[$0] } }
+    if failures.count == recordIDs.count, let failure = failures.first {
       throw CloudKitSyncTransportError.recordSaveFailed(
         code: failure.code.rawValue,
         message: failure.localizedDescription
       )
     }
+  }
+
+  /// Logs a CloudKit partial-send failure with a per-error-code breakdown for diagnosis,
+  /// without treating it as fatal.
+  private func logCloudKitPartialFailure(_ ckError: CKError, attempted: Int) {
+    let partials = ckError.partialErrorsByItemID ?? [:]
+    var histogram: [Int: Int] = [:]
+    for case let itemError as CKError in partials.values {
+      histogram[itemError.code.rawValue, default: 0] += 1
+    }
+    logger.error(
+      "CloudKit send partial failure: \(partials.count, privacy: .public)/\(attempted, privacy: .public) records failed and will retry (CKError code histogram \(String(describing: histogram), privacy: .public))"
+    )
   }
 
   private func record(from entity: CloudSyncEntityRecord) throws -> CKRecord {

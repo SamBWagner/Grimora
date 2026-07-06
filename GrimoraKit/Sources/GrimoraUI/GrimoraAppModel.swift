@@ -125,6 +125,10 @@ public final class GrimoraAppModel {
   public internal(set) var cloudSyncPendingChangeCount = 0
   public internal(set) var cloudSyncLastDownloadAt: Date?
   public internal(set) var cloudSyncLastUploadAt: Date?
+  /// Drives the manual-sync progress affordance (e.g. the macOS toolbar spinner). Set for the
+  /// full duration of a user-triggered `syncWithCloudNow()` so the UI reflects the in-flight
+  /// push + fetch even though the status machine may briefly settle on `.ready` between steps.
+  public internal(set) var isPerformingCloudSync = false
   /// A non-blocking notice shown when an incoming iCloud change overwrote local data,
   /// offering a one-tap Undo. Set to `nil` once dismissed or acted on.
   public internal(set) var cloudSyncMergeNotice: CloudSyncMergeNotice?

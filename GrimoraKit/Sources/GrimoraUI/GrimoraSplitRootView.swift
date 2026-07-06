@@ -126,11 +126,16 @@ private struct SplitRootView: View {
                             Button {
                                 Task { await model.syncWithCloudNow() }
                             } label: {
-                                Label("Sync with iCloud", systemImage: "arrow.triangle.2.circlepath")
-                                    .labelStyle(.iconOnly)
+                                if model.isPerformingCloudSync {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                } else {
+                                    Label("Sync with iCloud", systemImage: "arrow.triangle.2.circlepath")
+                                        .labelStyle(.iconOnly)
+                                }
                             }
-                            .disabled(!model.canSyncWithCloudNow)
-                            .help("Sync with iCloud")
+                            .disabled(!model.canSyncWithCloudNow || model.isPerformingCloudSync)
+                            .help(model.isPerformingCloudSync ? "Syncing with iCloud…" : "Sync with iCloud")
                             .accessibilityIdentifier("sync-with-icloud-button")
                         }
                     }

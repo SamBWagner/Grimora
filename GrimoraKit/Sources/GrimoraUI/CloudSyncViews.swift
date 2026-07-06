@@ -76,60 +76,119 @@ struct CloudSyncStatusSection: View {
 
   var body: some View {
     Section("iCloud Sync") {
-      switch model.cloudSyncStatus {
-      case .needsAppUpdate:
-        Label("Update Grimora to continue syncing.", systemImage: "exclamationmark.triangle")
-      case .accountChangeRequiresResolution:
-        VStack(alignment: .leading, spacing: 8) {
-          Label(
-            "The iCloud account changed. Grimora paused before uploading any local data.",
-            systemImage: "person.crop.circle.badge.exclamationmark"
-          )
-          Button("Use This iCloud Account") {
-            model.useCurrentICloudAccount()
-          }
-          .buttonStyle(.borderedProminent)
-          .accessibilityIdentifier("accept-current-icloud-account-button")
-
-          Button("Keep This Device Separate") {
-            model.keepDeviceSeparate()
-          }
-          .buttonStyle(.bordered)
-          .accessibilityIdentifier("separate-current-icloud-account-button")
-
-          Text("Sign back into the previous iCloud account in System Settings to continue without changing accounts.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      case .unavailable(let message), .failed(let message):
-        Label(message, systemImage: "icloud.slash")
-      case .ready, .appliedRemoteSnapshot:
-        VStack(alignment: .leading, spacing: 6) {
-          Label("Sync is ready.", systemImage: "icloud")
-          if model.cloudSyncPendingChangeCount > 0 {
-            Text("\(model.cloudSyncPendingChangeCount) local changes waiting to upload")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-          if let lastUpload = model.cloudSyncLastUploadAt {
-            Text("Last upload: \(lastUpload.formatted(date: .abbreviated, time: .shortened))")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-          if let lastDownload = model.cloudSyncLastDownloadAt {
-            Text("Last download: \(lastDownload.formatted(date: .abbreviated, time: .shortened))")
-              .font(.caption)
-              .foregroundStyle(.secondary)
-          }
-        }
-      case .preparing, .syncing:
-        HStack {
-          ProgressView()
-          Text("Syncing...")
-        }
-      case .disabled:
-        Text("Sync is off.")
+      statusContent
+      if showsDiagnostics {
+        diagnosticsContent
       }
     }
+  }
+
+  @ViewBuilder
+  private var statusContent: some View {
+    switch model.cloudSyncStatus {
+    case .needsAppUpdate:
+      Label("Update Grimora to continue syncing.", systemImage: "exclamationmark.triangle")
+    case .accountChangeRequiresResolution:
+      VStack(alignment: .leading, spacing: 8) {
+        Label(
+          "The iCloud account changed. Grimora paused before uploading any local data.",
+          systemImage: "person.crop.circle.badge.exclamationmark"
+        )
+        Button("Use This iCloud Account") {
+          model.useCurrentICloudAccount()
+        }
+        .buttonStyle(.borderedProminent)
+        .accessibilityIdentifier("accept-current-icloud-account-button")
+
+        Button("Keep This Device Separate") {
+          model.keepDeviceSeparate()
+        }
+        .buttonStyle(.bordered)
+        .accessibilityIdentifier("separate-current-icloud-account-button")
+
+        Text("Sign back into the previous iCloud account in System Settings to continue without changing accounts.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+    case .unavailable(let message), .failed(let message):
+      VStack(alignment: .leading, spacing: 8) {
+        Label(message, systemImage: "icloud.slash")
+        Button {
+          Task { await model.syncWithCloudNow() }
+        } label: {
+          Label("Try Again", systemImage: "arrow.triangle.2.circlepath")
+        }
+        .buttonStyle(.bordered)
+        .disabled(!model.canSyncWithCloudNow || model.isPerformingCloudSync)
+        .accessibilityIdentifier("retry-cloud-sync-button")
+      }
+    case .ready, .appliedRemoteSnapshot:
+      Label("Sync is ready.", systemImage: "icloud")
+    case .preparing, .syncing:
+      HStack {
+        ProgressView()
+        Text("Syncing…")
+      }
+    case .disabled:
+      Text("Sync is off.")
+    }
+  }
+
+  /// Show the diagnostics block whenever sync is engaged (ready, in-flight, or in a retryable
+  /// failure) — including failures, so a "Last download: Never" or stale timestamp is visible.
+  private var showsDiagnostics: Bool {
+    switch model.cloudSyncStatus {
+    case .disabled, .needsAppUpdate, .accountChangeRequiresResolution:
+      return false
+    case .ready, .appliedRemoteSnapshot, .unavailable, .failed, .preparing, .syncing:
+      return true
+    }
+  }
+
+  @ViewBuilder
+  private var diagnosticsContent: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      diagnosticRow("iCloud environment", value: syncEnvironmentDescription)
+      if model.cloudSyncPendingChangeCount > 0 {
+        diagnosticRow("Waiting to upload", value: "\(model.cloudSyncPendingChangeCount)")
+      }
+      diagnosticRow(
+        "Last upload",
+        value: model.cloudSyncLastUploadAt.map(Self.formatted) ?? "Never"
+      )
+      diagnosticRow(
+        "Last download",
+        value: model.cloudSyncLastDownloadAt.map(Self.formatted) ?? "Never"
+      )
+
+      Text("Debug builds use iCloud's Development database; TestFlight and App Store builds use Production. Those are separate stores and don't sync with each other.")
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .padding(.top, 2)
+    }
+    .font(.caption)
+    .foregroundStyle(.secondary)
+  }
+
+  private func diagnosticRow(_ label: String, value: String) -> some View {
+    HStack {
+      Text(label)
+      Spacer()
+      Text(value).monospacedDigit()
+    }
+  }
+
+  private static func formatted(_ date: Date) -> String {
+    date.formatted(date: .abbreviated, time: .shortened)
+  }
+
+  /// Build-channel heuristic for the CloudKit environment: Debug/Xcode builds talk to the
+  /// Development database, while Release (TestFlight/App Store) builds talk to Production.
+  private var syncEnvironmentDescription: String {
+    #if DEBUG
+      return "Development"
+    #else
+      return "Production"
+    #endif
   }
 }

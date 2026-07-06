@@ -63,6 +63,7 @@ struct GrimoraSettingsSyncSections: View {
         }
         .onAppear {
             model.reloadCloudSyncRecoverySnapshots()
+            model.reloadCloudSyncDiagnostics()
         }
     }
 

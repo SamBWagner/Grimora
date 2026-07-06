@@ -546,7 +546,11 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
       .appliedRemoteSnapshot(
         deviceSnapshot(id: "ipad", deviceName: "iPad", listID: "list", listName: "List")
       ),
+      // `.failed` and `.unavailable` are actionable so the user can retry a transient
+      // failure (e.g. iCloud briefly unavailable) instead of being stuck behind a
+      // disabled control until they relaunch the app.
       .failed("transient failure"),
+      .unavailable("iCloud sync is unavailable right now."),
     ]
   }
 
@@ -554,7 +558,6 @@ final class GrimoraCloudSyncAppModelTests: XCTestCase {
   private var manualSyncNonActionableStatuses: [CloudSyncStatus] {
     [
       .disabled,
-      .unavailable("iCloud sync is unavailable right now."),
       .preparing,
       .syncing,
       .needsAppUpdate(

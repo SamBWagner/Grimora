@@ -1,4 +1,9 @@
 import Foundation
+import OSLog
+
+#if canImport(CloudKit)
+  import CloudKit
+#endif
 
 public protocol CloudSyncTransport: Sendable {
   func accountIdentifier() async throws -> String?
@@ -122,10 +127,54 @@ public actor MemoryCloudSyncTransport: CloudSyncTransport {
 public actor CloudSyncCoordinator {
   private let database: CardDatabase
   private let transport: any CloudSyncTransport
+  private let logger = Logger(
+    subsystem: "com.samwagner.Grimora",
+    category: "CloudSync"
+  )
 
   public init(database: CardDatabase, transport: any CloudSyncTransport) {
     self.database = database
     self.transport = transport
+  }
+
+  /// Human-readable description of an error, including the underlying `CKError` code when
+  /// present, so a swallowed sync failure can be diagnosed from the logs instead of being
+  /// hidden behind a generic status message.
+  private func describe(_ error: Error) -> String {
+    #if canImport(CloudKit)
+      if let ckError = error as? CKError {
+        return "CKError.\(ckError.code) (\(ckError.code.rawValue)): \(ckError.localizedDescription)"
+      }
+    #endif
+    return String(describing: error)
+  }
+
+  /// Maps a sync failure to an actionable, user-facing message. Recognised `CKError`s get a
+  /// specific, retryable explanation (e.g. iCloud briefly reporting the account as temporarily
+  /// unavailable) instead of a single opaque string; anything else falls back to `default`.
+  static func userFacingSyncMessage(for error: Error, default defaultMessage: String) -> String {
+    #if canImport(CloudKit)
+      if let ckError = error as? CKError {
+        switch ckError.code {
+        case .notAuthenticated:
+          return "Sign in to iCloud in System Settings to sync your collections."
+        case .accountTemporarilyUnavailable:
+          return "iCloud is temporarily unavailable. Try syncing again in a moment."
+        case .networkUnavailable, .networkFailure, .serviceUnavailable, .requestRateLimited,
+          .zoneBusy, .serverResponseLost:
+          return "Couldn't reach iCloud. Check your connection and try again."
+        case .quotaExceeded:
+          return "Your iCloud storage is full, so new changes can't be saved to iCloud."
+        case .managedAccountRestricted:
+          return "This iCloud account isn't allowed to use Grimora sync."
+        case .badContainer, .badDatabase, .missingEntitlement:
+          return "Grimora's iCloud sync isn't set up correctly on this device."
+        default:
+          return defaultMessage
+        }
+      }
+    #endif
+    return defaultMessage
   }
 
   public static func disabled(database: CardDatabase) -> CloudSyncCoordinator {
@@ -229,7 +278,13 @@ public actor CloudSyncCoordinator {
     } catch is CloudSyncSnapshotValidationError {
       return .failed("iCloud sync data could not be validated. Local data was not changed.")
     } catch {
-      return .unavailable("iCloud sync is unavailable right now.")
+      logger.error("CloudSync start() failed: \(self.describe(error), privacy: .public)")
+      return .unavailable(
+        Self.userFacingSyncMessage(
+          for: error,
+          default: "iCloud sync is unavailable right now."
+        )
+      )
     }
   }
 
@@ -361,7 +416,13 @@ public actor CloudSyncCoordinator {
     } catch is CloudSyncSnapshotValidationError {
       return .failed("iCloud sync data could not be validated. Local data was not changed.")
     } catch {
-      return .failed("Sync failed. Grimora will try again later.")
+      logger.error("CloudSync reconcile() failed: \(self.describe(error), privacy: .public)")
+      return .failed(
+        Self.userFacingSyncMessage(
+          for: error,
+          default: "Sync failed. Grimora will try again later."
+        )
+      )
     }
   }
 

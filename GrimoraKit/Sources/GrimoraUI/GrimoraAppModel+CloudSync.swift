@@ -184,10 +184,12 @@ extension GrimoraAppModel {
       return false
     }
     switch cloudSyncStatus {
-    case .ready, .appliedRemoteSnapshot, .failed:
-      // `.failed` is included so the manual control can retry a transient failure.
+    case .ready, .appliedRemoteSnapshot, .failed, .unavailable:
+      // `.failed` and `.unavailable` are included so the manual control can retry a transient
+      // failure (e.g. iCloud briefly reporting the account as temporarily unavailable) instead
+      // of leaving the user stuck behind a greyed-out button until they relaunch the app.
       return true
-    case .disabled, .unavailable, .preparing, .syncing, .needsAppUpdate,
+    case .disabled, .preparing, .syncing, .needsAppUpdate,
       .accountChangeRequiresResolution:
       return false
     }
@@ -201,8 +203,20 @@ extension GrimoraAppModel {
     guard canSyncWithCloudNow else {
       return
     }
-    await pushCloudSyncChanges()
-    await refreshCloudSync(requestTransportRefresh: true)
+    let priorStatus = cloudSyncStatus
+    isPerformingCloudSync = true
+    defer { isPerformingCloudSync = false }
+    publishCloudSyncStatus(.syncing)
+
+    switch priorStatus {
+    case .failed, .unavailable:
+      // Recovering from a failed/unavailable startup: re-run the full `start()` path so
+      // bootstrap-and-reconcile both get another chance, not just a plain reconcile.
+      await startCloudSync()
+    default:
+      await pushCloudSyncChanges()
+      await refreshCloudSync(requestTransportRefresh: true)
+    }
   }
 
   public func reloadCloudSyncRecoverySnapshots() {
