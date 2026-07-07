@@ -465,4 +465,162 @@ final class CloudSyncConvergenceTests: XCTestCase {
     assertNoSyncFailure(statuses)
     try assertConverged(devices)
   }
+
+  // MARK: - A ruleset change re-zones entries and consolidates categories on every device
+
+  /// Flipping a list from Commander to Collection re-homes command-zone entries into the mainboard
+  /// and folds a duplicate-named command-zone category into its mainboard twin, deleting the now
+  /// redundant category. Both halves must propagate: the re-zoned entry rows have to bump
+  /// `updated_at` (or the upload diff skips them) and the deleted category needs a tombstone (or it
+  /// resurrects from the other device's union merge — and drags its entries back with it).
+  func testRulesetChangeNormalizationPropagatesAndTombstonesConsolidatedCategory() async throws {
+    let transport = SimulatedCloudKitTransport()
+    let deviceA = try makeDevice(id: "device-a", name: "iPhone", transport: transport)
+    let deviceB = try makeDevice(id: "device-b", name: "iPad", transport: transport)
+
+    // A Commander deck with a "Ramp" category in both the command zone and the mainboard, plus a
+    // bare (uncategorized) command-zone entry.
+    let deck = try deviceA.database.createCardCollection(
+      named: "Deck", ruleset: .commander, now: nextDate()
+    )
+    let mainRamp = try deviceA.database.createCardCollectionCategory(
+      inList: deck.id, zone: .mainboard, named: "Ramp", now: nextDate()
+    )
+    let commandRamp = try deviceA.database.createCardCollectionCategory(
+      inList: deck.id, zone: .commander, named: "Ramp", now: nextDate()
+    )
+    try deviceA.database.appendCard(
+      "sol-ring", toList: deck.id, zone: .commander, categoryID: commandRamp.id, now: nextDate()
+    )
+    try deviceA.database.appendCard(
+      "llanowar-elves", toList: deck.id, zone: .mainboard, categoryID: mainRamp.id, now: nextDate()
+    )
+    try deviceA.database.appendCard(
+      "golos", toList: deck.id, zone: .commander, now: nextDate()
+    )
+    try deviceA.database.recordLocalSyncSnapshotChange(reason: "seed")
+    try await settle([deviceA, deviceB])
+
+    // Sanity: B received the full Commander shape before the ruleset flip.
+    XCTAssertEqual(
+      Set(try deviceB.database.cardCollectionCategories(forListID: deck.id).map(\.id)),
+      [mainRamp.id, commandRamp.id]
+    )
+
+    // A flips the deck to a plain Collection. Normalization folds the command-zone "Ramp" into the
+    // mainboard "Ramp" (deleting the former) and moves every command-zone entry to the mainboard.
+    _ = try deviceA.database.setCardCollectionRuleset(id: deck.id, ruleset: .none, now: nextDate())
+    try deviceA.database.recordLocalSyncSnapshotChange(reason: "ruleset")
+    try await settle([deviceA, deviceB])
+
+    try assertConverged([deviceA, deviceB])
+    for device in [deviceA, deviceB] {
+      let categories = try device.database.cardCollectionCategories(forListID: deck.id)
+      XCTAssertEqual(
+        categories.map(\.id), [mainRamp.id],
+        "\(device.name) should keep only the mainboard Ramp category, got \(categories.map(\.name))."
+      )
+      XCTAssertFalse(
+        categories.contains { $0.id == commandRamp.id },
+        "\(device.name) resurrected the consolidated command-zone category."
+      )
+      let entries = try device.database.cardCollectionEntries(forListID: deck.id)
+      XCTAssertTrue(
+        entries.allSatisfy { $0.zone == .mainboard },
+        "\(device.name) left an entry in a now-illegal zone: "
+          + "\(entries.map { "\($0.cardID):\($0.zone.rawValue)" })"
+      )
+      XCTAssertEqual(
+        entries.first { $0.cardID == "sol-ring" }?.categoryID, mainRamp.id,
+        "\(device.name) lost the consolidated entry's new mainboard category."
+      )
+    }
+  }
+
+  // MARK: - Reordering collections syncs the new order to every device
+
+  /// Dragging a collection to a new position renumbers *every* sibling's `position`, not just the
+  /// moved one. Those sibling rewrites must bump `updated_at` or the upload diff skips them and the
+  /// new order never reaches the other device.
+  func testCollectionReorderPropagatesAcrossDevices() async throws {
+    let transport = SimulatedCloudKitTransport()
+    let deviceA = try makeDevice(id: "device-a", name: "iPhone", transport: transport)
+    let deviceB = try makeDevice(id: "device-b", name: "iPad", transport: transport)
+
+    let first = try deviceA.database.createCardCollection(named: "First", now: nextDate())
+    let second = try deviceA.database.createCardCollection(named: "Second", now: nextDate())
+    let third = try deviceA.database.createCardCollection(named: "Third", now: nextDate())
+    try deviceA.database.recordLocalSyncSnapshotChange(reason: "seed")
+    try await settle([deviceA, deviceB])
+
+    let mine: Set<String> = [first.id, second.id, third.id]
+    func orderedIDs(_ device: Device) throws -> [String] {
+      try device.database.cardCollections().map(\.id).filter { mine.contains($0) }
+    }
+    XCTAssertEqual(try orderedIDs(deviceA), [first.id, second.id, third.id])
+    XCTAssertEqual(try orderedIDs(deviceB), [first.id, second.id, third.id])
+
+    // A drags "Third" to the front, shifting First and Second down by one.
+    _ = try deviceA.database.moveCardCollection(id: third.id, toPosition: 0, now: nextDate())
+    try deviceA.database.recordLocalSyncSnapshotChange(reason: "reorder")
+    try await settle([deviceA, deviceB])
+
+    XCTAssertEqual(
+      try orderedIDs(deviceA), [third.id, first.id, second.id],
+      "The reorder did not take on the originating device."
+    )
+    XCTAssertEqual(
+      try orderedIDs(deviceB), [third.id, first.id, second.id],
+      "Device B never received the reordered sibling positions."
+    )
+    try assertConverged([deviceA, deviceB])
+  }
+
+  // MARK: - Merging a duplicate entry must not resurrect the source from another device
+
+  /// Swapping an entry's printing onto a card that already has an entry merges the two rows: the
+  /// existing entry absorbs the quantity and the source row is deleted. That deletion needs a
+  /// tombstone, or the source entry — still present on the other device — resurrects on the next
+  /// union merge, re-creating the very duplicate the merge removed.
+  func testDuplicateMergeDeletionDoesNotResurrectAcrossDevices() async throws {
+    let transport = SimulatedCloudKitTransport()
+    let deviceA = try makeDevice(id: "device-a", name: "iPhone", transport: transport)
+    let deviceB = try makeDevice(id: "device-b", name: "iPad", transport: transport)
+
+    let list = try deviceA.database.createCardCollection(named: "Deck", now: nextDate())
+    let source = try deviceA.database.appendCard("sol-ring-a", toList: list.id, now: nextDate())
+    _ = try deviceA.database.appendCard("sol-ring-b", toList: list.id, now: nextDate())
+    try deviceA.database.recordLocalSyncSnapshotChange(reason: "seed")
+    try await settle([deviceA, deviceB])
+
+    XCTAssertEqual(
+      Set(try deviceB.database.cardCollectionEntries(forListID: list.id).map(\.cardID)),
+      ["sol-ring-a", "sol-ring-b"]
+    )
+
+    // A re-prints the "sol-ring-a" entry as "sol-ring-b"; it collides with the existing
+    // "sol-ring-b" entry, so the two merge and the "sol-ring-a" source row is deleted.
+    _ = try deviceA.database.replaceCardCollectionEntryPrint(
+      id: source.id, withCardID: "sol-ring-b", now: nextDate()
+    )
+    try deviceA.database.recordLocalSyncSnapshotChange(reason: "merge-print")
+    try await settle([deviceA, deviceB])
+
+    try assertConverged([deviceA, deviceB])
+    for device in [deviceA, deviceB] {
+      let entries = try device.database.cardCollectionEntries(forListID: list.id)
+      XCTAssertEqual(
+        entries.map(\.cardID), ["sol-ring-b"],
+        "\(device.name) kept the merged-away source entry: \(entries.map(\.cardID))"
+      )
+      XCTAssertFalse(
+        entries.contains { $0.id == source.id },
+        "\(device.name) resurrected the deleted source entry id."
+      )
+      XCTAssertEqual(
+        entries.first?.quantity, 2,
+        "\(device.name) lost the merged quantity."
+      )
+    }
+  }
 }
