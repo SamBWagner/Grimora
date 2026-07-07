@@ -290,6 +290,68 @@ final class CloudSyncConvergenceTests: XCTestCase {
     XCTAssertEqual(addDevices.count, 2, "Each add should retain its origin device id")
   }
 
+  // MARK: - A large ledger stays bounded per sync and never re-uploads settled rows
+
+  /// The ledger grows without bound, but a single sync must not re-serialize and re-upload the whole
+  /// history every time. This proves both halves of the retention design: the outbound snapshot
+  /// carries only the newest `changeLogSyncSnapshotLimit` rows (bounded per-sync work; full history
+  /// stays in the local DB), and rows CloudKit already holds are never flagged for re-upload because
+  /// ledger rows are immutable and id-keyed.
+  func testLargeChangeLedgerBoundsSyncSnapshotAndSkipsReupload() throws {
+    let database = try Fixtures.database()
+    try database.saveLibraryIdentity(
+      LibraryIdentity(defaultCardsUpdatedAt: "2026-04-25T09:09:59.477+00:00")
+    )
+    let list = try database.createCardCollection(named: "Deck", now: nextDate())
+    let entry = try database.appendCard("alpha", toList: list.id, now: nextDate())
+
+    // Log far more actions than a single sync should ever carry.
+    let overflow = CardDatabase.changeLogSyncSnapshotLimit + 25
+    for quantity in 2...(overflow + 1) {
+      _ = try database.setCardCollectionEntryQuantity(
+        id: entry.id, quantity: quantity, now: nextDate()
+      )
+    }
+
+    // The local ledger keeps every row for history...
+    let fullLedger = try database.changeLogEntries()
+    XCTAssertGreaterThan(fullLedger.count, CardDatabase.changeLogSyncSnapshotLimit)
+
+    // ...but a sync snapshot carries only the newest N, so per-sync work stays bounded.
+    let settings = SyncSearchSettings(updatedAt: .distantPast)
+    let snapshot = try database.deviceSyncSnapshot(
+      deviceID: "device-a", deviceName: "iPhone", searchSettings: settings
+    )
+    XCTAssertEqual(snapshot.changeLog.count, CardDatabase.changeLogSyncSnapshotLimit)
+    XCTAssertEqual(
+      Set(snapshot.changeLog.map(\.id)),
+      Set(fullLedger.prefix(CardDatabase.changeLogSyncSnapshotLimit).map(\.id)),
+      "The snapshot must carry the most-recent rows, not an arbitrary slice."
+    )
+
+    // Model the server already holding those rows from a prior sync. A second sync of the same
+    // state must flag none of them for re-upload — the whole point of the immutable ledger.
+    let known = Dictionary(
+      try CloudSyncEntityCodec.records(from: snapshot).map {
+        ($0.id, CloudSyncUploadDiff.KnownRecord(updatedAt: $0.updatedAt, deletedAt: $0.deletedAt))
+      },
+      uniquingKeysWith: { first, _ in first }
+    )
+    let secondSnapshot = try database.deviceSyncSnapshot(
+      deviceID: "device-a", deviceName: "iPhone", searchSettings: settings
+    )
+    let ledgerNeedingReupload = try CloudSyncEntityCodec.records(from: secondSnapshot).filter {
+      $0.entityType == .changeLogEntry
+        && CloudSyncUploadDiff.needsUpload(
+          updatedAt: $0.updatedAt, deletedAt: $0.deletedAt, known: known[$0.id]
+        )
+    }
+    XCTAssertTrue(
+      ledgerNeedingReupload.isEmpty,
+      "Settled ledger rows must not re-upload, found \(ledgerNeedingReupload.count)."
+    )
+  }
+
   // MARK: - Bootstrap with a same-id divergence also never prompts
 
   func testBootstrapWithSameIdDivergenceMergesWithoutPrompt() async throws {

@@ -10,6 +10,15 @@ import Foundation
 extension CardDatabase {
   private static let ledgerDeviceIDMetadataKey = "ledgerDeviceID"
 
+  /// Upper bound on how many of the newest ledger rows a single sync snapshot carries. The full
+  /// ledger stays in the local DB for history — `changeLogEntries()` still returns every row — and
+  /// rows already uploaded stay on the server, so this only caps the per-sync encode/diff/upload
+  /// cost. Without it, `records(from:)` re-serializes and re-diffs the entire, ever-growing history
+  /// on every sync even though nothing changed. Bounding the *outbound* snapshot (rather than
+  /// pruning locally) means we never delete rows CloudKit hasn't been told to drop, so no
+  /// re-download churn; server-side compaction, if ever added, needs its own delete path.
+  static let changeLogSyncSnapshotLimit = 1000
+
   /// Records one immutable ledger row. Must be called inside `withDatabaseLock` (typically inside
   /// the same transaction as the mutation it describes). `date` is the monotonic instant the edit
   /// was stamped with (from `issueSyncTimestampUnlocked`).

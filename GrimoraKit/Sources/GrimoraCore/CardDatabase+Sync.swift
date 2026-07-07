@@ -63,7 +63,9 @@ extension CardDatabase {
           listSnapshot: listSnapshot,
           deletedLists: deletedLists,
           deletedEntities: deletedEntities,
-          changeLog: try changeLogEntriesUnlocked()
+          // Carry only the newest rows so per-sync work stays bounded as the ledger grows; the full
+          // history remains in the local DB and already-uploaded rows persist on the server.
+          changeLog: try changeLogEntriesUnlocked(limit: Self.changeLogSyncSnapshotLimit)
         )
       return (
         CloudSyncEntityCodec.canonicalizedSnapshot(snapshot),

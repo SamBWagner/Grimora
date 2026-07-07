@@ -403,6 +403,15 @@ extension CardDatabase {
       guard let list = try cardCollectionUnlocked(id: id) else {
         throw CardCollectionDatabaseError.listNotFound
       }
+      // Summary is intentionally omitted: the description text can be arbitrarily long and lives on
+      // the entity itself, so keeping it out of the ledger avoids bloating every sync snapshot.
+      try recordChangeUnlocked(
+        action: ChangeLogAction.setListDescription,
+        entityType: .cardCollection,
+        entityID: id,
+        listID: id,
+        date: now
+      )
       return list
     }
   }
@@ -429,6 +438,14 @@ extension CardDatabase {
       guard let list = try cardCollectionUnlocked(id: id) else {
         throw CardCollectionDatabaseError.listNotFound
       }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.setListOption,
+        entityType: .cardCollection,
+        entityID: id,
+        listID: id,
+        summary: "showsDashboard=\(showsDashboard)",
+        date: now
+      )
       return list
     }
   }
@@ -455,6 +472,14 @@ extension CardDatabase {
       guard let list = try cardCollectionUnlocked(id: id) else {
         throw CardCollectionDatabaseError.listNotFound
       }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.setListOption,
+        entityType: .cardCollection,
+        entityID: id,
+        listID: id,
+        summary: "dashboardIncludesLands=\(includesLands)",
+        date: now
+      )
       return list
     }
   }
@@ -483,6 +508,14 @@ extension CardDatabase {
       guard let list = try cardCollectionUnlocked(id: id) else {
         throw CardCollectionDatabaseError.listNotFound
       }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.setListOption,
+        entityType: .cardCollection,
+        entityID: id,
+        listID: id,
+        summary: "displaySort=\(mode?.rawValue ?? "default"):\(direction.rawValue)",
+        date: now
+      )
       return list
     }
   }
@@ -509,6 +542,14 @@ extension CardDatabase {
       guard let list = try cardCollectionUnlocked(id: id) else {
         throw CardCollectionDatabaseError.listNotFound
       }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.setListOption,
+        entityType: .cardCollection,
+        entityID: id,
+        listID: id,
+        summary: "viewMode=\(viewMode.rawValue)",
+        date: now
+      )
       return list
     }
   }
@@ -535,6 +576,14 @@ extension CardDatabase {
         try statement.step()
 
         try normalizeCardCollectionZonesUnlocked(listID: id, ruleset: ruleset, date: date)
+        try recordChangeUnlocked(
+          action: ChangeLogAction.setRuleset,
+          entityType: .cardCollection,
+          entityID: id,
+          listID: id,
+          summary: ruleset.rawValue,
+          date: now
+        )
       }
 
       guard let list = try cardCollectionUnlocked(id: id) else {
@@ -624,6 +673,19 @@ extension CardDatabase {
           try updateCardCollectionPositionsUnlocked(sourceLists)
         }
         try updateCardCollectionPositionsUnlocked(destinationLists)
+
+        // A reorder within a section records the new position; a pin-state flip (used by
+        // `setCardCollectionPinned`, which routes here) records the pin instead.
+        try recordChangeUnlocked(
+          action: ChangeLogAction.moveList,
+          entityType: .cardCollection,
+          entityID: id,
+          listID: id,
+          summary: destinationIsPinned == list.isPinned
+            ? "position=\(newIndex)"
+            : (destinationIsPinned ? "pinned" : "unpinned"),
+          date: now
+        )
       }
 
       guard let moved = try cardCollectionUnlocked(id: id) else {
@@ -837,6 +899,14 @@ extension CardDatabase {
       try database.transaction {
         try updateCardCollectionCategoryPositionsUnlocked(categories, date: date)
         try touchCardCollectionUnlocked(id: category.listID, date: date)
+        try recordChangeUnlocked(
+          action: ChangeLogAction.reorderCategory,
+          entityType: .cardCollectionCategory,
+          entityID: id,
+          listID: category.listID,
+          summary: "position=\(newIndex)",
+          date: now
+        )
       }
 
       guard let updated = try cardCollectionCategoryUnlocked(id: id) else {
@@ -999,6 +1069,14 @@ extension CardDatabase {
         try update.bind(id, at: 4)
         try update.step()
         try touchCardCollectionUnlocked(id: entry.listID, date: date)
+        try recordChangeUnlocked(
+          action: ChangeLogAction.setCategory,
+          entityType: .cardCollectionEntry,
+          entityID: id,
+          listID: entry.listID,
+          summary: categoryID,
+          date: now
+        )
       }
 
       guard var updated = try cardCollectionEntryUnlocked(id: id) else {
@@ -1037,6 +1115,8 @@ extension CardDatabase {
         entryID: entryID,
         listID: entry.listID,
         secondaries: secondaries,
+        changeAction: ChangeLogAction.addTag,
+        changeCategoryID: categoryID,
         now: now
       )
     }
@@ -1059,6 +1139,8 @@ extension CardDatabase {
         entryID: entryID,
         listID: entry.listID,
         secondaries: secondaries,
+        changeAction: ChangeLogAction.removeTag,
+        changeCategoryID: categoryID,
         now: now
       )
     }
@@ -1068,6 +1150,8 @@ extension CardDatabase {
     entryID: String,
     listID: String,
     secondaries: [String],
+    changeAction: String,
+    changeCategoryID: String,
     now: Date
   ) throws -> CardCollectionEntryRecord {
     let date = Self.formattedListDate(now)
@@ -1079,6 +1163,14 @@ extension CardDatabase {
       try update.bind(entryID, at: 3)
       try update.step()
       try touchCardCollectionUnlocked(id: listID, date: date)
+      try recordChangeUnlocked(
+        action: changeAction,
+        entityType: .cardCollectionEntry,
+        entityID: entryID,
+        listID: listID,
+        summary: changeCategoryID,
+        date: now
+      )
     }
     guard var updated = try cardCollectionEntryUnlocked(id: entryID) else {
       throw CardCollectionDatabaseError.entryNotFound
