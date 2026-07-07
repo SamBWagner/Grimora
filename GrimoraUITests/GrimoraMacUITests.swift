@@ -1476,11 +1476,30 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(rowFrame.minX.isFinite)
         XCTAssertTrue(rowFrame.midY.isFinite)
 
+        // The list-action context menu always exposes a per-list "Rename" item,
+        // so use it as the sentinel that the menu actually opened. Fall back to
+        // the visible title, mirroring how `clickMenuItemOrButton` resolves the
+        // items we are about to click.
+        func listActionMenuIsOpen() -> Bool {
+            if app.menuItems["rename-list-\(listName)"].waitForExistence(timeout: 1) {
+                return true
+            }
+            return app.menuItems["Rename"].exists || app.buttons["Rename"].exists
+        }
+
         // SwiftUI can expose the expanding row button with an infinite width on
-        // macOS. Anchor from the finite leading edge instead of reading maxX.
-        row.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
-            .withOffset(CGVector(dx: 250, dy: 0))
-            .rightClick()
+        // macOS, so we can't right-click the element centre. Anchor from the
+        // finite leading edge and try a few small offsets that stay inside the
+        // sidebar until the context menu appears — a hardcoded far offset now
+        // overshoots the row hit-area after the 1.6 sidebar rework.
+        let leadingCentre = row.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+        for dx in [CGFloat(40), 90, 20, 140] {
+            leadingCentre.withOffset(CGVector(dx: dx, dy: 0)).rightClick()
+            if listActionMenuIsOpen() {
+                return
+            }
+        }
+        XCTFail("List-action context menu for \(listName) did not open")
     }
 
     private func openArtworkContextMenu(app: XCUIApplication, cardID: String) throws {
