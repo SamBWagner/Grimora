@@ -341,16 +341,34 @@ extension CardDatabase {
     try updateCardCollectionPositionsUnlocked(unpinnedLists)
   }
 
-  func updateCardCollectionPositionsUnlocked(_ lists: [CardCollectionRecord]) throws {
+  /// Renumbers list positions. Pass `date` (a user reorder, e.g. `moveCardCollection`) to stamp
+  /// `updated_at` so the new order syncs across devices; pass `nil` for housekeeping renumbers
+  /// (e.g. `normalizeCardCollectionPositionsUnlocked`, which may run on load) so they don't
+  /// mass-bump every list's timestamp and trigger a full re-upload.
+  func updateCardCollectionPositionsUnlocked(
+    _ lists: [CardCollectionRecord],
+    date: String? = nil
+  ) throws {
     let statement = try database.prepare(
-      """
-      UPDATE card_lists
-      SET position = ?
-      WHERE id = ?
-      """)
+      date == nil
+        ? """
+          UPDATE card_lists
+          SET position = ?
+          WHERE id = ?
+          """
+        : """
+          UPDATE card_lists
+          SET position = ?, updated_at = ?
+          WHERE id = ?
+          """)
     for (position, list) in lists.enumerated() {
       try statement.bind(position, at: 1)
-      try statement.bind(list.id, at: 2)
+      if let date {
+        try statement.bind(date, at: 2)
+        try statement.bind(list.id, at: 3)
+      } else {
+        try statement.bind(list.id, at: 2)
+      }
       try statement.step()
       try statement.reset()
     }

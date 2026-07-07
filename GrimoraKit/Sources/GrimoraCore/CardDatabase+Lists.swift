@@ -670,9 +670,9 @@ extension CardDatabase {
         }
 
         if destinationIsPinned != list.isPinned {
-          try updateCardCollectionPositionsUnlocked(sourceLists)
+          try updateCardCollectionPositionsUnlocked(sourceLists, date: date)
         }
-        try updateCardCollectionPositionsUnlocked(destinationLists)
+        try updateCardCollectionPositionsUnlocked(destinationLists, date: date)
 
         // A reorder within a section records the new position; a pin-state flip (used by
         // `setCardCollectionPinned`, which routes here) records the pin instead.
@@ -972,6 +972,13 @@ extension CardDatabase {
           let delete = try database.prepare("DELETE FROM card_list_entries WHERE id = ?")
           try delete.bind(entry.id, at: 1)
           try delete.step()
+          // The source row merged into an existing duplicate and was deleted; tombstone it so the
+          // deletion propagates and the source can't resurrect from another device's union merge.
+          try insertSyncTombstoneUnlocked(
+            entityType: .cardCollectionEntry,
+            recordID: try cloudSyncEntryRecordIDUnlocked(for: entry),
+            deletedAt: now
+          )
         } else if destinationZone != entry.zone {
           // The primary category move also crossed zones, so the old-zone secondary tags
           // no longer apply — clear them alongside the zone/category update.
@@ -1248,6 +1255,13 @@ extension CardDatabase {
           let delete = try database.prepare("DELETE FROM card_list_entries WHERE id = ?")
           try delete.bind(entry.id, at: 1)
           try delete.step()
+          // The source row merged into an existing duplicate and was deleted; tombstone it so the
+          // deletion propagates and the source can't resurrect from another device's union merge.
+          try insertSyncTombstoneUnlocked(
+            entityType: .cardCollectionEntry,
+            recordID: try cloudSyncEntryRecordIDUnlocked(for: entry),
+            deletedAt: now
+          )
         } else {
           // Zone changed: the entry's secondary tags belonged to the old zone, so drop them.
           let update = try database.prepare(
@@ -1466,6 +1480,13 @@ extension CardDatabase {
           let delete = try database.prepare("DELETE FROM card_list_entries WHERE id = ?")
           try delete.bind(entry.id, at: 1)
           try delete.step()
+          // The source row merged into an existing duplicate and was deleted; tombstone it so the
+          // deletion propagates and the source can't resurrect from another device's union merge.
+          try insertSyncTombstoneUnlocked(
+            entityType: .cardCollectionEntry,
+            recordID: try cloudSyncEntryRecordIDUnlocked(for: entry),
+            deletedAt: now
+          )
 
           updatedEntryID = existingEntry.id
         } else {
@@ -1753,18 +1774,26 @@ extension CardDatabase {
         let updateEntries = try database.prepare(
           """
           UPDATE card_list_entries
-          SET zone = ?, category_id = ?
+          SET zone = ?, category_id = ?, updated_at = ?
           WHERE list_id = ? AND category_id = ?
           """)
         try updateEntries.bind(destinationZone.rawValue, at: 1)
         try updateEntries.bind(existingCategory.id, at: 2)
-        try updateEntries.bind(listID, at: 3)
-        try updateEntries.bind(category.id, at: 4)
+        try updateEntries.bind(date, at: 3)
+        try updateEntries.bind(listID, at: 4)
+        try updateEntries.bind(category.id, at: 5)
         try updateEntries.step()
 
         let deleteCategory = try database.prepare("DELETE FROM card_list_categories WHERE id = ?")
         try deleteCategory.bind(category.id, at: 1)
         try deleteCategory.step()
+        // The duplicate category is gone; tombstone it so the deletion propagates and the
+        // category can't resurrect from another device on the next union merge.
+        try insertSyncTombstoneUnlocked(
+          entityType: .cardCollectionCategory,
+          recordID: category.id,
+          deletedAt: Self.parseListDate(date)
+        )
 
         categories.removeAll { $0.id == category.id }
       } else {
@@ -1782,12 +1811,13 @@ extension CardDatabase {
         let updateEntries = try database.prepare(
           """
           UPDATE card_list_entries
-          SET zone = ?
+          SET zone = ?, updated_at = ?
           WHERE list_id = ? AND category_id = ?
           """)
         try updateEntries.bind(destinationZone.rawValue, at: 1)
-        try updateEntries.bind(listID, at: 2)
-        try updateEntries.bind(category.id, at: 3)
+        try updateEntries.bind(date, at: 2)
+        try updateEntries.bind(listID, at: 3)
+        try updateEntries.bind(category.id, at: 4)
         try updateEntries.step()
 
         if let index = categories.firstIndex(where: { $0.id == category.id }) {
@@ -1817,12 +1847,13 @@ extension CardDatabase {
       let updateEntries = try database.prepare(
         """
         UPDATE card_list_entries
-        SET zone = ?
+        SET zone = ?, updated_at = ?
         WHERE list_id = ? AND category_id = ?
         """)
       try updateEntries.bind(category.zone.rawValue, at: 1)
-      try updateEntries.bind(listID, at: 2)
-      try updateEntries.bind(category.id, at: 3)
+      try updateEntries.bind(date, at: 2)
+      try updateEntries.bind(listID, at: 3)
+      try updateEntries.bind(category.id, at: 4)
       try updateEntries.step()
       changed = true
     }
@@ -1849,12 +1880,13 @@ extension CardDatabase {
       let updateEntries = try database.prepare(
         """
         UPDATE card_list_entries
-        SET zone = ?, category_id = NULL
+        SET zone = ?, category_id = NULL, updated_at = ?
         WHERE list_id = ? AND zone = ?
         """)
       try updateEntries.bind(destinationZone.rawValue, at: 1)
-      try updateEntries.bind(listID, at: 2)
-      try updateEntries.bind(zone.rawValue, at: 3)
+      try updateEntries.bind(date, at: 2)
+      try updateEntries.bind(listID, at: 3)
+      try updateEntries.bind(zone.rawValue, at: 4)
       try updateEntries.step()
       changed = true
     }
