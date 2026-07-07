@@ -278,6 +278,9 @@ extension GrimoraAppModel {
       "GRIMORA_SYNC_TEST_CURRENCY",
       "GRIMORA_SYNC_TEST_CREATE_LIST",
       "GRIMORA_SYNC_TEST_DELETE_LIST",
+      "GRIMORA_SYNC_TEST_ADD_CARD",
+      "GRIMORA_SYNC_TEST_SET_QUANTITY",
+      "GRIMORA_SYNC_TEST_CHANGE_PRINT",
     ].contains { environment[$0] != nil }
     guard hasActions, !didApplyCloudSyncTestActions else {
       return
@@ -312,6 +315,48 @@ extension GrimoraAppModel {
       let list = cardCollections.first(where: { $0.name == listName })
     {
       deleteCardCollection(id: list.id)
+    }
+
+    // Entry-level edits used by the two-simulator sync test to prove that card edits actually
+    // propagate and don't revert (the bug this fixes). Format: "listName|cardID[|value]". Cards are
+    // added leniently by id so the test does not depend on a resolved catalog.
+    if let spec = environment["GRIMORA_SYNC_TEST_ADD_CARD"] {
+      let parts = spec.components(separatedBy: "|")
+      if parts.count == 2, let list = cardCollections.first(where: { $0.name == parts[0] }) {
+        try? performListMutation {
+          _ = try database.appendCard(parts[1], toList: list.id, enforceRulesetLimits: false)
+        }
+        reloadCardCollections(selecting: selectedCollectionID)
+      }
+    }
+
+    if let spec = environment["GRIMORA_SYNC_TEST_SET_QUANTITY"] {
+      let parts = spec.components(separatedBy: "|")
+      if parts.count == 3,
+        let list = cardCollections.first(where: { $0.name == parts[0] }),
+        let quantity = Int(parts[2]),
+        let entry = (try? database.cardCollectionEntries(forListID: list.id))?
+          .first(where: { $0.cardID == parts[1] })
+      {
+        try? performListMutation {
+          _ = try database.setCardCollectionEntryQuantity(id: entry.id, quantity: quantity)
+        }
+        reloadCardCollections(selecting: selectedCollectionID)
+      }
+    }
+
+    if let spec = environment["GRIMORA_SYNC_TEST_CHANGE_PRINT"] {
+      let parts = spec.components(separatedBy: "|")
+      if parts.count == 3,
+        let list = cardCollections.first(where: { $0.name == parts[0] }),
+        let entry = (try? database.cardCollectionEntries(forListID: list.id))?
+          .first(where: { $0.cardID == parts[1] })
+      {
+        try? performListMutation {
+          _ = try database.replaceCardCollectionEntryPrint(id: entry.id, withCardID: parts[2])
+        }
+        reloadCardCollections(selecting: selectedCollectionID)
+      }
     }
   }
 

@@ -126,6 +126,26 @@ list_id() {
     "SELECT id FROM card_lists WHERE name = '$name' LIMIT 1;"
 }
 
+entry_has_card() {
+  local udid="$1" list_name="$2" card_id="$3"
+  local database
+  database="$(database_path "$udid")"
+  [[ -f "$database" ]] || return 1
+  [[ "$(sqlite3 "$database" "SELECT COUNT(*) FROM card_list_entries e JOIN card_lists l ON l.id = e.list_id WHERE l.name = '$list_name' AND e.card_id = '$card_id';")" == "1" ]]
+}
+
+entry_missing_card() {
+  ! entry_has_card "$@"
+}
+
+entry_quantity_is() {
+  local udid="$1" list_name="$2" card_id="$3" expected="$4"
+  local database
+  database="$(database_path "$udid")"
+  [[ -f "$database" ]] || return 1
+  [[ "$(sqlite3 "$database" "SELECT e.quantity FROM card_list_entries e JOIN card_lists l ON l.id = e.list_id WHERE l.name = '$list_name' AND e.card_id = '$card_id' LIMIT 1;")" == "$expected" ]]
+}
+
 relay_list_exists() {
   local name="$1"
   curl -fsS "$RELAY_URL/state" | python3 -c '
@@ -185,23 +205,61 @@ launch_app() {
     xcrun simctl launch --terminate-running-process "$udid" "$BUNDLE_ID" >/dev/null
 }
 
+# The deck is created WITH a card. An empty, contentless list is intentionally pruned when a fresh
+# device combines on its first sync (pruningEmptyContentlessLists at bootstrap), so a realistic
+# non-empty deck is required for the cross-device entry assertions below.
 launch_app "$IPHONE_UDID" \
   SIMCTL_CHILD_GRIMORA_SYNC_TEST_CREATE_LIST="iPhone Deck" \
+  SIMCTL_CHILD_GRIMORA_SYNC_TEST_ADD_CARD="iPhone Deck|sol-ring-a" \
   SIMCTL_CHILD_GRIMORA_SYNC_TEST_DEFAULT_SEARCH="type:artifact" \
   SIMCTL_CHILD_GRIMORA_SYNC_TEST_CURRENCY="AUD"
 wait_for "iPhone creates its local list" list_exists "$IPHONE_UDID" "iPhone Deck"
+wait_for "iPhone adds a card to its deck" entry_has_card "$IPHONE_UDID" "iPhone Deck" "sol-ring-a"
 IPHONE_LIST_ID="$(list_id "$IPHONE_UDID" "iPhone Deck")"
 wait_for "iPhone uploads its list" relay_list_exists "iPhone Deck"
 
 launch_app "$IPAD_UDID"
 wait_for "iPad downloads the iPhone list" list_exists "$IPAD_UDID" "iPhone Deck"
+wait_for "iPad downloads the card as well" entry_has_card "$IPAD_UDID" "iPhone Deck" "sol-ring-a"
 
 launch_app "$IPAD_UDID" \
-  SIMCTL_CHILD_GRIMORA_SYNC_TEST_CREATE_LIST="iPad Deck"
+  SIMCTL_CHILD_GRIMORA_SYNC_TEST_CREATE_LIST="iPad Deck" \
+  SIMCTL_CHILD_GRIMORA_SYNC_TEST_ADD_CARD="iPad Deck|island-a"
 wait_for "iPad creates an independent list" list_exists "$IPAD_UDID" "iPad Deck"
+wait_for "iPad adds a card to its independent list" entry_has_card "$IPAD_UDID" "iPad Deck" "island-a"
 wait_for "iPad uploads its independent list" relay_list_exists "iPad Deck"
 launch_app "$IPHONE_UDID"
 wait_for "iPhone merges the iPad list" list_exists "$IPHONE_UDID" "iPad Deck"
+
+# --- Entry-edit propagation + no-revert (the exact bug this release fixes) ---
+# Before the fix, entry edits (quantity / printing) silently stopped syncing because the entry's
+# sync-visible timestamp was frozen at insert, and wall-clock LWW let a lagging device keep
+# reverting the newer edit. This proves an edit made on one device reaches the other AND holds
+# across repeated syncs instead of snapping back. (sol-ring-a was added on the iPhone above and is
+# already present on both devices.)
+launch_app "$IPAD_UDID" \
+  SIMCTL_CHILD_GRIMORA_SYNC_TEST_SET_QUANTITY="iPhone Deck|sol-ring-a|4"
+wait_for "iPad sets the card quantity to 4" entry_quantity_is "$IPAD_UDID" "iPhone Deck" "sol-ring-a" "4"
+launch_app "$IPHONE_UDID"
+wait_for "iPhone receives the quantity edit (does not stay at 1)" \
+  entry_quantity_is "$IPHONE_UDID" "iPhone Deck" "sol-ring-a" "4"
+
+# No revert: sync both devices repeatedly and confirm the edit holds on both.
+launch_app "$IPAD_UDID"
+launch_app "$IPHONE_UDID"
+launch_app "$IPAD_UDID"
+wait_for "iPad quantity holds at 4 after repeated syncs (no revert loop)" \
+  entry_quantity_is "$IPAD_UDID" "iPhone Deck" "sol-ring-a" "4"
+wait_for "iPhone quantity holds at 4 after repeated syncs (no revert loop)" \
+  entry_quantity_is "$IPHONE_UDID" "iPhone Deck" "sol-ring-a" "4"
+
+# A printing swap must propagate too (a case that silently stopped syncing before the fix).
+launch_app "$IPHONE_UDID" \
+  SIMCTL_CHILD_GRIMORA_SYNC_TEST_CHANGE_PRINT="iPhone Deck|sol-ring-a|sol-ring-b"
+wait_for "iPhone swaps the printing to sol-ring-b" entry_has_card "$IPHONE_UDID" "iPhone Deck" "sol-ring-b"
+launch_app "$IPAD_UDID"
+wait_for "iPad receives the printing swap" entry_has_card "$IPAD_UDID" "iPhone Deck" "sol-ring-b"
+wait_for "iPad drops the superseded printing" entry_missing_card "$IPAD_UDID" "iPhone Deck" "sol-ring-a"
 
 launch_app "$IPAD_UDID" \
   SIMCTL_CHILD_GRIMORA_SYNC_TEST_DELETE_LIST="iPhone Deck"
