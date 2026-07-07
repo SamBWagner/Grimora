@@ -1,6 +1,6 @@
 # Grimora App Store Listing Copy
 
-Use this copy for version 1.5 (build 2026070501). All public screenshots use
+Use this copy for version 1.6 (build 2026070702). All public screenshots use
 the clean fictional-card screenshot set.
 
 ## App Name
@@ -18,7 +18,7 @@ Card Library & Lists
 ## Promotional Text
 
 ```text
-New in 1.5: Scry now shows each scanned card's value and celebrates your best pulls, and you can re-scan a whole Commander deck to reconcile it against your list.
+New in 1.6: build proper Commander decks — one copy of each card, one-tap organising by type — and iCloud sync now keeps every edit in step across all your devices.
 ```
 
 ## Keywords
@@ -49,22 +49,22 @@ Grimora is independently developed and is not affiliated with or endorsed by any
 ## What's New
 
 ```text
-Version 1.5 makes Scry more rewarding and Grimora easier to use on iPhone.
+Version 1.6 adds Commander decks and makes iCloud sync dependable.
 
-- Scry shows the value: every scanned card displays its price, and valuable pulls light up with a colour tier and a celebratory sound. Set your own alert thresholds in Settings
-- Re-scan a Commander deck: point the camera at your physical deck and Grimora reconciles it against your saved list, so you can accept every change at once
-- Bulk scanning holds focus more reliably, with a tap-to-focus hint, and now reads collector numbers on old-border retro reprints
-- Rearrange your dashboard: drag collection tiles into any order, and drop one onto a pinned tile to pin or unpin it
-- Collections and the New List source picker now lay out cleanly on small iPhones, with full-width cards that no longer clip at the edges
-- Aftermath cards now turn the right way so both halves read upright, with clearer rotate and flip controls
+- iCloud sync that sticks: an edit made on one device now holds everywhere instead of quietly reverting to an older copy — change a quantity or swap a printing and it stays put across all your devices
+- Commander decks: create a collection as a Commander deck and Grimora keeps it to a single copy of each card (across printings), with an "Add Anyway" option when you mean it. Promote a card to your commander or trim duplicate copies in one step
+- Reorganise by Type: file a deck's cards into Creatures, Instants, Lands and the rest with a single action
+- Multi-category tags: tag a card with more than one category so it can sit in several groupings at once, shown as tags in list view and a badge on grid tiles
+- Steadier syncing: sync no longer stalls on "unavailable", uploads only what actually changed, and a new Settings menu Sync panel shows the last sync and what's pending
+- Simpler collections: every collection is now either a plain Collection or a Commander deck, and older decks carry over cleanly
 ```
 
 ## App Review Notes
 
 ```text
-Version 1.5 (2026070501) requires no account or reviewer credentials. iCloud sync is optional. This release adds no new permissions.
+Version 1.6 (2026070702) requires no account or reviewer credentials. iCloud sync is optional. This release adds no new permissions.
 
-Scry, the camera "Scry" tab on iPhone and iPad, uses the device camera to recognise cards. All recognition runs on-device with the Vision framework; the camera image is used only to read a card's name and set or collector number and is never uploaded. Grant camera access when prompted to try it, or skip it and the rest of the app works unchanged. Recognised cards are filed into a local "Scanned" collection. New in 1.5, a Commander deck's menu offers "Re-scan Deck", which uses the same on-device camera recognition to reconcile a physical deck against the saved list; it needs no new permissions.
+Scry, the camera "Scry" tab on iPhone and iPad, uses the device camera to recognise cards. All recognition runs on-device with the Vision framework; the camera image is used only to read a card's name and set or collector number and is never uploaded. Grant camera access when prompted to try it, or skip it and the rest of the app works unchanged. Recognised cards are filed into a local "Scanned" collection. A Commander deck's menu offers "Re-scan Deck", which uses the same on-device camera recognition to reconcile a physical deck against the saved list; it needs no new permissions.
 
 Grimora's card catalogue is a managed, prebuilt database. For an existing installation, the current library stays fully usable while any catalogue update stages on an allowed network and activates atomically on the next cold launch. A failed download, validation, or activation leaves the existing library untouched. A manual refresh (pull-to-refresh on the Cards screen, or the Library menu on Mac) may use any network.
 
