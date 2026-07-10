@@ -112,6 +112,64 @@ final class CardCollectionMultiCategoryTests: XCTestCase {
         return database
     }
 
+    // MARK: - Per-collection "show multi-category cards" option
+
+    func testMultiCategoryVisibilityDefaultsOffAndPersists() throws {
+        let database = try makeDatabase()
+        let list = try database.createCardCollection(named: "Deck")
+        XCTAssertFalse(list.showsMultiCategoryCards)
+
+        let enabled = try database.setCardCollectionMultiCategoryVisibility(
+            id: list.id,
+            showsMultiCategoryCards: true
+        )
+        XCTAssertTrue(enabled.showsMultiCategoryCards)
+        XCTAssertTrue(try XCTUnwrap(database.cardCollections().first).showsMultiCategoryCards)
+
+        let disabled = try database.setCardCollectionMultiCategoryVisibility(
+            id: list.id,
+            showsMultiCategoryCards: false
+        )
+        XCTAssertFalse(disabled.showsMultiCategoryCards)
+    }
+
+    func testMultiCategoryVisibilityIsScopedToOneCollection() throws {
+        let database = try makeDatabase()
+        let deck = try database.createCardCollection(named: "Deck")
+        let binder = try database.createCardCollection(named: "Binder")
+
+        try database.setCardCollectionMultiCategoryVisibility(id: deck.id, showsMultiCategoryCards: true)
+
+        let lists = try database.cardCollections()
+        XCTAssertTrue(try XCTUnwrap(lists.first { $0.id == deck.id }).showsMultiCategoryCards)
+        XCTAssertFalse(try XCTUnwrap(lists.first { $0.id == binder.id }).showsMultiCategoryCards)
+    }
+
+    /// A store written by a build that predates the column has to survive the `ALTER TABLE` and
+    /// keep its collections, defaulting the new option to off.
+    func testMigratesAStoreThatPredatesTheMultiCategoryColumn() throws {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("grimora-migration-\(UUID().uuidString)")
+            .appendingPathComponent("cards.sqlite")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let listID: String
+        do {
+            let database = try CardDatabase(storage: .file(url))
+            listID = try database.createCardCollection(named: "Legacy Deck").id
+            // Roll the schema back to the pre-feature shape.
+            try database.database.execute("ALTER TABLE card_lists DROP COLUMN shows_multi_category_cards")
+        }
+
+        let reopened = try CardDatabase(storage: .file(url))
+        let list = try XCTUnwrap(reopened.cardCollections().first { $0.id == listID })
+        XCTAssertEqual(list.name, "Legacy Deck")
+        XCTAssertFalse(list.showsMultiCategoryCards)
+
+        try reopened.setCardCollectionMultiCategoryVisibility(id: listID, showsMultiCategoryCards: true)
+        XCTAssertTrue(try XCTUnwrap(reopened.cardCollections().first).showsMultiCategoryCards)
+    }
+
     private func card(id: String, name: String, typeLine: String) -> CardRecord {
         CardRecord(
             id: id,

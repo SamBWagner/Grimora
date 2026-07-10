@@ -236,8 +236,8 @@ extension CardDatabase {
       INSERT INTO card_lists (
           id, name, ruleset, description_rtfd, description_plain_text, created_at, updated_at,
           is_pinned, pinned_at, position, shows_dashboard, dashboard_includes_lands,
-          display_sort_mode, display_sort_direction, view_mode
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          display_sort_mode, display_sort_direction, view_mode, shows_multi_category_cards
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """)
     for list in snapshot.lists {
       try listInsert.bind(list.id, at: 1)
@@ -255,6 +255,7 @@ extension CardDatabase {
       try listInsert.bind(list.displaySortMode?.rawValue, at: 13)
       try listInsert.bind(list.displaySortDirection.rawValue, at: 14)
       try listInsert.bind(list.viewMode.rawValue, at: 15)
+      try listInsert.bind(list.showsMultiCategoryCards, at: 16)
       try listInsert.step()
       try listInsert.reset()
     }
@@ -444,6 +445,40 @@ extension CardDatabase {
         entityID: id,
         listID: id,
         summary: "showsDashboard=\(showsDashboard)",
+        date: now
+      )
+      return list
+    }
+  }
+
+  @discardableResult
+  public func setCardCollectionMultiCategoryVisibility(
+    id: String,
+    showsMultiCategoryCards: Bool,
+    now: Date = Date()
+  ) throws -> CardCollectionRecord {
+    try withDatabaseLock {
+      let now = try issueSyncTimestampUnlocked(now: now)
+      let statement = try database.prepare(
+        """
+        UPDATE card_lists
+        SET shows_multi_category_cards = ?, updated_at = ?
+        WHERE id = ?
+        """)
+      try statement.bind(showsMultiCategoryCards, at: 1)
+      try statement.bind(Self.formattedListDate(now), at: 2)
+      try statement.bind(id, at: 3)
+      try statement.step()
+
+      guard let list = try cardCollectionUnlocked(id: id) else {
+        throw CardCollectionDatabaseError.listNotFound
+      }
+      try recordChangeUnlocked(
+        action: ChangeLogAction.setListOption,
+        entityType: .cardCollection,
+        entityID: id,
+        listID: id,
+        summary: "showsMultiCategoryCards=\(showsMultiCategoryCards)",
         date: now
       )
       return list

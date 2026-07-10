@@ -31,6 +31,7 @@ struct GrimoraApp: App {
             #if os(macOS)
             GrimoraSyncCommands()
             GrimoraSearchCommands()
+            GrimoraFoilCommands()
             GrimoraListCommands()
             InspectorCommands()
             GrimoraHelpCommands()

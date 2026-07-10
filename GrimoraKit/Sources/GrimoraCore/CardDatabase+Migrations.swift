@@ -340,7 +340,8 @@ extension CardDatabase {
           dashboard_includes_lands INTEGER NOT NULL DEFAULT 0,
           display_sort_mode TEXT,
           display_sort_direction TEXT NOT NULL DEFAULT 'ascending',
-          view_mode TEXT NOT NULL DEFAULT 'grid'
+          view_mode TEXT NOT NULL DEFAULT 'grid',
+          shows_multi_category_cards INTEGER NOT NULL DEFAULT 0
       )
       """)
 
@@ -441,6 +442,11 @@ extension CardDatabase {
       "card_lists",
       column: "view_mode",
       definition: "view_mode TEXT NOT NULL DEFAULT 'grid'"
+    )
+    try addColumnIfNeeded(
+      "card_lists",
+      column: "shows_multi_category_cards",
+      definition: "shows_multi_category_cards INTEGER NOT NULL DEFAULT 0"
     )
     try addColumnIfNeeded(
       "card_faces", column: "small_image_path", definition: "small_image_path TEXT")

@@ -36,6 +36,7 @@ public struct CardCollectionArchiveList: Codable, Equatable, Sendable {
     public var displaySortMode: SortMode?
     public var displaySortDirection: SearchSortDirection
     public var viewMode: CardCollectionViewMode
+    public var showsMultiCategoryCards: Bool
 
     public init(
         id: String,
@@ -49,7 +50,8 @@ public struct CardCollectionArchiveList: Codable, Equatable, Sendable {
         dashboardIncludesLands: Bool = false,
         displaySortMode: SortMode? = nil,
         displaySortDirection: SearchSortDirection = .ascending,
-        viewMode: CardCollectionViewMode = .grid
+        viewMode: CardCollectionViewMode = .grid,
+        showsMultiCategoryCards: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -63,6 +65,7 @@ public struct CardCollectionArchiveList: Codable, Equatable, Sendable {
         self.displaySortMode = displaySortMode
         self.displaySortDirection = displaySortDirection
         self.viewMode = viewMode
+        self.showsMultiCategoryCards = showsMultiCategoryCards
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -78,6 +81,7 @@ public struct CardCollectionArchiveList: Codable, Equatable, Sendable {
         case displaySortMode
         case displaySortDirection
         case viewMode
+        case showsMultiCategoryCards
     }
 
     public init(from decoder: Decoder) throws {
@@ -95,6 +99,8 @@ public struct CardCollectionArchiveList: Codable, Equatable, Sendable {
         displaySortDirection =
             try container.decodeIfPresent(SearchSortDirection.self, forKey: .displaySortDirection) ?? .ascending
         viewMode = try container.decodeIfPresent(CardCollectionViewMode.self, forKey: .viewMode) ?? .grid
+        showsMultiCategoryCards =
+            try container.decodeIfPresent(Bool.self, forKey: .showsMultiCategoryCards) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -111,6 +117,7 @@ public struct CardCollectionArchiveList: Codable, Equatable, Sendable {
         try container.encodeIfPresent(displaySortMode, forKey: .displaySortMode)
         try container.encode(displaySortDirection, forKey: .displaySortDirection)
         try container.encode(viewMode, forKey: .viewMode)
+        try container.encode(showsMultiCategoryCards, forKey: .showsMultiCategoryCards)
     }
 }
 
@@ -263,7 +270,8 @@ public enum CardCollectionArchiveCoder {
                 dashboardIncludesLands: list.dashboardIncludesLands,
                 displaySortMode: list.displaySortMode,
                 displaySortDirection: list.displaySortDirection,
-                viewMode: list.viewMode
+                viewMode: list.viewMode,
+                showsMultiCategoryCards: list.showsMultiCategoryCards
             ),
             categories: categories.map { category in
                 CardCollectionArchiveCategory(

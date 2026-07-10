@@ -511,6 +511,27 @@ extension GrimoraAppModel {
     }
   }
 
+  public func setCardCollectionMultiCategoryVisibility(
+    id: CardCollectionRecord.ID,
+    showsMultiCategoryCards: Bool
+  ) {
+    do {
+      try performListMutation {
+        try database.setCardCollectionMultiCategoryVisibility(
+          id: id,
+          showsMultiCategoryCards: showsMultiCategoryCards
+        )
+      }
+      reloadCardCollections(selecting: selectedCollectionID)
+      statusMessage =
+        showsMultiCategoryCards
+        ? "Showing cards in every category they're tagged with."
+        : "Showing cards in their primary category only."
+    } catch {
+      statusMessage = "Collection update failed."
+    }
+  }
+
   public func setCardCollectionDashboardIncludesLands(
     id: CardCollectionRecord.ID,
     includesLands: Bool
@@ -643,6 +664,10 @@ extension GrimoraAppModel {
         try database.setCardCollectionDashboardIncludesLands(
           id: list.id,
           includesLands: archive.list.dashboardIncludesLands
+        )
+        try database.setCardCollectionMultiCategoryVisibility(
+          id: list.id,
+          showsMultiCategoryCards: archive.list.showsMultiCategoryCards
         )
         try database.setCardCollectionDisplaySort(
           id: list.id,

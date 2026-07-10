@@ -20,6 +20,10 @@ extension CardCollectionDetailView {
         let totalCount = model.selectedCollectionEntryTotal
         let collapsed = collapsedListCategoryIDs
         let list = model.selectedCollection
+        let showsGhosts = list?.showsMultiCategoryCards ?? false
+        // A drag needs somewhere to land: while one is in flight over the collection, every
+        // shadowed category comes back as a drop target.
+        let revealsShadowed = dragReveal.isRevealing
 
         // Active collection search: regroup the (small) search-result set in-body — the cached
         // sections describe the full list, not the filtered matches.
@@ -37,7 +41,9 @@ extension CardCollectionDetailView {
                 builtSections: sections,
                 collapsedSectionIDs: collapsed,
                 isSearchActive: true,
-                totalEntryCount: totalCount
+                totalEntryCount: totalCount,
+                showsMultiCategoryCards: showsGhosts,
+                revealsShadowedCategories: revealsShadowed
             )
         }
 
@@ -59,7 +65,9 @@ extension CardCollectionDetailView {
                 builtSections: sections,
                 collapsedSectionIDs: collapsed,
                 isSearchActive: false,
-                totalEntryCount: totalCount
+                totalEntryCount: totalCount,
+                showsMultiCategoryCards: showsGhosts,
+                revealsShadowedCategories: revealsShadowed
             )
         }
 
@@ -69,7 +77,9 @@ extension CardCollectionDetailView {
             builtSections: model.selectedCollectionSections,
             collapsedSectionIDs: collapsed,
             isSearchActive: false,
-            totalEntryCount: totalCount
+            totalEntryCount: totalCount,
+            showsMultiCategoryCards: showsGhosts,
+            revealsShadowedCategories: revealsShadowed
         )
     }
 
@@ -88,6 +98,20 @@ extension CardCollectionDetailView {
         }
 
         return model.selectedCollectionSearchUnsupportedMessage
+    }
+
+    /// True when the collection view is hiding at least one category. A category's rename and
+    /// delete controls live in its section header, so while one is hidden the Reorder Categories
+    /// view — which lists every category — has to stay reachable, even for a lone category that
+    /// has nothing to reorder against.
+    ///
+    /// A search hides non-matching sections too, but reordering is disabled while searching, so
+    /// don't let that count.
+    func hasShadowedCategories(_ snapshot: CardCollectionDetailSnapshot) -> Bool {
+        guard !isListSearchActive else {
+            return false
+        }
+        return snapshot.sections.filter(\.isCategory).count < model.selectedCollectionCategories.count
     }
 
     func isSectionCollapsed(_ section: CardCollectionEntrySection) -> Bool {
@@ -149,6 +173,51 @@ extension CardCollectionDetailView {
                     coordinateSpaceName: Self.entrySelectionCoordinateSpace
                 )
             )
+    }
+
+    /// The name of the category an entry actually lives in, for a ghost's "Filed under" caption.
+    func primaryCategoryName(for entry: CardCollectionEntryRecord) -> String? {
+        guard let categoryID = entry.categoryID else {
+            return nil
+        }
+        return model.selectedCollectionCategories.first { $0.id == categoryID }?.name
+    }
+
+    @ViewBuilder
+    func ghostEntryView(
+        _ entry: CardCollectionEntryRecord,
+        in section: CardCollectionEntrySection
+    ) -> some View {
+        if let card = entry.card, let category = section.category {
+            CardCollectionGhostGridItemView(
+                entry: entry,
+                card: card,
+                category: category,
+                primaryCategoryName: primaryCategoryName(for: entry),
+                onOpen: { model.selectCard(card, fromListEntryID: entry.id) }
+            )
+        }
+    }
+
+    @ViewBuilder
+    func ghostEntryTextRowView(
+        _ entry: CardCollectionEntryRecord,
+        in section: CardCollectionEntrySection
+    ) -> some View {
+        if let category = section.category {
+            CardCollectionGhostTextRowView(
+                entry: entry,
+                card: entry.card,
+                category: category,
+                primaryCategoryName: primaryCategoryName(for: entry),
+                palette: palette,
+                onOpen: {
+                    if let card = entry.card {
+                        model.selectCard(card, fromListEntryID: entry.id)
+                    }
+                }
+            )
+        }
     }
 
     @ViewBuilder
@@ -214,6 +283,9 @@ extension CardCollectionDetailView {
                     dragItemCount: dragEntryIDs.count,
                     isDragEnabled: !isSelectingListEntries,
                     foilTreatment: card.foilTreatment(for: entry.selectedFinish ?? card.defaultFinish),
+                    onFoilHoverChange: { hovering in
+                        model.setFoilHoverEntry(entry.id, isHovering: hovering)
+                    },
                     onArtworkOverflowChange: { isOverflowing in
                         updateRaisedArtworkEntry(entryID: entry.id, isOverflowing: isOverflowing)
                     }

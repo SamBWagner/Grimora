@@ -3751,6 +3751,67 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.cards, [existingCard])
   }
 
+  func testFoilCommandTogglesCollectionEntryFinish() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards([
+      foilTestCard(id: "foilable", name: "Foilable", finishes: ["nonfoil", "foil"]),
+      foilTestCard(id: "plain", name: "Plain", finishes: ["nonfoil"])
+    ])
+    let list = try database.createCardCollection(named: "Deck")
+    try database.appendCard("foilable", toList: list.id)
+    try database.appendCard("plain", toList: list.id)
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+    model.selectCardCollection(id: list.id)
+    await model.drainSelectedListLoadForTesting()
+
+    func entry(_ cardID: String) throws -> CardCollectionEntryRecord {
+      try XCTUnwrap(model.selectedCollectionEntries.first { $0.cardID == cardID })
+    }
+
+    // Foil-capable card: starts non-foil, F flips it on, F again flips it back off.
+    XCTAssertNotEqual(try entry("foilable").selectedFinish, .foil)
+
+    XCTAssertEqual(model.toggleFoil(forCollectionEntryID: try entry("foilable").id), .toggled(isFoil: true))
+    await model.drainSelectedListLoadForTesting()
+    XCTAssertEqual(try entry("foilable").selectedFinish, .foil)
+
+    XCTAssertEqual(model.toggleFoil(forCollectionEntryID: try entry("foilable").id), .toggled(isFoil: false))
+    await model.drainSelectedListLoadForTesting()
+    // The default (normal) finish is persisted as nil; either way the entry is no longer foil.
+    XCTAssertNotEqual(try entry("foilable").selectedFinish, .foil)
+
+    // Non-foil card: reports unavailable, and the command wrapper surfaces the notice.
+    XCTAssertEqual(model.toggleFoil(forCollectionEntryID: try entry("plain").id), .unavailable)
+    XCTAssertNil(model.foilCommandNotice)
+    XCTAssertTrue(model.performFoilToggle(forCollectionEntryID: try entry("plain").id))
+    XCTAssertEqual(model.foilCommandNotice?.message, "No foil available")
+    XCTAssertNotEqual(try entry("plain").selectedFinish, .foil)
+  }
+
+  private func foilTestCard(id: String, name: String, finishes: [String]) -> CardRecord {
+    CardRecord(
+      id: id,
+      oracleID: id,
+      name: name,
+      releasedAt: "2024-01-01",
+      setCode: "set",
+      setName: "Set",
+      setType: "expansion",
+      collectorNumber: "1",
+      collectorNumberNumber: 1,
+      rarity: "common",
+      rarityRank: 0,
+      colorSortKey: 4,
+      layout: "normal",
+      typeLine: "Creature",
+      oracleText: "Reach",
+      finishes: finishes,
+      isRealCard: true
+    )
+  }
+
 	  func testVisibleImageCachingReturnsBeforeDelayedDownloadFinishes() async throws {
     let database = try CardDatabase(storage: .inMemory)
     let imageDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(

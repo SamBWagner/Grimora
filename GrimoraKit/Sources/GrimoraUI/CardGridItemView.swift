@@ -62,6 +62,10 @@ struct CardGridItemView: View {
     /// tiles have no user-chosen finish, so they shimmer only when the displayed printing is
     /// inherently foil.
     var foilTreatment: CardFoilTreatment = .none
+    /// Reports pointer hover in/out so the macOS hover-to-foil shortcut knows which card the "F"
+    /// key should flip. Only collection tiles pass this (they own a persistable finish); search
+    /// tiles leave it `nil` and never become a foil target.
+    var onFoilHoverChange: ((Bool) -> Void)? = nil
     var onArtworkOverflowChange: (Bool) -> Void = { _ in }
 
     var body: some View {
@@ -97,6 +101,16 @@ struct CardGridItemView: View {
             .grimoraSelectionFeedback(trigger: selectionFeedbackTrigger)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier(tileAccessibilityIdentifier)
+            .onChange(of: isHovered) { _, hovering in
+                onFoilHoverChange?(hovering)
+            }
+            .onDisappear {
+                // A tile can scroll off while still hovered (the pointer never leaves it), which
+                // would otherwise leave a stale foil target behind — report the exit explicitly.
+                if isHovered {
+                    onFoilHoverChange?(false)
+                }
+            }
     }
 
     private var tileContent: some View {

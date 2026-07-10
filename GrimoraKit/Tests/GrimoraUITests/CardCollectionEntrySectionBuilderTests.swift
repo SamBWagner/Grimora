@@ -196,6 +196,165 @@ final class CardCollectionEntrySectionBuilderTests: XCTestCase {
     XCTAssertEqual(sections.map(\.entries.count), Array(repeating: 20, count: 12))
   }
 
+  // MARK: - Multi-category ghosts and shadowed categories
+
+  func testSecondaryTagsBecomeGhostEntriesWithoutLeavingTheirPrimarySection() {
+    let categories = [
+      category(id: "creatures", name: "Creatures", position: 0),
+      category(id: "walkers", name: "Planeswalkers", position: 1),
+    ]
+    let entries = [
+      entry(id: "bear", categoryID: "creatures", secondaryCategoryIDs: ["walkers"], position: 0),
+      entry(id: "elf", categoryID: "creatures", position: 1),
+    ]
+
+    let sections = CardCollectionEntrySectionBuilder.sections(entries: entries, categories: categories)
+
+    XCTAssertEqual(sections.map(\.id), ["creatures", "walkers"])
+    XCTAssertEqual(sections[0].entries.map(\.id), ["bear", "elf"])
+    XCTAssertTrue(sections[0].ghostEntries.isEmpty)
+    XCTAssertTrue(sections[1].entries.isEmpty)
+    XCTAssertEqual(sections[1].ghostEntries.map(\.id), ["bear"])
+    XCTAssertTrue(sections[1].isGhost(entries[0]))
+    XCTAssertFalse(sections[0].isGhost(entries[0]))
+  }
+
+  /// The reported bug: a category holding nothing but tagged cards used to render an empty
+  /// heading. It should stay hidden until the collection opts into showing multi-category cards.
+  func testCategoryHoldingOnlyTaggedCardsIsHiddenUntilGhostsAreShown() {
+    let categories = [
+      category(id: "creatures", name: "Creatures", position: 0),
+      category(id: "walkers", name: "Planeswalkers", position: 1),
+    ]
+    let entries = [
+      entry(id: "bear", categoryID: "creatures", secondaryCategoryIDs: ["walkers"], position: 0)
+    ]
+    let builtSections = CardCollectionEntrySectionBuilder.sections(entries: entries, categories: categories)
+
+    let hidden = makeSnapshot(entries: entries, builtSections: builtSections)
+    XCTAssertEqual(hidden.sections.map(\.id), ["creatures"])
+
+    let shown = makeSnapshot(entries: entries, builtSections: builtSections, showsMultiCategoryCards: true)
+    XCTAssertEqual(shown.sections.map(\.id), ["creatures", "walkers"])
+    XCTAssertEqual(shown.sections[1].displayedEntries(showingGhosts: true).map(\.id), ["bear"])
+  }
+
+  func testCategoryWithNoCardsAtAllIsHiddenButReappearsWhileDragging() {
+    let categories = [
+      category(id: "creatures", name: "Creatures", position: 0),
+      category(id: "empty", name: "Artifacts", position: 1),
+    ]
+    let entries = [entry(id: "bear", categoryID: "creatures", position: 0)]
+    let builtSections = CardCollectionEntrySectionBuilder.sections(entries: entries, categories: categories)
+
+    let resting = makeSnapshot(entries: entries, builtSections: builtSections)
+    XCTAssertEqual(resting.sections.map(\.id), ["creatures"])
+
+    // An empty category is only reachable by drag while a drag is in flight, so it comes back.
+    let dragging = makeSnapshot(entries: entries, builtSections: builtSections, revealsShadowedCategories: true)
+    XCTAssertEqual(dragging.sections.map(\.id), ["creatures", "empty"])
+
+    // Turning ghosts on doesn't resurrect a category that has no ghosts either.
+    let ghosting = makeSnapshot(entries: entries, builtSections: builtSections, showsMultiCategoryCards: true)
+    XCTAssertEqual(ghosting.sections.map(\.id), ["creatures"])
+  }
+
+  func testGhostsAreExcludedFromExpandedEntriesAndSectionCounts() {
+    let categories = [
+      category(id: "creatures", name: "Creatures", position: 0),
+      category(id: "walkers", name: "Planeswalkers", position: 1),
+    ]
+    let entries = [
+      entry(id: "bear", categoryID: "creatures", secondaryCategoryIDs: ["walkers"], position: 0),
+      entry(id: "jace", categoryID: "walkers", position: 1),
+    ]
+    let builtSections = CardCollectionEntrySectionBuilder.sections(entries: entries, categories: categories)
+
+    let snapshot = makeSnapshot(entries: entries, builtSections: builtSections, showsMultiCategoryCards: true)
+
+    // "bear" is drawn twice, but it is one card: it appears once in the expanded set (which
+    // drives selection and image prefetch) and doesn't inflate the Planeswalkers count.
+    XCTAssertEqual(snapshot.expandedEntryIDs, ["bear", "jace"])
+    XCTAssertEqual(snapshot.sections[1].entryCountText, "1 card")
+    XCTAssertEqual(snapshot.sections[1].displayedEntries(showingGhosts: true).map(\.id), ["jace", "bear"])
+  }
+
+  func testSectionHeaderNamesTheGhostsItDrawsBeyondItsOwnCards() {
+    let categories = [
+      category(id: "creatures", name: "Creatures", position: 0),
+      category(id: "walkers", name: "Planeswalkers", position: 1),
+    ]
+    let entries = [
+      entry(id: "bear", categoryID: "creatures", secondaryCategoryIDs: ["walkers"], position: 0),
+      entry(id: "jace", categoryID: "walkers", position: 1),
+    ]
+
+    let sections = CardCollectionEntrySectionBuilder.sections(entries: entries, categories: categories)
+
+    XCTAssertEqual(sections[1].entryCountText(showingGhosts: false), "1 card")
+    XCTAssertEqual(sections[1].entryCountText(showingGhosts: true), "1 card · 1 tagged")
+    // A section with no ghosts reads the same either way.
+    XCTAssertEqual(sections[0].entryCountText(showingGhosts: true), "1 card")
+  }
+
+  func testUncategorizedSectionIsNeverShadowed() {
+    let entries = [entry(id: "loose", categoryID: nil, position: 0)]
+    let builtSections = CardCollectionEntrySectionBuilder.sections(entries: entries, categories: [])
+
+    let snapshot = makeSnapshot(entries: entries, builtSections: builtSections)
+
+    XCTAssertEqual(snapshot.sections.map(\.id), ["mainboard-uncategorized"])
+  }
+
+  func testGhostsSortAlongsideTheirSectionsSortMode() {
+    let categories = [
+      category(id: "creatures", name: "Creatures", position: 0),
+      category(id: "walkers", name: "Planeswalkers", position: 1),
+    ]
+    let entries = [
+      entry(
+        id: "high",
+        categoryID: "creatures",
+        secondaryCategoryIDs: ["walkers"],
+        position: 0,
+        card: card(id: "high", edhrecRank: 40)
+      ),
+      entry(
+        id: "low",
+        categoryID: "creatures",
+        secondaryCategoryIDs: ["walkers"],
+        position: 1,
+        card: card(id: "low", edhrecRank: 5)
+      ),
+    ]
+
+    let sections = CardCollectionEntrySectionBuilder.sections(
+      entries: entries,
+      categories: categories,
+      displaySortMode: .edhrecRank,
+      displaySortDirection: .ascending
+    )
+
+    XCTAssertEqual(sections[1].ghostEntries.map(\.id), ["low", "high"])
+  }
+
+  private func makeSnapshot(
+    entries: [CardCollectionEntryRecord],
+    builtSections: [CardCollectionEntrySection],
+    showsMultiCategoryCards: Bool = false,
+    revealsShadowedCategories: Bool = false
+  ) -> CardCollectionDetailSnapshot {
+    CardCollectionDetailSnapshot(
+      visibleEntries: entries,
+      builtSections: builtSections,
+      collapsedSectionIDs: [],
+      isSearchActive: false,
+      totalEntryCount: entries.count,
+      showsMultiCategoryCards: showsMultiCategoryCards,
+      revealsShadowedCategories: revealsShadowedCategories
+    )
+  }
+
   private func category(
     id: CardCollectionCategoryRecord.ID,
     name: String,
@@ -216,6 +375,7 @@ final class CardCollectionEntrySectionBuilderTests: XCTestCase {
   private func entry(
     id: CardCollectionEntryRecord.ID,
     categoryID: CardCollectionCategoryRecord.ID?,
+    secondaryCategoryIDs: [CardCollectionCategoryRecord.ID] = [],
     position: Int,
     zone: CardCollectionZone = .mainboard,
     card: CardRecord? = nil
@@ -225,6 +385,7 @@ final class CardCollectionEntrySectionBuilderTests: XCTestCase {
       listID: "list",
       zone: zone,
       categoryID: categoryID,
+      secondaryCategoryIDs: secondaryCategoryIDs,
       cardID: "card-\(position)",
       position: position,
       createdAt: .init(timeIntervalSince1970: TimeInterval(position)),

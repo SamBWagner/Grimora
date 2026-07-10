@@ -20,6 +20,7 @@ extension CardDatabase {
           card_lists.display_sort_mode,
           card_lists.display_sort_direction,
           card_lists.view_mode,
+          card_lists.shows_multi_category_cards,
           COALESCE(SUM(card_list_entries.quantity), 0) AS entry_count
       FROM card_lists
       LEFT JOIN card_list_entries ON card_list_entries.list_id = card_lists.id
@@ -53,6 +54,7 @@ extension CardDatabase {
           card_lists.display_sort_mode,
           card_lists.display_sort_direction,
           card_lists.view_mode,
+          card_lists.shows_multi_category_cards,
           COALESCE(SUM(card_list_entries.quantity), 0) AS entry_count
       FROM card_lists
       LEFT JOIN card_list_entries ON card_list_entries.list_id = card_lists.id
@@ -102,6 +104,7 @@ extension CardDatabase {
           card_lists.display_sort_mode,
           card_lists.display_sort_direction,
           card_lists.view_mode,
+          card_lists.shows_multi_category_cards,
           COALESCE(SUM(card_list_entries.quantity), 0) AS entry_count
       FROM card_lists
       LEFT JOIN card_list_entries ON card_list_entries.list_id = card_lists.id
@@ -416,7 +419,8 @@ extension CardDatabase {
       displaySortDirection: SearchSortDirection(rawValue: statement.string(at: 13) ?? "")
         ?? .ascending,
       viewMode: CardCollectionViewMode(rawValueOrDefault: statement.string(at: 14)),
-      entryCount: statement.int(at: 15) ?? 0
+      showsMultiCategoryCards: statement.bool(at: 15),
+      entryCount: statement.int(at: 16) ?? 0
     )
   }
 

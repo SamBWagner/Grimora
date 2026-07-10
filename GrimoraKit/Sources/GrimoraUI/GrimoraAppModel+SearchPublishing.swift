@@ -263,11 +263,20 @@ extension GrimoraAppModel {
     // The detail grid renders from the cached sections (built off-main), which hold their own
     // copies of the entries. Patch those too — otherwise a just-downloaded image is written into
     // `selectedCollectionEntries` but never reaches the on-screen tile, which reads the section.
+    // Ghosts are copies of the same entries filed under their tagged categories, so they need the
+    // same patch or a multi-category card's dimmed tile keeps the stale artwork.
     for sectionIndex in selectedCollectionSections.indices {
       for entryIndex in selectedCollectionSections[sectionIndex].entries.indices
       where selectedCollectionSections[sectionIndex].entries[entryIndex].cardID == updatedCard.id {
         if selectedCollectionSections[sectionIndex].entries[entryIndex].card != updatedCard {
           selectedCollectionSections[sectionIndex].entries[entryIndex].card = updatedCard
+        }
+      }
+
+      for ghostIndex in selectedCollectionSections[sectionIndex].ghostEntries.indices
+      where selectedCollectionSections[sectionIndex].ghostEntries[ghostIndex].cardID == updatedCard.id {
+        if selectedCollectionSections[sectionIndex].ghostEntries[ghostIndex].card != updatedCard {
+          selectedCollectionSections[sectionIndex].ghostEntries[ghostIndex].card = updatedCard
         }
       }
     }

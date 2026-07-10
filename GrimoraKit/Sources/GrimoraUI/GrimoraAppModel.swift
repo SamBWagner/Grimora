@@ -125,6 +125,13 @@ public final class GrimoraAppModel {
   /// the detail view is closed. Only non-default finishes are stored. Collection entries persist
   /// their finish via `CardCollectionEntryRecord.selectedFinish`.
   internal var sessionSelectedFinish: [CardRecord.ID: CardValueFinish] = [:]
+  /// The collection entry currently under the pointer on macOS, tracked so the "F" hover-to-foil
+  /// shortcut and the "Toggle Foil" command know which owned card to flip. Set by collection grid
+  /// tiles on hover-in; cleared on hover-out. `nil` when the pointer isn't over an owned card.
+  public internal(set) var hoveredFoilEntryID: CardCollectionEntryRecord.ID?
+  /// A brief, auto-dismissing notice for the foil shortcut (e.g. "No foil available" when a card
+  /// can't be foil). Rendered as a transient toast on macOS and cleared by the UI.
+  public internal(set) var foilCommandNotice: GrimoraFoilCommandNotice?
   public internal(set) var canUndoListAction = false
   public internal(set) var cloudSyncMode: GrimoraCloudSyncMode = .undecided
   public internal(set) var cloudSyncStatus: CloudSyncStatus = .disabled

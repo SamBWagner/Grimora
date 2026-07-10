@@ -34,6 +34,7 @@ struct CardCollectionDetailView: View {
     @State var listJumpToTopState = JumpToTopScrollState.top
     @State var renderedListEntryIDs: [CardCollectionEntryRecord.ID] = []
     @State var isConfirmingClearScanned = false
+    @State var dragReveal = CardCollectionDragRevealState()
     #if os(iOS)
     @State var rescanTarget: CardCollectionRecord?
     #endif
@@ -53,6 +54,7 @@ struct CardCollectionDetailView: View {
         let snapshot = makeListDetailSnapshot()
 
         content(snapshot: snapshot)
+            .environment(\.cardCollectionDragReveal, dragReveal)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background {
                 GrimoraAppBackground(palette: palette)

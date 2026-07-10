@@ -99,6 +99,10 @@ public struct CardCollectionRecord: Identifiable, Codable, Equatable, Sendable {
     public var displaySortMode: SortMode?
     public var displaySortDirection: SearchSortDirection
     public var viewMode: CardCollectionViewMode
+    /// When on, a card that carries secondary-category tags is also drawn — dimmed, as a
+    /// reference — in each of those categories. Off by default: a card belongs to exactly one
+    /// section, the one named by its primary category.
+    public var showsMultiCategoryCards: Bool
     public var entryCount: Int
 
     public init(
@@ -117,6 +121,7 @@ public struct CardCollectionRecord: Identifiable, Codable, Equatable, Sendable {
         displaySortMode: SortMode? = nil,
         displaySortDirection: SearchSortDirection = .ascending,
         viewMode: CardCollectionViewMode = .grid,
+        showsMultiCategoryCards: Bool = false,
         entryCount: Int = 0
     ) {
         self.id = id
@@ -134,6 +139,7 @@ public struct CardCollectionRecord: Identifiable, Codable, Equatable, Sendable {
         self.displaySortMode = displaySortMode
         self.displaySortDirection = displaySortDirection
         self.viewMode = viewMode
+        self.showsMultiCategoryCards = showsMultiCategoryCards
         self.entryCount = entryCount
     }
 
@@ -153,6 +159,7 @@ public struct CardCollectionRecord: Identifiable, Codable, Equatable, Sendable {
         case displaySortMode
         case displaySortDirection
         case viewMode
+        case showsMultiCategoryCards
         case entryCount
     }
 
@@ -174,6 +181,8 @@ public struct CardCollectionRecord: Identifiable, Codable, Equatable, Sendable {
         displaySortDirection =
             try container.decodeIfPresent(SearchSortDirection.self, forKey: .displaySortDirection) ?? .ascending
         viewMode = try container.decodeIfPresent(CardCollectionViewMode.self, forKey: .viewMode) ?? .grid
+        showsMultiCategoryCards =
+            try container.decodeIfPresent(Bool.self, forKey: .showsMultiCategoryCards) ?? false
         entryCount = try container.decodeIfPresent(Int.self, forKey: .entryCount) ?? 0
     }
 
@@ -194,6 +203,7 @@ public struct CardCollectionRecord: Identifiable, Codable, Equatable, Sendable {
         try container.encodeIfPresent(displaySortMode, forKey: .displaySortMode)
         try container.encode(displaySortDirection, forKey: .displaySortDirection)
         try container.encode(viewMode, forKey: .viewMode)
+        try container.encode(showsMultiCategoryCards, forKey: .showsMultiCategoryCards)
         try container.encode(entryCount, forKey: .entryCount)
     }
 }

@@ -173,6 +173,10 @@ private struct CardArtworkContextMenuContent: View {
         }
         .accessibilityIdentifier("card-artwork-add-favourites-\(card.id)")
 
+        #if os(macOS)
+        foilToggleButton
+        #endif
+
         if !availableLists.isEmpty {
             addToListMenu
         }
@@ -207,6 +211,25 @@ private struct CardArtworkContextMenuContent: View {
             .accessibilityIdentifier(openAction.accessibilityIdentifier)
         }
     }
+
+    #if os(macOS)
+    /// A one-click foil flip for an owned card, mirroring the "F" hover shortcut. Shown only for
+    /// collection tiles (a persistable finish lives on the entry) and disabled when the card has
+    /// no foil finish.
+    @ViewBuilder
+    private var foilToggleButton: some View {
+        if let categoryEntry {
+            let isFoil = (categoryEntry.selectedFinish ?? card.defaultFinish) == .foil
+            Button {
+                model.performFoilToggle(forCollectionEntryID: categoryEntry.id)
+            } label: {
+                Label(isFoil ? "Remove Foil" : "Make Foil", systemImage: "sparkles")
+            }
+            .disabled(!card.supportsFoil)
+            .accessibilityIdentifier("card-artwork-toggle-foil-\(categoryEntry.id)")
+        }
+    }
+    #endif
 
     private var shareMenu: some View {
         Menu {

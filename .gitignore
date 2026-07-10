@@ -1,6 +1,9 @@
 # macOS
 .DS_Store
 
+# Raw Apple Notes export staging (regenerable, may contain personal photos)
+tasks/_notes_export/
+
 # Local environment and signing overrides
 .env
 .env.*

@@ -15,6 +15,11 @@ struct CardCollectionEntrySection: Equatable, Identifiable, Sendable {
     var title: String
     var category: CardCollectionCategoryRecord?
     var entries: [CardCollectionEntryRecord]
+    /// Entries filed elsewhere that carry this category as a secondary tag. They are drawn
+    /// dimmed, and only when the collection has "Show Multi-Category Cards" turned on. A ghost
+    /// is a reference to the card, never a second copy: it doesn't count toward the section
+    /// total and can't be selected, dragged, or have its quantity changed from here.
+    var ghostEntries: [CardCollectionEntryRecord] = []
     var categoryIndex: Int?
     var categoryCount: Int
 
@@ -22,6 +27,41 @@ struct CardCollectionEntrySection: Equatable, Identifiable, Sendable {
         let count = entries.reduce(0) { $0 + $1.quantity }
         let noun = count == 1 ? "card" : "cards"
         return "\(count.formatted()) \(noun)"
+    }
+
+    /// The count only ever describes the cards this category owns. Ghosts add tiles below it, so
+    /// name them separately rather than let the header look wrong.
+    func entryCountText(showingGhosts: Bool) -> String {
+        guard showingGhosts, !ghostEntries.isEmpty else {
+            return entryCountText
+        }
+
+        let taggedCount = ghostEntries.reduce(0) { $0 + $1.quantity }
+        return "\(entryCountText) · \(taggedCount.formatted()) tagged"
+    }
+
+    /// The uncategorized bucket is a fallback, not a user-made category — it never hides.
+    var isCategory: Bool {
+        category != nil
+    }
+
+    func displayedEntries(showingGhosts: Bool) -> [CardCollectionEntryRecord] {
+        showingGhosts && !ghostEntries.isEmpty ? entries + ghostEntries : entries
+    }
+
+    func isGhost(_ entry: CardCollectionEntryRecord) -> Bool {
+        entry.categoryID != category?.id
+    }
+
+    /// A category with no cards of its own is a "shadow": it exists (cards are tagged into it,
+    /// or it's freshly made and still empty) but it has nothing to show, so it stays out of the
+    /// way. It surfaces again when its ghosts are being drawn, or while a drag is looking for a
+    /// home.
+    func isShadowed(showingGhosts: Bool) -> Bool {
+        guard isCategory, entries.isEmpty else {
+            return false
+        }
+        return !(showingGhosts && !ghostEntries.isEmpty)
     }
 }
 
@@ -31,23 +71,40 @@ struct CardCollectionDetailSnapshot: Equatable {
     var expandedEntries: [CardCollectionEntryRecord]
     var expandedEntryIDs: [CardCollectionEntryRecord.ID]
     var entryCountText: String
+    var showsMultiCategoryCards: Bool
 
     /// Builds the snapshot from sections that were already grouped+sorted (typically off the
-    /// main thread by the app model's list loader). The remaining work — filtering empty
-    /// sections for an active search, applying collapsed-section state, and formatting the
-    /// count — is cheap and stays in the view body.
+    /// main thread by the app model's list loader). The remaining work — hiding shadowed
+    /// categories, filtering empty sections for an active search, applying collapsed-section
+    /// state, and formatting the count — is cheap and stays in the view body. Keeping the
+    /// ghost/reveal flags out of the builder means toggling either one re-filters rather than
+    /// re-groups the list.
     init(
         visibleEntries: [CardCollectionEntryRecord],
         builtSections: [CardCollectionEntrySection],
         collapsedSectionIDs: Set<CardCollectionEntrySection.ID>,
         isSearchActive: Bool,
-        totalEntryCount: Int
+        totalEntryCount: Int,
+        showsMultiCategoryCards: Bool = false,
+        revealsShadowedCategories: Bool = false
     ) {
         self.visibleEntries = visibleEntries
+        self.showsMultiCategoryCards = showsMultiCategoryCards
 
-        sections = isSearchActive
-            ? builtSections.filter { !$0.entries.isEmpty }
-            : builtSections
+        if revealsShadowedCategories {
+            sections = builtSections
+        } else if isSearchActive {
+            sections = builtSections.filter { section in
+                !section.displayedEntries(showingGhosts: showsMultiCategoryCards).isEmpty
+            }
+        } else {
+            sections = builtSections.filter { section in
+                !section.isShadowed(showingGhosts: showsMultiCategoryCards)
+            }
+        }
+
+        // Ghosts stay out of the expanded set: it drives selection sweeps, image prefetching, and
+        // keyboard traversal, all of which key off a unique entry ID.
         expandedEntries = sections.flatMap { section in
             collapsedSectionIDs.contains(section.id) ? [] : section.entries
         }
@@ -78,6 +135,7 @@ enum CardCollectionEntrySectionBuilder {
         var sections: [CardCollectionEntrySection] = []
         var uncategorizedEntriesByZone: [CardCollectionZone: [CardCollectionEntryRecord]] = [:]
         var entriesByCategoryID: [CardCollectionCategoryRecord.ID: [CardCollectionEntryRecord]] = [:]
+        var ghostEntriesByCategoryID: [CardCollectionCategoryRecord.ID: [CardCollectionEntryRecord]] = [:]
         var categoriesByZone: [CardCollectionZone: [CardCollectionCategoryRecord]] = [:]
         var zonesWithEntries: Set<CardCollectionZone> = []
 
@@ -87,6 +145,10 @@ enum CardCollectionEntrySectionBuilder {
                 entriesByCategoryID[categoryID, default: []].append(entry)
             } else {
                 uncategorizedEntriesByZone[entry.zone, default: []].append(entry)
+            }
+
+            for secondaryID in entry.secondaryCategoryIDs where secondaryID != entry.categoryID {
+                ghostEntriesByCategoryID[secondaryID, default: []].append(entry)
             }
         }
 
@@ -128,6 +190,11 @@ enum CardCollectionEntrySectionBuilder {
                         category: category,
                         entries: sortedEntries(
                             entriesByCategoryID[category.id, default: []],
+                            mode: displaySortMode,
+                            direction: displaySortDirection
+                        ),
+                        ghostEntries: sortedEntries(
+                            ghostEntriesByCategoryID[category.id, default: []],
                             mode: displaySortMode,
                             direction: displaySortDirection
                         ),

@@ -172,6 +172,9 @@ extension CardCollectionDetailView {
         moveEntryIDs(ids, toCategoryID: category.id)
     }
 
+    /// The destination of every drop inside the collection. A landed drop ends the drag outright,
+    /// so the shadowed categories it surfaced retire immediately rather than waiting out the
+    /// targeting grace period.
     func moveEntryIDs(
         _ ids: [CardCollectionEntryRecord.ID],
         toZone zone: CardCollectionZone,
@@ -182,6 +185,7 @@ extension CardCollectionDetailView {
         } else {
             model.moveCardCollectionEntries(ids: ids, toZone: zone)
         }
+        dragReveal.endDrag()
         pruneSelectedListEntryIDs()
         listMoveFeedbackTrigger += 1
     }

@@ -2,6 +2,8 @@ import GrimoraCore
 import SwiftUI
 
 #if os(macOS)
+import AppKit
+
 @Observable
 @MainActor
 public final class GrimoraSearchFocusController {
@@ -38,6 +40,8 @@ private struct SplitRootView: View {
     @State private var listNameAction: CollectionNameAction?
     @State private var previousSidebarSelection: GrimoraSidebarSelection = .search
     @State private var listNameDraft = ""
+    /// Token for the app-wide key-down monitor backing the "F" hover-to-foil shortcut.
+    @State private var foilKeyMonitor: Any?
 
     /// Resting width of the detail pane — drag-adjustable and persisted. The pane
     /// opens at this width; double-clicking the divider grows it to the maximized
@@ -67,8 +71,16 @@ private struct SplitRootView: View {
         .focusedSceneValue(\.libraryMaintenanceController, libraryMaintenance)
         .environment(libraryMaintenance)
         .libraryMaintenanceConfirmationDialog(controller: libraryMaintenance)
+        .overlay(alignment: .bottom) {
+            foilNoticeOverlay
+        }
+        .animation(.spring(duration: 0.3), value: model.foilCommandNotice)
         .onAppear {
             GridZoomController.activeForCommands = gridZoom
+            installFoilKeyMonitor()
+        }
+        .onDisappear {
+            removeFoilKeyMonitor()
         }
         .onChange(of: searchFocus.focusRequestID) { _, _ in
             model.selectSearch()
@@ -442,6 +454,92 @@ private struct SplitRootView: View {
 
         self.listNameAction = nil
         listNameDraft = ""
+    }
+
+    // MARK: Foil shortcut
+
+    @ViewBuilder
+    private var foilNoticeOverlay: some View {
+        if let notice = model.foilCommandNotice {
+            FoilCommandNoticeToast(message: notice.message)
+                .padding(.bottom, 28)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .task(id: notice.id) {
+                    try? await Task.sleep(for: .seconds(1.8))
+                    model.dismissFoilNotice()
+                }
+        }
+    }
+
+    /// Installs an app-wide key-down monitor so pressing plain "F" flips the hovered (or detail)
+    /// card to foil. A monitor — rather than a menu key equivalent — is used deliberately: it can
+    /// step aside while a text field is focused (so typing "f", including in the search field,
+    /// still works), which a global menu shortcut cannot.
+    private func installFoilKeyMonitor() {
+        guard foilKeyMonitor == nil else {
+            return
+        }
+        foilKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard Self.isFoilShortcut(event) else {
+                return event
+            }
+            // Consume the key only when a card was actually flipped; otherwise (text field focused,
+            // or nothing to act on) let it fall through so typing "f" still works. `event` is kept
+            // out of the main-actor hop — NSEvent isn't Sendable.
+            let consumed = MainActor.assumeIsolated {
+                !Self.isTextInputFocused() && model.performFoilToggleCommand()
+            }
+            return consumed ? nil : event
+        }
+    }
+
+    private func removeFoilKeyMonitor() {
+        if let foilKeyMonitor {
+            NSEvent.removeMonitor(foilKeyMonitor)
+            self.foilKeyMonitor = nil
+        }
+    }
+
+    private static func isFoilShortcut(_ event: NSEvent) -> Bool {
+        // Ignore auto-repeat so holding "F" flips once, not a rapid on/off/on flutter.
+        guard !event.isARepeat,
+              event.modifierFlags.intersection([.command, .option, .control]).isEmpty else {
+            return false
+        }
+        return event.charactersIgnoringModifiers?.lowercased() == "f"
+    }
+
+    /// Whether an editable text control currently holds focus. NSTextField's field editor and the
+    /// rich-text NSTextView are both `NSText` subclasses, so this covers the search field, the
+    /// collection description editor, and inline rename/quantity fields. Read-only text (e.g. the
+    /// selectable oracle text) reports `isEditable == false`, so "F" still works while it's focused.
+    @MainActor
+    private static func isTextInputFocused() -> Bool {
+        guard let responder = NSApp.keyWindow?.firstResponder else {
+            return false
+        }
+        if let text = responder as? NSText {
+            return text.isEditable
+        }
+        return responder is NSTextView
+    }
+}
+
+private struct FoilCommandNoticeToast: View {
+    var message: String
+
+    var body: some View {
+        Text(message)
+            .font(.callout.weight(.medium))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(.regularMaterial, in: Capsule())
+            .overlay {
+                Capsule().strokeBorder(.separator.opacity(0.6))
+            }
+            .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
+            .accessibilityIdentifier("foil-command-notice")
     }
 }
 #endif

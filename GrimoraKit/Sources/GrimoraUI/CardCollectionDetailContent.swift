@@ -230,7 +230,7 @@ extension CardCollectionDetailView {
                 )
             }
 
-            if model.selectedCollectionEntries.isEmpty && model.selectedCollectionCategories.isEmpty {
+            if model.selectedCollectionEntries.isEmpty {
                 ContentUnavailableView("Empty List", systemImage: "list.bullet.rectangle")
                     .tint(palette.accent.color)
                     .frame(maxWidth: .infinity, minHeight: 220)
@@ -266,6 +266,7 @@ extension CardCollectionDetailView {
                             section: section,
                             palette: palette,
                             isCollapsed: isSectionCollapsed(section),
+                            showsGhosts: snapshot.showsMultiCategoryCards,
                             onToggleCollapsed: { toggleCollapsedSection(section) },
                             onMoveEntriesToCategory: { entryIDs in
                                 moveEntryIDs(entryIDs, toZone: section.zone, categoryID: section.category?.id)
@@ -274,7 +275,10 @@ extension CardCollectionDetailView {
                         )
 
                         if !isSectionCollapsed(section) {
-                            if section.entries.isEmpty {
+                            let displayedEntries = section.displayedEntries(
+                                showingGhosts: snapshot.showsMultiCategoryCards
+                            )
+                            if displayedEntries.isEmpty {
                                 CardCollectionEmptyCategoryView(
                                     palette: palette,
                                     onMoveEntriesToCategory: { entryIDs in
@@ -283,18 +287,22 @@ extension CardCollectionDetailView {
                                 )
                             } else {
                                 AdaptiveCardGrid(
-                                    items: section.entries,
+                                    items: displayedEntries,
                                     id: { $0.id },
-                                    landscapeItemIDs: defaultLandscapeArtworkEntryIDs(for: section.entries),
+                                    landscapeItemIDs: defaultLandscapeArtworkEntryIDs(for: displayedEntries),
                                     minimumColumnWidth: gridZoom.minimumColumnWidth,
                                     maximumColumnWidth: gridZoom.maximumColumnWidth,
                                     horizontalAlignment: listGridHorizontalAlignment,
                                     fillsSingleColumn: listGridFillsSingleColumn
                                 ) { entry in
-                                    listEntryView(
-                                        entry,
-                                        displayedEntries: snapshot.expandedEntries
-                                    )
+                                    if section.isGhost(entry) {
+                                        ghostEntryView(entry, in: section)
+                                    } else {
+                                        listEntryView(
+                                            entry,
+                                            displayedEntries: snapshot.expandedEntries
+                                        )
+                                    }
                                 }
                                 #if os(macOS) || os(iOS) || os(visionOS)
                                 .dropDestination(for: String.self) { tokens, _ in
@@ -304,6 +312,8 @@ extension CardCollectionDetailView {
                                     }
                                     moveEntryIDs(entryIDs, toZone: section.zone, categoryID: section.category?.id)
                                     return true
+                                } isTargeted: { isTargeted in
+                                    dragReveal.setTargeted(isTargeted)
                                 }
                                 #endif
                             }
@@ -362,7 +372,7 @@ extension CardCollectionDetailView {
             .listRowBackground(Color.clear)
         }
 
-        if model.selectedCollectionEntries.isEmpty && model.selectedCollectionCategories.isEmpty {
+        if model.selectedCollectionEntries.isEmpty {
             ContentUnavailableView("Empty List", systemImage: "list.bullet.rectangle")
                 .tint(palette.accent.color)
                 .frame(maxWidth: .infinity, minHeight: 220)
@@ -403,7 +413,10 @@ extension CardCollectionDetailView {
             ForEach(snapshot.sections) { section in
                 Section {
                     if !isSectionCollapsed(section) {
-                        if section.entries.isEmpty {
+                        let displayedEntries = section.displayedEntries(
+                            showingGhosts: snapshot.showsMultiCategoryCards
+                        )
+                        if displayedEntries.isEmpty {
                             CardCollectionTextEmptyCategoryRow(palette: palette)
                                 .listRowBackground(listRowBackground)
                                 .dropDestination(for: String.self) { tokens, _ in
@@ -413,19 +426,28 @@ extension CardCollectionDetailView {
                                     }
                                     moveEntryIDs(entryIDs, toZone: section.zone, categoryID: section.category?.id)
                                     return true
+                                } isTargeted: { isTargeted in
+                                    dragReveal.setTargeted(isTargeted)
                                 }
                         } else {
-                            ForEach(section.entries) { entry in
-                                listEntryTextRowView(entry)
-                                    .listRowBackground(listRowBackground)
-                                    .dropDestination(for: String.self) { tokens, _ in
-                                        let entryIDs = CardCollectionEntryDragToken.entryIDs(from: tokens)
-                                        guard !entryIDs.isEmpty else {
-                                            return false
+                            ForEach(displayedEntries) { entry in
+                                if section.isGhost(entry) {
+                                    ghostEntryTextRowView(entry, in: section)
+                                        .listRowBackground(listRowBackground)
+                                } else {
+                                    listEntryTextRowView(entry)
+                                        .listRowBackground(listRowBackground)
+                                        .dropDestination(for: String.self) { tokens, _ in
+                                            let entryIDs = CardCollectionEntryDragToken.entryIDs(from: tokens)
+                                            guard !entryIDs.isEmpty else {
+                                                return false
+                                            }
+                                            moveEntryIDs(entryIDs, toZone: section.zone, categoryID: section.category?.id)
+                                            return true
+                                        } isTargeted: { isTargeted in
+                                            dragReveal.setTargeted(isTargeted)
                                         }
-                                        moveEntryIDs(entryIDs, toZone: section.zone, categoryID: section.category?.id)
-                                        return true
-                                    }
+                                }
                             }
                         }
                     }
@@ -434,6 +456,7 @@ extension CardCollectionDetailView {
                         section: section,
                         palette: palette,
                         isCollapsed: isSectionCollapsed(section),
+                        showsGhosts: snapshot.showsMultiCategoryCards,
                         onToggleCollapsed: { toggleCollapsedSection(section) },
                         onMoveEntriesToCategory: { entryIDs in
                             moveEntryIDs(entryIDs, toZone: section.zone, categoryID: section.category?.id)

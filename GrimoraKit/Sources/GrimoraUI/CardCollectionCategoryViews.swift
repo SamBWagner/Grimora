@@ -46,11 +46,13 @@ extension View {
 }
 
 struct CardCollectionCategorySectionView: View {
+    @Environment(\.cardCollectionDragReveal) private var dragReveal
     @State private var dropFeedbackTrigger = 0
 
     var section: CardCollectionEntrySection
     var palette: GrimoraPalette
     var isCollapsed: Bool
+    var showsGhosts = false
     var onToggleCollapsed: () -> Void
     var onMoveEntriesToCategory: ([CardCollectionEntryRecord.ID]) -> Void
     var onRenameCategory: (CardCollectionCategoryRecord) -> Void
@@ -73,7 +75,7 @@ struct CardCollectionCategorySectionView: View {
                         }
                     }
 
-                Text(section.entryCountText)
+                Text(section.entryCountText(showingGhosts: showsGhosts))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(palette.secondaryText.color)
                     .lineLimit(1)
@@ -115,6 +117,8 @@ struct CardCollectionCategorySectionView: View {
             onMoveEntriesToCategory(entryIDs)
             dropFeedbackTrigger += 1
             return true
+        } isTargeted: { isTargeted in
+            dragReveal?.setTargeted(isTargeted)
         }
         .grimoraDropSuccessFeedback(trigger: dropFeedbackTrigger)
         #endif
@@ -574,6 +578,8 @@ struct CardCollectionCategoryMovementControls: View {
 }
 
 struct CardCollectionEmptyCategoryView: View {
+    @Environment(\.cardCollectionDragReveal) private var dragReveal
+
     var palette: GrimoraPalette
     var onMoveEntriesToCategory: ([CardCollectionEntryRecord.ID]) -> Void
 
@@ -597,6 +603,8 @@ struct CardCollectionEmptyCategoryView: View {
                 }
                 onMoveEntriesToCategory(entryIDs)
                 return true
+            } isTargeted: { isTargeted in
+                dragReveal?.setTargeted(isTargeted)
             }
             #endif
     }

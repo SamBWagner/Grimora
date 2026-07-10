@@ -106,6 +106,28 @@ extension CardCollectionDetailView {
         .accessibilityIdentifier("scanned-clear-button")
     }
 
+    /// Toggles whether cards appear, dimmed, in every category they're tagged into. Only offered
+    /// once a collection has categories to tag across — with none, there's nothing to show.
+    @ViewBuilder
+    func multiCategoryToggleButton(for list: CardCollectionRecord) -> some View {
+        if !model.selectedCollectionCategories.isEmpty {
+            Button {
+                model.setCardCollectionMultiCategoryVisibility(
+                    id: list.id,
+                    showsMultiCategoryCards: !list.showsMultiCategoryCards
+                )
+            } label: {
+                Text(
+                    list.showsMultiCategoryCards
+                        ? "Hide Multi-Category Cards"
+                        : "Show Multi-Category Cards"
+                )
+            }
+            .accessibilityIdentifier("toggle-list-multi-category-button")
+            .accessibilityValue(list.showsMultiCategoryCards ? "Shown" : "Hidden")
+        }
+    }
+
     #if os(macOS)
     @ToolbarContentBuilder
     func macListToolbar(snapshot: CardCollectionDetailSnapshot) -> some ToolbarContent {
@@ -219,7 +241,7 @@ extension CardCollectionDetailView {
                 .disabled(!model.hasReorganizableEntries)
                 .accessibilityIdentifier("reorganize-list-by-type-button")
 
-                if model.selectedCollectionCategories.count > 1 {
+                if model.selectedCollectionCategories.count > 1 || hasShadowedCategories(snapshot) {
                     Button {
                         if !isReorderingCategories {
                             clearListEntrySelection()
@@ -235,6 +257,8 @@ extension CardCollectionDetailView {
                             : "reorder-list-categories-button"
                     )
                 }
+
+                multiCategoryToggleButton(for: selectedCollection)
 
                 if !snapshot.sections.isEmpty && !isReorderingCategories {
                     Button {
@@ -465,7 +489,7 @@ extension CardCollectionDetailView {
         .disabled(!model.hasReorganizableEntries)
         .accessibilityIdentifier("reorganize-list-by-type-button")
 
-        if model.selectedCollectionCategories.count > 1 {
+        if model.selectedCollectionCategories.count > 1 || hasShadowedCategories(snapshot) {
             Button {
                 if !isReorderingCategories {
                     clearListEntrySelection()
@@ -481,6 +505,8 @@ extension CardCollectionDetailView {
                     : "reorder-list-categories-button"
             )
         }
+
+        multiCategoryToggleButton(for: selectedCollection)
 
         if !snapshot.sections.isEmpty {
             Button {
@@ -620,7 +646,7 @@ extension CardCollectionDetailView {
             .disabled(!model.hasReorganizableEntries)
             .accessibilityIdentifier("reorganize-list-by-type-button")
 
-            if model.selectedCollectionCategories.count > 1 {
+            if model.selectedCollectionCategories.count > 1 || hasShadowedCategories(snapshot) {
                 Button {
                     if !isReorderingCategories {
                         clearListEntrySelection()
@@ -636,6 +662,8 @@ extension CardCollectionDetailView {
                         : "reorder-list-categories-button"
                 )
             }
+
+            multiCategoryToggleButton(for: selectedCollection)
 
             if !snapshot.sections.isEmpty {
                 Button {
