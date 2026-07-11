@@ -32,6 +32,38 @@ enum GrimoraPerf {
     ProcessInfo.processInfo.environment["GRIMORA_DISABLE_IMAGE_PREDECODE"] == "1"
 }
 
+/// Plain (non-`@Observable`) main-thread tallies bumped from instrumented hot paths to attribute
+/// scroll jank: how often the grid re-packs its rows, how many tile bodies evaluate, and how often
+/// the list-detail snapshot rebuilds. They live outside the observation graph so a bump never
+/// invalidates a view (which would perturb the very thing we're measuring); `ScrollHitchMonitor`
+/// samples a snapshot on its ~2Hz window tick and publishes *that* for the HUD/benchmark to read.
+/// Every bump is a no-op unless the HUD is enabled, so normal runs pay nothing.
+@MainActor
+final class PerfCounters {
+  static let shared = PerfCounters()
+
+  var gridRowPacks = 0
+  var tileBodyEvals = 0
+  var snapshotBuilds = 0
+
+  private init() {}
+
+  static func bumpGridRowPacks() {
+    guard GrimoraPerf.isHUDEnabled else { return }
+    shared.gridRowPacks += 1
+  }
+
+  static func bumpTileBodyEvals() {
+    guard GrimoraPerf.isHUDEnabled else { return }
+    shared.tileBodyEvals += 1
+  }
+
+  static func bumpSnapshotBuilds() {
+    guard GrimoraPerf.isHUDEnabled else { return }
+    shared.snapshotBuilds += 1
+  }
+}
+
 /// A `CADisplayLink`-driven frame-time monitor. It watches the real vsync cadence and, over a short
 /// rolling window, reports the achieved frame rate, how many frames were long enough to read as a
 /// visible stutter ("hitches"), and the single worst frame. A hitch is a frame whose wall-clock
@@ -58,13 +90,18 @@ final class ScrollHitchMonitor {
   /// this is a monotonic magnitude — the total wall-clock the render loop fell behind — so it can
   /// still discriminate a smaller vs larger main-thread cost even during sustained jank.
   private(set) var cumulativeJankMilliseconds: Double = 0
+  /// Snapshots of the `PerfCounters` tallies, refreshed each window tick so the HUD/benchmark can
+  /// read them without the counters driving re-renders.
+  private(set) var gridRowPacks = 0
+  private(set) var tileBodyEvals = 0
+  private(set) var snapshotBuilds = 0
   private(set) var isRunning = false
 
   /// Machine-readable one-liner mirrored onto the HUD's accessibility value so a UI test can read
   /// the live counters back (`total=` hitch tally, `jank=` cumulative over-budget ms — both used by
   /// the scroll benchmark).
   var statusValue: String {
-    "total=\(totalHitches) jank=\(Int(cumulativeJankMilliseconds.rounded())) worst=\(Int(worstFrameMilliseconds.rounded())) fps=\(Int(framesPerSecond.rounded()))"
+    "total=\(totalHitches) jank=\(Int(cumulativeJankMilliseconds.rounded())) packs=\(gridRowPacks) tiles=\(tileBodyEvals) snaps=\(snapshotBuilds) worst=\(Int(worstFrameMilliseconds.rounded())) fps=\(Int(framesPerSecond.rounded()))"
   }
 
   private static let windowSeconds: Double = 0.5
@@ -141,6 +178,10 @@ final class ScrollHitchMonitor {
       framesPerSecond = Double(windowFrames) / windowElapsed
       hitchesInWindow = windowHitches
       worstFrameMilliseconds = windowWorstSeconds * 1000
+      let counters = PerfCounters.shared
+      gridRowPacks = counters.gridRowPacks
+      tileBodyEvals = counters.tileBodyEvals
+      snapshotBuilds = counters.snapshotBuilds
       if windowHitches > 0 {
         GrimoraPerf.log.log(
           "fps \(self.framesPerSecond, format: .fixed(precision: 0)) hitches \(self.windowHitches) worst \(self.worstFrameMilliseconds, format: .fixed(precision: 1))ms"

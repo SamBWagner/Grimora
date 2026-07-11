@@ -17,6 +17,7 @@ extension CardCollectionDetailView {
     }
 
     func makeListDetailSnapshot() -> CardCollectionDetailSnapshot {
+        PerfCounters.bumpSnapshotBuilds()
         let totalCount = model.selectedCollectionEntryTotal
         let collapsed = collapsedListCategoryIDs
         let list = model.selectedCollection

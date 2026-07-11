@@ -69,6 +69,7 @@ struct CardGridItemView: View {
     var onArtworkOverflowChange: (Bool) -> Void = { _ in }
 
     var body: some View {
+        let _ = PerfCounters.bumpTileBodyEvals()
         tileContent
             .cardGridSelectionChrome(
                 isSelected: isSelectedInSelection,

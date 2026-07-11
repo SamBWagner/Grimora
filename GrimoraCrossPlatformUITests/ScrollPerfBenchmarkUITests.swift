@@ -53,6 +53,9 @@ final class ScrollPerfBenchmarkUITests: XCTestCase {
     private struct Sample {
       var hitches: Int
       var jankMilliseconds: Int
+      var gridRowPacks: Int
+      var tileBodyEvals: Int
+      var snapshotBuilds: Int
     }
 
     @MainActor
@@ -118,7 +121,10 @@ final class ScrollPerfBenchmarkUITests: XCTestCase {
       let final = try readStatus(app)
       return Sample(
         hitches: max(0, final.hitches - baseline.hitches),
-        jankMilliseconds: max(0, final.jankMilliseconds - baseline.jankMilliseconds)
+        jankMilliseconds: max(0, final.jankMilliseconds - baseline.jankMilliseconds),
+        gridRowPacks: max(0, final.gridRowPacks - baseline.gridRowPacks),
+        tileBodyEvals: max(0, final.tileBodyEvals - baseline.tileBodyEvals),
+        snapshotBuilds: max(0, final.snapshotBuilds - baseline.snapshotBuilds)
       )
     }
 
@@ -137,12 +143,18 @@ final class ScrollPerfBenchmarkUITests: XCTestCase {
         }
         return n
       }
-      return Sample(hitches: field("total"), jankMilliseconds: field("jank"))
+      return Sample(
+        hitches: field("total"),
+        jankMilliseconds: field("jank"),
+        gridRowPacks: field("packs"),
+        tileBodyEvals: field("tiles"),
+        snapshotBuilds: field("snaps")
+      )
     }
 
     private func record(_ sample: Sample, label: String) {
       let line =
-        "SCROLLPERF \(label) scrollHitches=\(sample.hitches) jankMs=\(sample.jankMilliseconds) cards=\(Self.cardCount)"
+        "SCROLLPERF \(label) scrollHitches=\(sample.hitches) jankMs=\(sample.jankMilliseconds) gridRowPacks=\(sample.gridRowPacks) tileBodyEvals=\(sample.tileBodyEvals) snapshotBuilds=\(sample.snapshotBuilds) cards=\(Self.cardCount)"
       print(line)
       let attachment = XCTAttachment(string: line)
       attachment.name = "scrollperf-\(label)"

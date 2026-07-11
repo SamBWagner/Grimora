@@ -82,7 +82,8 @@ struct AdaptiveCardGrid<Item, ID: Hashable, Content: View>: View {
     }
 
     private var rows: [[AdaptiveCardGridEntry<Item, ID>]] {
-        adaptiveCardGridRows(
+        PerfCounters.bumpGridRowPacks()
+        return adaptiveCardGridRows(
             items: items,
             id: id,
             landscapeItemIDs: landscapeItemIDs,
