@@ -53,7 +53,19 @@ final class ScrollHitchMonitor {
   private(set) var worstFrameMilliseconds: Double = 0
   /// Running total of hitches since the monitor started — a cheap "how bad was that scroll" tally.
   private(set) var totalHitches: Int = 0
+  /// Cumulative milliseconds of frame time spent *over* the display's per-frame budget since the
+  /// monitor started. Unlike the thresholded hitch count (which saturates when every frame is slow),
+  /// this is a monotonic magnitude — the total wall-clock the render loop fell behind — so it can
+  /// still discriminate a smaller vs larger main-thread cost even during sustained jank.
+  private(set) var cumulativeJankMilliseconds: Double = 0
   private(set) var isRunning = false
+
+  /// Machine-readable one-liner mirrored onto the HUD's accessibility value so a UI test can read
+  /// the live counters back (`total=` hitch tally, `jank=` cumulative over-budget ms — both used by
+  /// the scroll benchmark).
+  var statusValue: String {
+    "total=\(totalHitches) jank=\(Int(cumulativeJankMilliseconds.rounded())) worst=\(Int(worstFrameMilliseconds.rounded())) fps=\(Int(framesPerSecond.rounded()))"
+  }
 
   private static let windowSeconds: Double = 0.5
 
@@ -107,6 +119,7 @@ final class ScrollHitchMonitor {
         : 1.0 / 60.0
       let hitchThreshold = nominal * 1.5
 
+      cumulativeJankMilliseconds += max(0, frameDuration - nominal) * 1000
       windowFrames += 1
       windowElapsed += frameDuration
 
@@ -183,6 +196,9 @@ struct PerfHUDView: View {
     .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     .foregroundStyle(.white)
     .allowsHitTesting(false)
+    .accessibilityElement(children: .ignore)
+    .accessibilityIdentifier("perf-hud-status")
+    .accessibilityValue(monitor.statusValue)
     .task {
       monitor.start()
     }
