@@ -378,7 +378,8 @@ final class LocalCardImageLoader: @unchecked Sendable {
 
       let task = Task.detached(priority: .utility) {
         PlatformImage(contentsOfFile: filePath).map { image in
-          PlatformImageBox(image: image, cost: Self.estimatedCost(of: image))
+          let prepared = Self.imagePreparedForDisplay(image)
+          return PlatformImageBox(image: prepared, cost: Self.estimatedCost(of: prepared))
         }
       }
       inFlightLoads[filePath] = task
@@ -428,6 +429,26 @@ final class LocalCardImageLoader: @unchecked Sendable {
     lock.withLock {
       preloadConcurrency
     }
+  }
+
+  /// Forces the compressed file's bitmap decode to happen *here*, on this off-main utility task,
+  /// rather than lazily on the main thread the first time a tile draws. `UIImage(contentsOfFile:)`
+  /// only maps the file — the expensive JPEG/PNG → pixels step is deferred to draw time, which lands
+  /// on the render loop mid-scroll and drops frames. `preparingForDisplay()` runs that decode now and
+  /// hands back an image whose bitmap is ready, so scrolling into a cached tile is just a blit.
+  private static func imagePreparedForDisplay(_ image: PlatformImage) -> PlatformImage {
+    #if os(iOS) || os(visionOS)
+      guard !GrimoraPerf.isImagePredecodeDisabled else {
+        return image
+      }
+      return GrimoraPerf.signposter.withIntervalSignpost("decode") {
+        image.preparingForDisplay() ?? image
+      }
+    #else
+      // NSImage decodes lazily too, but the macOS host isn't where the scroll lag was reported and
+      // its redraw path differs; leave it untouched.
+      return image
+    #endif
   }
 
   private static func estimatedCost(of image: PlatformImage) -> Int {

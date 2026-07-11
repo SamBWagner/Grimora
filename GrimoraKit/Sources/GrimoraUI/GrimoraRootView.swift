@@ -63,6 +63,7 @@ public struct GrimoraRootView: View {
             }
         }
         .environment(model)
+        .grimoraPerfHUD()
         .platformChromeTint(palette: palette)
         .background {
             GrimoraAppBackground(palette: palette)
