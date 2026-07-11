@@ -17,6 +17,14 @@ struct JumpToTopScrollState: Equatable {
         JumpToTopScrollState()
     }
 
+    /// A canonical "button should show" state. Scroll tracking stores only this or `.top` — never the
+    /// live per-frame offset — so the bound `@State` changes at most on a threshold crossing rather
+    /// than on every scroll frame. Nothing reads the raw offset/viewport (only `showsButton`), so a
+    /// canonical value is behaviour-identical. `minimumOffset` clears the `>= threshold` bar.
+    static var showingButton: JumpToTopScrollState {
+        JumpToTopScrollState(contentOffsetY: minimumOffset, viewportHeight: 0)
+    }
+
     var showsButton: Bool {
         Self.showsButton(contentOffsetY: contentOffsetY, viewportHeight: viewportHeight)
     }
@@ -183,31 +191,42 @@ private struct JumpToTopScrollTrackingModifier: ViewModifier {
         #if os(macOS)
         if #available(macOS 15.0, *) {
             content
-                .onScrollGeometryChange(for: JumpToTopScrollState.self) { geometry in
-                    JumpToTopScrollState(
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    JumpToTopScrollState.showsButton(
                         contentOffsetY: geometry.contentOffset.y,
                         viewportHeight: geometry.containerSize.height
                     )
-                } action: { _, newState in
-                    state = newState
+                } action: { _, showsButton in
+                    applyButtonVisibility(showsButton)
                 }
         } else {
             content
                 .onPreferenceChange(JumpToTopScrollStatePreferenceKey.self) { newState in
-                    state = newState
+                    applyButtonVisibility(newState.showsButton)
                 }
         }
         #else
         content
-            .onScrollGeometryChange(for: JumpToTopScrollState.self) { geometry in
-                JumpToTopScrollState(
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                JumpToTopScrollState.showsButton(
                     contentOffsetY: geometry.contentOffset.y,
                     viewportHeight: geometry.containerSize.height
                 )
-            } action: { _, newState in
-                state = newState
+            } action: { _, showsButton in
+                applyButtonVisibility(showsButton)
             }
         #endif
+    }
+
+    /// Only writes the bound state when the button's visibility actually flips. Tracking a `Bool`
+    /// (rather than the raw offset) means `onScrollGeometryChange` fires this at most twice per
+    /// scroll — a threshold crossing each way — instead of every frame, which was re-evaluating the
+    /// whole list-detail body (snapshot rebuild + grid re-pack) on every scroll tick.
+    private func applyButtonVisibility(_ showsButton: Bool) {
+        guard state.showsButton != showsButton else {
+            return
+        }
+        state = showsButton ? .showingButton : .top
     }
 }
 
