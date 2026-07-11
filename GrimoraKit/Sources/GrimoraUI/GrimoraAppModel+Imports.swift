@@ -246,8 +246,28 @@ extension GrimoraAppModel {
       + sortedCardCollections(userLists.filter { !$0.isPinned })
   }
 
+  /// This ran unconditionally on every list mutation (category change, quantity edit, zone move —
+  /// ~35 call sites) and recomputed every list's top card via 2 DB reads + a full section build
+  /// each, all synchronously on the main thread. With dozens of decks that's an O(lists) stall on
+  /// every single edit — the reported "changing a card's category chugs the whole app" lag.
+  /// Only the actively selected list can have had an entry-level change (category/quantity/zone)
+  /// without its own `CardCollectionRecord` changing, so it always recomputes; every other list
+  /// reuses its cached item unless its record actually changed (entryCount, sort mode, etc. are
+  /// read fresh from the DB each time, so an add/remove/rename elsewhere still invalidates it) or
+  /// it has no cached item yet (a brand-new list). A remote sync that only reassigns categories on
+  /// a list you aren't viewing can leave its dashboard thumbnail stale until the next touch — a
+  /// display-only trade-off, since opening that list always reloads its sections fresh.
   func refreshListOverviewItems() {
+    let previousItemsByID = Dictionary(
+      uniqueKeysWithValues: cardCollectionOverviewItems.map { ($0.list.id, $0) }
+    )
     cardCollectionOverviewItems = cardCollections.map { list in
+      if list.id != selectedCollectionID,
+        let cached = previousItemsByID[list.id],
+        cached.list == list
+      {
+        return cached
+      }
       let topEntry = topOverviewEntry(for: list)
       return CardCollectionOverviewItem(
         list: list,
