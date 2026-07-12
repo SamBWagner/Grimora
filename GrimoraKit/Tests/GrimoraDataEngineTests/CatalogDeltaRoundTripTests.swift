@@ -1,0 +1,224 @@
+import Foundation
+import GrimoraCore
+import GrimoraEngineKit
+import Testing
+
+/// Proves the core of the incremental-update feature: a delta generated from catalog A → B, applied
+/// on top of a copy of A, reproduces B's *logical content* exactly (same content digests, counts,
+/// and `quick_check`), even though the files differ byte-for-byte. Exercises every patch section —
+/// price-only update, non-price upsert, new card, deleted card, and a one-day series append.
+struct CatalogDeltaRoundTripTests {
+  @Test
+  func deltaFromAtoBReproducesBExactly() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("DeltaRoundTrip-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let buildA = try await buildCatalog(fixture: .versionA, root: root, tag: "a")
+    let buildB = try await buildCatalog(fixture: .versionB, root: root, tag: "b")
+
+    // Sanity: the two builds differ and have the expected shape.
+    #expect(buildA.manifest.counts.cards == 3) // forest, relic, ghost
+    #expect(buildB.manifest.counts.cards == 3) // forest, relic, isle (ghost removed)
+    #expect(buildA.manifest.version != buildB.manifest.version)
+
+    let baseCatalog = buildA.directory.appendingPathComponent("catalog.sqlite")
+    let targetCatalog = buildB.directory.appendingPathComponent("catalog.sqlite")
+
+    // Generate the delta and assert it used the compact/narrow encodings we expect.
+    let deltaURL = root.appendingPathComponent("delta-a-to-b.sqlite")
+    let stats = try CatalogDeltaBuilder().buildDelta(
+      baseCatalogURL: baseCatalog,
+      targetCatalogURL: targetCatalog,
+      baseVersion: buildA.manifest.version,
+      targetVersion: buildB.manifest.version,
+      into: deltaURL
+    )
+    #expect(stats.cardsPriceUpdated == 1) // forest price 0.50 -> 0.55, nothing else changed
+    #expect(stats.cardsUpserted == 2) // relic (oracle changed) + isle (new)
+    #expect(stats.cardsDeleted == 1) // ghost
+    #expect(stats.seriesSlid == 1) // forest's 91-day window slid one day
+    #expect(stats.seriesReplaced == 0) // ...as a slide, not a full replace
+
+    // Apply the delta onto a copy of A.
+    let working = root.appendingPathComponent("working.sqlite")
+    try FileManager.default.copyItem(at: baseCatalog, to: working)
+    try CatalogDeltaApplier().apply(deltaURL: deltaURL, toWorkingCatalog: working)
+
+    // The patched catalog is logically identical to a fresh build of B.
+    let expected = try digests(of: targetCatalog)
+    let actual = try digests(of: working)
+    #expect(actual == expected)
+
+    // ...and structurally valid, with matching counts and consistent FTS.
+    let counts = try CardDatabase.validateCatalog(at: working)
+    #expect(counts == buildB.manifest.counts)
+    try assertConsistent(working)
+
+    // Spot-check user-visible data: forest's current value matches B, ghost is gone, isle exists.
+    let db = try CardDatabase(
+      userDatabaseURL: root.appendingPathComponent("reader-user.sqlite"),
+      catalogURL: working
+    )
+    #expect(try db.card(id: "engine-ghost") == nil)
+    #expect(try db.card(id: "engine-isle")?.name == "Engine Isle")
+    #expect(try db.card(id: "engine-relic")?.oracleText == "{T}: Add {C} or {W}.")
+    #expect(try db.valueGuide(forCardID: "engine-forest").entries.first?.currentPrice == 0.55)
+  }
+
+  // MARK: - Helpers
+
+  private func digests(of catalogURL: URL) throws -> CatalogContentDigests {
+    let database = try SQLiteDatabase(storage: .readOnlyFile(catalogURL))
+    return try CatalogContentDigest.compute(database)
+  }
+
+  private func assertConsistent(_ catalogURL: URL) throws {
+    let database = try SQLiteDatabase(storage: .readOnlyFile(catalogURL))
+    #expect(try database.quickCheck() == "ok")
+    func count(_ table: String) throws -> Int {
+      let statement = try database.prepare("SELECT COUNT(*) FROM \(table)")
+      _ = try statement.step()
+      return statement.int(at: 0) ?? 0
+    }
+    let cards = try count("cards")
+    #expect(try count("cards_fts") == cards)
+    #expect(try count("cards_name_fts") == cards)
+  }
+
+  private func buildCatalog(
+    fixture: DeltaTestFixture,
+    root: URL,
+    tag: String
+  ) async throws -> LocalBuildResult {
+    let engineRoot = root.appendingPathComponent("engine-\(tag)", isDirectory: true)
+    let environment = [
+      "GRIMORA_ENGINE_STATE_DIR": engineRoot.appendingPathComponent("state").path,
+      "GRIMORA_ENGINE_CACHE_DIR": engineRoot.appendingPathComponent("cache").path,
+      "GRIMORA_ENGINE_LOG_DIR": engineRoot.appendingPathComponent("logs").path,
+      "GRIMORA_CATALOG_PUBLIC_BASE_URL": "https://example.test/v1/catalog",
+    ]
+    let network = StubNetworkClient(responses: try fixture.responses())
+    let engine = try GrimoraDataEngine(environment: environment, network: network)
+    return try await engine.build(force: true)
+  }
+}
+
+/// Two related catalog snapshots. `versionB` differs from `versionA` by a price-only change (forest),
+/// a non-price change (relic oracle text), a new card (isle), a deletion (ghost), and one appended
+/// price day for forest.
+private enum DeltaTestFixture {
+  case versionA
+  case versionB
+
+  var scryfallUpdatedAt: String {
+    switch self {
+    case .versionA: "2026-06-14T09:00:00.000+00:00"
+    case .versionB: "2026-06-15T09:00:00.000+00:00"
+    }
+  }
+
+  var mtgjsonDate: String {
+    switch self {
+    case .versionA: "2026-06-14"
+    case .versionB: "2026-06-15"
+    }
+  }
+
+  func responses() throws -> [URL: Data] {
+    [
+      BulkDataClient.bulkDataURL: bulkManifestJSON(),
+      EngineFixtures.scryfallDownloadURL: defaultCardsJSON(),
+      MTGJSONPriceHistoryClient.metaURL: metaJSON(),
+      MTGJSONPriceHistoryClient.allPrintingsURL: try EngineFixtures.gzip(printingsJSON()),
+      MTGJSONPriceHistoryClient.allPricesURL: try EngineFixtures.gzip(pricesJSON()),
+    ]
+  }
+
+  private func bulkManifestJSON() -> Data {
+    Data("""
+      {
+        "object": "list", "has_more": false,
+        "data": [{
+          "object": "bulk_data", "id": "bulk-default", "type": "default_cards",
+          "updated_at": "\(scryfallUpdatedAt)",
+          "uri": "https://api.scryfall.com/bulk-data/bulk-default",
+          "name": "Default Cards", "description": "fixture", "size": 123,
+          "download_uri": "\(EngineFixtures.scryfallDownloadURL.absoluteString)",
+          "content_type": "application/json", "content_encoding": "gzip"
+        }]
+      }
+      """.utf8)
+  }
+
+  private func defaultCardsJSON() -> Data {
+    let forestPrice = self == .versionA ? "0.50" : "0.55"
+    let relicOracle = self == .versionA ? "{T}: Add {C}." : "{T}: Add {C} or {W}."
+    var cards = [
+      """
+      {"object":"card","id":"engine-forest","oracle_id":"oracle-engine-forest","name":"Engine Forest",
+       "lang":"en","released_at":"2024-01-01","layout":"normal","cmc":1,"type_line":"Creature — Treefolk",
+       "oracle_text":"Reach","power":"1","toughness":"2","colors":["G"],"color_identity":["G"],
+       "keywords":["Reach"],"produced_mana":["G"],"legalities":{"commander":"legal"},"games":["paper"],
+       "finishes":["nonfoil"],"foil":false,"nonfoil":true,"digital":false,"set":"eng",
+       "set_name":"Engine Fixture Set","set_type":"expansion","collector_number":"1","rarity":"common",
+       "prices":{"usd":"\(forestPrice)"},
+       "image_uris":{"normal":"https://cards.scryfall.io/normal/front/e/f/engine-forest.jpg"}}
+      """,
+      """
+      {"object":"card","id":"engine-relic","oracle_id":"oracle-engine-relic","name":"Engine Relic",
+       "lang":"en","released_at":"2024-02-01","layout":"normal","cmc":2,"type_line":"Artifact",
+       "oracle_text":"\(relicOracle)","colors":[],"color_identity":[],"games":["paper"],"digital":false,
+       "set":"eng","set_name":"Engine Fixture Set","set_type":"expansion","collector_number":"2","rarity":"rare"}
+      """,
+    ]
+    switch self {
+    case .versionA:
+      cards.append(
+        """
+        {"object":"card","id":"engine-ghost","oracle_id":"oracle-engine-ghost","name":"Engine Ghost",
+         "lang":"en","released_at":"2024-03-01","layout":"normal","cmc":3,"type_line":"Creature — Spirit",
+         "oracle_text":"Flying","power":"2","toughness":"2","colors":["W"],"color_identity":["W"],
+         "games":["paper"],"digital":false,"set":"eng","set_name":"Engine Fixture Set",
+         "set_type":"expansion","collector_number":"3","rarity":"uncommon"}
+        """)
+    case .versionB:
+      cards.append(
+        """
+        {"object":"card","id":"engine-isle","oracle_id":"oracle-engine-isle","name":"Engine Isle",
+         "lang":"en","released_at":"2024-04-01","layout":"normal","cmc":0,"type_line":"Land",
+         "oracle_text":"{T}: Add {U}.","colors":[],"color_identity":["U"],"games":["paper"],"digital":false,
+         "set":"eng","set_name":"Engine Fixture Set","set_type":"expansion","collector_number":"4","rarity":"common"}
+        """)
+    }
+    return Data("[\(cards.joined(separator: ","))]".utf8)
+  }
+
+  private func metaJSON() -> Data {
+    Data("""
+      {"meta": {"date": "\(mtgjsonDate)", "version": "5.3.0"}}
+      """.utf8)
+  }
+
+  private func printingsJSON() -> Data {
+    Data("""
+      {"data": {"ENG": {"cards": [
+        {"uuid": "uuid-engine-forest", "identifiers": {"scryfallId": "engine-forest"}}
+      ]}}}
+      """.utf8)
+  }
+
+  private func pricesJSON() -> Data {
+    let days: String
+    switch self {
+    case .versionA:
+      days = #""2026-06-13": 0.48, "2026-06-14": 0.50"#
+    case .versionB:
+      days = #""2026-06-13": 0.48, "2026-06-14": 0.50, "2026-06-15": 0.55"#
+    }
+    return Data("""
+      {"data": {"uuid-engine-forest": {"paper": {"tcgplayer": {"retail": {"normal": {\(days)}}}}}}}
+      """.utf8)
+  }
+}

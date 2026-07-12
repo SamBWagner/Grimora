@@ -68,6 +68,10 @@ public struct CatalogManifest: Codable, Equatable, Sendable {
   public var enrichments: [CatalogEnrichmentVersion]
   public var artifact: CatalogArtifact
   public var counts: CatalogCounts
+  /// Logical content digests for this build, added for incremental updates. Optional so the field
+  /// is additive: older clients ignore it, and a manifest produced before this feature decodes with
+  /// `nil` (which simply means no incremental path is advertised — clients full-download as before).
+  public var contentDigests: CatalogContentDigests?
 
   public init(
     version: String,
@@ -76,7 +80,8 @@ public struct CatalogManifest: Codable, Equatable, Sendable {
     sources: CatalogSourceVersions,
     enrichments: [CatalogEnrichmentVersion] = [],
     artifact: CatalogArtifact,
-    counts: CatalogCounts
+    counts: CatalogCounts,
+    contentDigests: CatalogContentDigests? = nil
   ) {
     self.version = version
     self.generatedAt = generatedAt
@@ -85,6 +90,7 @@ public struct CatalogManifest: Codable, Equatable, Sendable {
     self.enrichments = enrichments
     self.artifact = artifact
     self.counts = counts
+    self.contentDigests = contentDigests
   }
 
   public static func decoder() -> JSONDecoder {

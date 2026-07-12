@@ -269,20 +269,21 @@ extension CardDatabase {
       try normalizedInsert.step()
       try normalizedInsert.reset()
 
-      guard let currentCents = prices.last(where: {
-        $0 != CompactCardValueSeries.missingPrice
-      }) else {
+      guard let summary = CardDatabase.recomputeValueSummary(
+        pricesInCents: prices,
+        endDate: endDate
+      ) else {
         continue
       }
       try summaryInsert.bind(cardID, at: 1)
       try summaryInsert.bind(provider, at: 2)
       try summaryInsert.bind(finish, at: 3)
-      try summaryInsert.bind(Double(currentCents) / 100, at: 4)
-      try summaryInsert.bind(endDate, at: 5)
-      try summaryInsert.bind(Self.compactPreviousPrice(prices, days: 1), at: 6)
-      try summaryInsert.bind(Self.compactPreviousPrice(prices, days: 7), at: 7)
-      try summaryInsert.bind(Self.compactPreviousPrice(prices, days: 30), at: 8)
-      try summaryInsert.bind(Self.compactPreviousPrice(prices, days: 90), at: 9)
+      try summaryInsert.bind(summary.currentPrice, at: 4)
+      try summaryInsert.bind(summary.currentDate, at: 5)
+      try summaryInsert.bind(summary.price1d, at: 6)
+      try summaryInsert.bind(summary.price7d, at: 7)
+      try summaryInsert.bind(summary.price30d, at: 8)
+      try summaryInsert.bind(summary.price90d, at: 9)
       try summaryInsert.step()
       try summaryInsert.reset()
     }
@@ -298,6 +299,41 @@ extension CardDatabase {
       ORDER BY card_id, provider, finish
       """)
     return importedPricePoints
+  }
+
+  /// A recomputed `card_value_summaries` row, derived purely from a stored compact price series.
+  public struct ValueSummaryComputation: Equatable, Sendable {
+    public var currentPrice: Double
+    public var currentDate: String
+    public var price1d: Double?
+    public var price7d: Double?
+    public var price30d: Double?
+    public var price90d: Double?
+  }
+
+  /// Recomputes the summary for one series from its stored (already forward-filled) compact price
+  /// array, using the exact arithmetic of `finalizeCompactCardValueSeriesUnlocked`. This is the
+  /// single source of truth for value summaries: the engine build calls it, and an on-device delta
+  /// apply calls it too, so summaries are never shipped in a delta yet stay bit-identical to a full
+  /// build. Returns `nil` when the series has no real (non-missing) price — matching the engine,
+  /// which then writes no summary row for that series.
+  public static func recomputeValueSummary(
+    pricesInCents prices: [Int32],
+    endDate: String
+  ) -> ValueSummaryComputation? {
+    guard let currentCents = prices.last(where: {
+      $0 != CompactCardValueSeries.missingPrice
+    }) else {
+      return nil
+    }
+    return ValueSummaryComputation(
+      currentPrice: Double(currentCents) / 100,
+      currentDate: endDate,
+      price1d: compactPreviousPrice(prices, days: 1),
+      price7d: compactPreviousPrice(prices, days: 7),
+      price30d: compactPreviousPrice(prices, days: 30),
+      price90d: compactPreviousPrice(prices, days: 90)
+    )
   }
 
   private static func compactPreviousPrice(_ prices: [Int32], days: Int) -> Double? {
