@@ -10,9 +10,32 @@ extension GrimoraAppModel {
   ) {
     do {
       let resolvedCard = try database.card(id: cardID)
-      guard resolvedCard != nil else {
+      guard let resolvedCard else {
         statusMessage = "That card is no longer in the local library."
         return
+      }
+
+      // If a Commander deck is already at its 100-card capacity, offer to divert this add to the
+      // Maybeboard instead of overfilling the deck. A card that would *also* break the singleton
+      // rule is left to the existing duplicate prompt below, so the two offers never collide.
+      if !allowingDuplicates,
+        let list = cardCollections.first(where: { $0.id == listID }),
+        list.ruleset == .commander
+      {
+        let entries = try database.cardCollectionEntries(forListID: listID)
+        if commanderDeckQuantity(in: entries) >= Self.commanderDeckCapacity,
+          CardCollectionRulesetValidator.commanderSingletonAllowsAdding(resolvedCard, toExisting: entries)
+        {
+          let name = cardName ?? resolvedCard.name
+          statusMessage = "\(list.name) is already full at \(Self.commanderDeckCapacity) cards."
+          pendingMaybeboardAdd = PendingMaybeboardAdd(
+            listID: listID,
+            listName: list.name,
+            cardIDs: [cardID],
+            displayName: name
+          )
+          return
+        }
       }
 
       try performListMutation {
@@ -20,7 +43,7 @@ extension GrimoraAppModel {
       }
       reloadCardCollections(selecting: selectedCollectionID)
       if let list = cardCollections.first(where: { $0.id == listID }) {
-        let name = cardName ?? resolvedCard?.name ?? "Card"
+        let name = cardName ?? resolvedCard.name
         statusMessage = "Added \(name) to \(list.name)."
       }
     } catch CardCollectionDatabaseError.commanderSingletonLimit {

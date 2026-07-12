@@ -1013,6 +1013,82 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(model.statusMessage, "Removed duplicate copies.")
   }
 
+  func testCommanderDeckAtCapacityDivertsSingleAddToMaybeboard() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let deck = try XCTUnwrap(
+      model.createCardCollection(named: "EDH", ruleset: .commander, selectAfterCreate: true))
+
+    // Fill the deck to its 100-card capacity in the mainboard.
+    _ = try database.appendCard("forest", toList: deck.id, quantity: 100, enforceRulesetLimits: false)
+
+    func zone(of cardID: String) throws -> CardCollectionZone? {
+      try database.cardCollectionEntries(forListID: deck.id)
+        .first(where: { $0.cardID == cardID })?.zone
+    }
+    let beta = try XCTUnwrap(database.card(id: "beta"))
+    let alchemy = try XCTUnwrap(database.card(id: "alchemy"))
+    let token = try XCTUnwrap(database.card(id: "token"))
+    let forest = try XCTUnwrap(database.card(id: "forest"))
+
+    // A new (singleton-legal) card is offered for the Maybeboard rather than silently overfilling.
+    model.addCard(beta, toListID: deck.id)
+    XCTAssertEqual(model.pendingMaybeboardAdd?.cardIDs, ["beta"])
+    XCTAssertNil(try zone(of: "beta"))
+
+    // Confirming the Maybeboard lands it in the maybeboard zone and clears the prompt.
+    model.confirmMaybeboardAddToMaybeboard()
+    XCTAssertNil(model.pendingMaybeboardAdd)
+    XCTAssertEqual(try zone(of: "beta"), .maybeboard)
+
+    // A *duplicate* at a full deck still routes to the singleton prompt, not the Maybeboard one.
+    model.addCard(forest, toListID: deck.id)
+    XCTAssertNil(model.pendingMaybeboardAdd)
+    XCTAssertEqual(model.pendingDuplicateAdd?.cardIDs, ["forest"])
+    model.cancelPendingDuplicateAdd()
+
+    // "Add to Deck Anyway" overfills the mainboard past 100.
+    model.addCard(alchemy, toListID: deck.id)
+    XCTAssertEqual(model.pendingMaybeboardAdd?.cardIDs, ["alchemy"])
+    model.confirmMaybeboardAddToDeck()
+    XCTAssertNil(model.pendingMaybeboardAdd)
+    XCTAssertEqual(try zone(of: "alchemy"), .mainboard)
+
+    // Cancelling adds nothing at all.
+    model.addCard(token, toListID: deck.id)
+    XCTAssertEqual(model.pendingMaybeboardAdd?.cardIDs, ["token"])
+    model.cancelMaybeboardAdd()
+    XCTAssertNil(model.pendingMaybeboardAdd)
+    XCTAssertNil(try zone(of: "token"))
+  }
+
+  func testCommanderDeckAtCapacityDivertsBulkAddToMaybeboard() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(uiRecords())
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    let deck = try XCTUnwrap(
+      model.createCardCollection(named: "EDH", ruleset: .commander, selectAfterCreate: true))
+    _ = try database.appendCard("forest", toList: deck.id, quantity: 100, enforceRulesetLimits: false)
+
+    // A whole multi-card batch is offered for the Maybeboard when the deck is already full.
+    model.addCards(["beta", "alchemy"], toListID: deck.id)
+    XCTAssertEqual(model.pendingMaybeboardAdd?.cardIDs, ["beta", "alchemy"])
+    XCTAssertEqual(model.pendingMaybeboardAdd?.displayName, "2 cards")
+
+    model.confirmMaybeboardAddToMaybeboard()
+    XCTAssertNil(model.pendingMaybeboardAdd)
+    let entries = try database.cardCollectionEntries(forListID: deck.id)
+    XCTAssertEqual(entries.first(where: { $0.cardID == "beta" })?.zone, .maybeboard)
+    XCTAssertEqual(entries.first(where: { $0.cardID == "alchemy" })?.zone, .maybeboard)
+  }
+
   func testSelectingCollectionDefersLoadOffTheCallingThread() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())

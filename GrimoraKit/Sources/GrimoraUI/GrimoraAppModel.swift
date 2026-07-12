@@ -71,6 +71,10 @@ public final class GrimoraAppModel {
   /// A duplicate add that the Commander singleton guard refused, held so the UI can offer an
   /// "Add Anyway" confirmation. Set by the add methods; cleared when the user confirms or cancels.
   public internal(set) var pendingDuplicateAdd: PendingDuplicateAdd?
+  /// An add to a Commander deck that is already at its 100-card capacity, held so the UI can offer
+  /// to divert it to the Maybeboard (scratch space) instead of overfilling the deck. Set by the add
+  /// methods; cleared when the user picks Maybeboard / Add to Deck Anyway / Cancel.
+  public internal(set) var pendingMaybeboardAdd: PendingMaybeboardAdd?
   /// A one-time offer to auto-organize a freshly-opened, uncategorized Commander deck by card
   /// type. Set when such a deck loads; cleared when the user accepts or dismisses (either way
   /// the deck is remembered so the offer never reappears).

@@ -127,6 +127,29 @@ public struct GrimoraRootView: View {
         } message: { pending in
             Text("Grimora can group its \(pending.cardCount.formatted()) cards into categories like Creatures, Instants, and Lands.")
         }
+        .confirmationDialog(
+            model.pendingMaybeboardAdd.map { "Adding \($0.displayName) would break \($0.listName)" } ?? "",
+            isPresented: Binding(
+                get: { model.pendingMaybeboardAdd != nil },
+                set: { if !$0 { model.cancelMaybeboardAdd() } }
+            ),
+            titleVisibility: .visible,
+            presenting: model.pendingMaybeboardAdd
+        ) { _ in
+            Button("Add to Maybeboard") {
+                model.confirmMaybeboardAddToMaybeboard()
+            }
+            .accessibilityIdentifier("commander-maybeboard-add-confirm")
+            Button("Add to Deck Anyway") {
+                model.confirmMaybeboardAddToDeck()
+            }
+            .accessibilityIdentifier("commander-maybeboard-add-deck")
+            Button("Cancel", role: .cancel) {
+                model.cancelMaybeboardAdd()
+            }
+        } message: { pending in
+            Text("Would you like to add \(pending.cardIDs.count == 1 ? "it" : "them") to \(pending.listName)'s Maybeboard instead?")
+        }
         .onAppear {
             if cloudSyncModePreference == .undecided, model.cloudSyncMode == .enabled {
                 cloudSyncModeRawValue = GrimoraCloudSyncMode.enabled.rawValue

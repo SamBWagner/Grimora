@@ -928,6 +928,53 @@ extension GrimoraAppModel {
     pendingDuplicateAdd = nil
   }
 
+  /// A Commander deck's legal size — the point past which an interactive add is diverted to the
+  /// Maybeboard rather than silently overfilling the deck.
+  static let commanderDeckCapacity = 100
+
+  /// Sum of the commander + mainboard quantities — the count Commander's 100-card rule measures
+  /// (the maybeboard is scratch space and never counts). Mirrors `CardCollectionRulesetValidator`.
+  func commanderDeckQuantity(in entries: [CardCollectionEntryRecord]) -> Int {
+    entries.reduce(0) { total, entry in
+      (entry.zone == .commander || entry.zone == .mainboard) ? total + entry.quantity : total
+    }
+  }
+
+  /// Diverts a capacity-blocked add into the Maybeboard — scratch space with no size or singleton
+  /// limit — instead of overfilling the deck.
+  public func confirmMaybeboardAddToMaybeboard() {
+    guard let pending = pendingMaybeboardAdd else { return }
+    pendingMaybeboardAdd = nil
+    do {
+      try performListMutation {
+        for cardID in pending.cardIDs {
+          _ = try database.appendCard(
+            cardID, toList: pending.listID, zone: .maybeboard, enforceRulesetLimits: false)
+        }
+      }
+      reloadCardCollections(selecting: selectedCollectionID)
+      statusMessage = "Added \(pending.displayName) to \(pending.listName)'s Maybeboard."
+    } catch {
+      statusMessage = "Collection update failed."
+    }
+  }
+
+  /// Adds the capacity-blocked card(s) to the deck anyway, exceeding 100. Reuses the existing
+  /// `allowingDuplicates` force flag, which also bypasses the capacity gate so this never re-prompts.
+  public func confirmMaybeboardAddToDeck() {
+    guard let pending = pendingMaybeboardAdd else { return }
+    pendingMaybeboardAdd = nil
+    if pending.cardIDs.count == 1, let cardID = pending.cardIDs.first {
+      addCardID(cardID, named: pending.displayName, toListID: pending.listID, allowingDuplicates: true)
+    } else {
+      addCards(pending.cardIDs, toListID: pending.listID, allowingDuplicates: true)
+    }
+  }
+
+  public func cancelMaybeboardAdd() {
+    pendingMaybeboardAdd = nil
+  }
+
   /// Trims a Commander deck down to a single copy of each non-exempt card, clearing the
   /// `commander-singleton-*` warnings. Basics and "any number" cards are left alone. Keeps a
   /// commander-zone copy when one exists so the designated commander survives the cleanup.
@@ -1117,6 +1164,29 @@ extension GrimoraAppModel {
       }
 
       let listName = cardCollections.first(where: { $0.id == listID })?.name ?? "the deck"
+
+      // If a Commander deck is already at its 100-card capacity, offer to divert the whole batch to
+      // the Maybeboard instead of overfilling the deck. Forcing (Add to Deck Anyway) skips this and
+      // lands the cards in the mainboard. The Maybeboard has no size or singleton limit, so the
+      // entire batch can go there — no need to partition duplicates first.
+      if !allowingDuplicates,
+        cardCollections.first(where: { $0.id == listID })?.ruleset == .commander,
+        commanderDeckQuantity(in: try database.cardCollectionEntries(forListID: listID))
+          >= Self.commanderDeckCapacity
+      {
+        let displayName =
+          requestedCardIDs.count == 1
+          ? (resolvedCards[requestedCardIDs[0]]?.name ?? "That card")
+          : "\(formatted(requestedCardIDs.count)) cards"
+        statusMessage = "\(listName) is already full at \(Self.commanderDeckCapacity) cards."
+        pendingMaybeboardAdd = PendingMaybeboardAdd(
+          listID: listID,
+          listName: listName,
+          cardIDs: requestedCardIDs,
+          displayName: displayName
+        )
+        return
+      }
 
       // In a Commander deck, partition out cards that would break the singleton rule so a single
       // duplicate doesn't roll back the whole batch. Forcing (Add Anyway) skips the partition.
@@ -1698,6 +1768,31 @@ public struct PendingCommanderAutoCategorize: Identifiable, Equatable, Sendable 
 /// A duplicate add refused by the Commander singleton guard, captured so the UI can offer to
 /// force it through. `displayName` is the card name for a single add, or "N cards" for a batch.
 public struct PendingDuplicateAdd: Identifiable, Equatable, Sendable {
+  public var id = UUID()
+  public var listID: CardCollectionRecord.ID
+  public var listName: String
+  public var cardIDs: [CardRecord.ID]
+  public var displayName: String
+
+  public init(
+    id: UUID = UUID(),
+    listID: CardCollectionRecord.ID,
+    listName: String,
+    cardIDs: [CardRecord.ID],
+    displayName: String
+  ) {
+    self.id = id
+    self.listID = listID
+    self.listName = listName
+    self.cardIDs = cardIDs
+    self.displayName = displayName
+  }
+}
+
+/// An add that would push a Commander deck past its 100-card capacity, captured so the UI can offer
+/// to divert it to the Maybeboard (scratch space) instead of bricking a finished deck. `displayName`
+/// is the card name for a single add, or "N cards" for a batch.
+public struct PendingMaybeboardAdd: Identifiable, Equatable, Sendable {
   public var id = UUID()
   public var listID: CardCollectionRecord.ID
   public var listName: String
