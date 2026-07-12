@@ -79,10 +79,18 @@ final class MacScrollPerfBenchmarkUITests: XCTestCase {
       app.launchEnvironment["GRIMORA_DISABLE_IMAGE_PREDECODE"] = "1"
     }
     app.launch()
+    // macOS XCUITest can launch the app without bringing it to the foreground — the process runs
+    // and builds its menu bar but its SwiftUI `WindowGroup` window is never ordered-front, so the
+    // whole UI (incl. the sidebar row below) is absent from the AX tree and the test dead-ends at
+    // "seeded list row not found". Explicitly activate so the window is presented. (Verified: the
+    // app opens its "Cards" window fine via LaunchServices; only the test-launch needed the nudge.)
+    app.activate()
 
-    // Open the seeded list from the sidebar (Mac split view — no tab bar).
+    // Open the seeded list from the sidebar (Mac split view — no tab bar). Generous timeout: a
+    // fresh-DB seed of 150 cards + first layout can be slow on a loaded machine (the row appearing
+    // late is a startup-timing flake, not a failure).
     let listRow = app.buttons["card-list-row-PerfBench"]
-    XCTAssertTrue(listRow.waitForExistence(timeout: 30), "seeded list row not found")
+    XCTAssertTrue(listRow.waitForExistence(timeout: 90), "seeded list row not found")
     // Let the HUD's display link come up + the sidebar settle, then baseline the tally *before* the
     // expensive open+scroll so navigation chrome common to both runs cancels out of the delta.
     RunLoop.current.run(until: Date().addingTimeInterval(1.5))
@@ -90,7 +98,7 @@ final class MacScrollPerfBenchmarkUITests: XCTestCase {
 
     listRow.click()
     let scrollView = app.scrollViews["card-list-detail-scroll"]
-    XCTAssertTrue(scrollView.waitForExistence(timeout: 15), "list detail scroll not found")
+    XCTAssertTrue(scrollView.waitForExistence(timeout: 30), "list detail scroll not found")
 
     // Traverse the whole list (down, then back up), realising and drawing every tile. The short
     // settle after each drag lets async image loads finish and actually draw.
