@@ -432,24 +432,65 @@ final class LocalCardImageLoader: @unchecked Sendable {
   }
 
   /// Forces the compressed file's bitmap decode to happen *here*, on this off-main utility task,
-  /// rather than lazily on the main thread the first time a tile draws. `UIImage(contentsOfFile:)`
-  /// only maps the file — the expensive JPEG/PNG → pixels step is deferred to draw time, which lands
-  /// on the render loop mid-scroll and drops frames. `preparingForDisplay()` runs that decode now and
-  /// hands back an image whose bitmap is ready, so scrolling into a cached tile is just a blit.
+  /// rather than lazily on the main thread the first time a tile draws. `UIImage(contentsOfFile:)` /
+  /// `NSImage(contentsOfFile:)` only map the file — the expensive JPEG/PNG → pixels step is deferred
+  /// to draw time, which lands on the render loop mid-scroll and drops frames. Running that decode
+  /// now hands back an image whose bitmap is ready, so scrolling into a cached tile is just a blit.
   private static func imagePreparedForDisplay(_ image: PlatformImage) -> PlatformImage {
-    #if os(iOS) || os(visionOS)
-      guard !GrimoraPerf.isImagePredecodeDisabled else {
-        return image
-      }
-      return GrimoraPerf.signposter.withIntervalSignpost("decode") {
-        image.preparingForDisplay() ?? image
-      }
-    #else
-      // NSImage decodes lazily too, but the macOS host isn't where the scroll lag was reported and
-      // its redraw path differs; leave it untouched.
+    guard !GrimoraPerf.isImagePredecodeDisabled else {
       return image
-    #endif
+    }
+    return GrimoraPerf.signposter.withIntervalSignpost("decode") {
+      #if os(iOS) || os(visionOS)
+        return image.preparingForDisplay() ?? image
+      #elseif os(macOS)
+        return decodedForDisplay(image) ?? image
+      #else
+        return image
+      #endif
+    }
   }
+
+  #if os(macOS)
+    /// AppKit has no `preparingForDisplay()`, so force the decode by rasterising the scan into a
+    /// bitmap-backed `CGImage` and wrapping it in a fresh `NSImage`. Draws in the source's own RGB
+    /// color space (falling back to device RGB) so colours are preserved, at the image's native
+    /// pixel dimensions. Any unsupported image (non-RGB, zero-sized, un-rasterisable) returns `nil`
+    /// so the caller keeps the original lazily-decoded image — decode parity is best-effort.
+    private static func decodedForDisplay(_ image: NSImage) -> NSImage? {
+      guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        return nil
+      }
+      let width = cgImage.width
+      let height = cgImage.height
+      guard width > 0, height > 0 else {
+        return nil
+      }
+
+      let colorSpace = cgImage.colorSpace.flatMap { $0.model == .rgb ? $0 : nil }
+        ?? CGColorSpaceCreateDeviceRGB()
+      guard
+        let context = CGContext(
+          data: nil,
+          width: width,
+          height: height,
+          bitsPerComponent: 8,
+          bytesPerRow: 0,
+          space: colorSpace,
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+      else {
+        return nil
+      }
+
+      context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+      guard let decoded = context.makeImage() else {
+        return nil
+      }
+
+      return NSImage(cgImage: decoded, size: image.size)
+    }
+  #endif
 
   private static func estimatedCost(of image: PlatformImage) -> Int {
     #if os(macOS)
