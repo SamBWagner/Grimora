@@ -89,8 +89,37 @@ public final class BulkDataClient: Sendable {
             progress: progress
         )
     }
+
+    /// Fetches the incremental-update chain (`GET /v1/catalog/chain`). Only available when talking to
+    /// the Grimora catalog API; the legacy Scryfall-bulk path has no chain.
+    public func fetchCatalogChain() async throws -> CatalogChain {
+        guard let catalogAPIURL else {
+            throw BulkDataClientError.chainUnavailable
+        }
+        let data = try await network.data(
+            from: catalogAPIURL.appendingPathComponent("chain"),
+            purpose: .manifestCheck
+        )
+        return try CatalogChain.decoder().decode(CatalogChain.self, from: data)
+    }
+
+    /// Downloads a build-to-build delta artifact (the `url` from a ``CatalogDeltaDescriptor``).
+    public func downloadCatalogDelta(
+        from url: URL,
+        to destination: URL,
+        purpose: NetworkPurpose = .bulkDownload,
+        progress: (@Sendable (NetworkDownloadProgress) async -> Void)? = nil
+    ) async throws {
+        try await network.download(
+            from: url,
+            to: destination,
+            purpose: purpose,
+            progress: progress
+        )
+    }
 }
 
 public enum BulkDataClientError: Error, Equatable, Sendable {
     case defaultCardsMissing
+    case chainUnavailable
 }

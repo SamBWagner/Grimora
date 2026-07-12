@@ -67,7 +67,147 @@ struct CatalogDeltaRoundTripTests {
     #expect(try db.valueGuide(forCardID: "engine-forest").entries.first?.currentPrice == 0.55)
   }
 
+  /// End-to-end check of the engine's build hook: a second build (sharing state with the first) must
+  /// emit a `delta.json` + gzipped delta from the prior build that reproduces this build when applied.
+  @Test
+  func engineBuildHookStagesWorkingDeltaFromPreviousBuild() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("EngineDeltaHook-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    // Both builds share one engine state/builds dir so the second sees the first as its base.
+    let engineRoot = root.appendingPathComponent("engine", isDirectory: true)
+    let buildA = try await build(fixture: .versionA, engineRoot: engineRoot)
+    let buildB = try await build(fixture: .versionB, engineRoot: engineRoot)
+
+    #expect(buildB.manifest.contentDigests != nil)
+
+    let deltaJSON = buildB.directory.appendingPathComponent("delta.json")
+    #expect(FileManager.default.fileExists(atPath: deltaJSON.path))
+    let sidecar = try JSONDecoder().decode(
+      CatalogDeltaSidecar.self,
+      from: Data(contentsOf: deltaJSON)
+    )
+    #expect(sidecar.baseVersion == buildA.manifest.version)
+    let deltaGz = buildB.directory.appendingPathComponent(sidecar.fileName)
+    #expect(FileManager.default.fileExists(atPath: deltaGz.path))
+    #expect(try FileSHA256.hash(url: deltaGz) == sidecar.sha256)
+
+    // Applying the engine-generated delta to a copy of A reproduces B exactly.
+    let deltaSQLite = root.appendingPathComponent("engine-delta.sqlite")
+    try GzipArchive.decompressFile(at: deltaGz, to: deltaSQLite)
+    let working = root.appendingPathComponent("working.sqlite")
+    try FileManager.default.copyItem(
+      at: buildA.directory.appendingPathComponent("catalog.sqlite"),
+      to: working
+    )
+    try CatalogDeltaApplier().apply(deltaURL: deltaSQLite, toWorkingCatalog: working)
+
+    let expected = try digests(of: buildB.directory.appendingPathComponent("catalog.sqlite"))
+    #expect(try digests(of: working) == expected)
+  }
+
+  /// Full client staging path: with build A installed and B advertised via `current.json` + a chain
+  /// carrying the A→B delta, `stageLatestCatalog` patches locally (downloading only the delta, never
+  /// the full artifact) and stages a catalog logically identical to a fresh build of B.
+  @Test
+  func clientStagesIncrementallyFromChain() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("ClientStaging-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let buildA = try await buildCatalog(fixture: .versionA, root: root, tag: "a")
+    let buildB = try await buildCatalog(fixture: .versionB, root: root, tag: "b")
+    let catalogA = buildA.directory.appendingPathComponent("catalog.sqlite")
+    let catalogB = buildB.directory.appendingPathComponent("catalog.sqlite")
+
+    // Build + gzip the A→B delta the server would publish.
+    let deltaSQLite = root.appendingPathComponent("delta.sqlite")
+    _ = try CatalogDeltaBuilder().buildDelta(
+      baseCatalogURL: catalogA,
+      targetCatalogURL: catalogB,
+      baseVersion: buildA.manifest.version,
+      targetVersion: buildB.manifest.version,
+      into: deltaSQLite
+    )
+    let deltaGz = root.appendingPathComponent("delta.sqlite.gz")
+    try GzipArchive.compressFile(at: deltaSQLite, to: deltaGz)
+
+    // Lay down an active managed install of A (catalog + persisted manifest with digests).
+    let supportDir = root.appendingPathComponent("Support", isDirectory: true)
+    let activeDir = supportDir.appendingPathComponent("Database-v2", isDirectory: true)
+    try FileManager.default.createDirectory(at: activeDir, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(at: catalogA, to: activeDir.appendingPathComponent("Catalog.sqlite"))
+    try CatalogManifest.encoder(prettyPrinted: true).encode(buildA.manifest)
+      .write(to: activeDir.appendingPathComponent("manifest.json"))
+
+    // Stub the catalog API: current.json = B, chain = [A, B] with the A→B delta.
+    let apiURL = URL(string: "https://example.test/v1/catalog")!
+    let deltaURL = apiURL.appendingPathComponent(buildB.manifest.version)
+      .appendingPathComponent("delta").appendingPathComponent(buildA.manifest.version)
+    let chain = CatalogChain(
+      current: buildB.manifest.version,
+      entries: [
+        CatalogChainEntry(
+          version: buildA.manifest.version,
+          catalogSchemaVersion: buildA.manifest.catalogSchemaVersion,
+          contentDigests: buildA.manifest.contentDigests!,
+          deltaFromPrevious: nil
+        ),
+        CatalogChainEntry(
+          version: buildB.manifest.version,
+          catalogSchemaVersion: buildB.manifest.catalogSchemaVersion,
+          contentDigests: buildB.manifest.contentDigests!,
+          deltaFromPrevious: CatalogDeltaDescriptor(
+            baseVersion: buildA.manifest.version,
+            url: deltaURL,
+            sha256: try FileSHA256.hash(url: deltaGz),
+            bytes: Int64((try Data(contentsOf: deltaGz)).count),
+            formatVersion: CatalogDelta.currentFormatVersion
+          )
+        ),
+      ]
+    )
+    let network = StubNetworkClient(responses: [
+      apiURL: try CatalogManifest.encoder().encode(buildB.manifest),
+      apiURL.appendingPathComponent("chain"): try CatalogChain.encoder().encode(chain),
+      deltaURL: try Data(contentsOf: deltaGz),
+    ])
+    let service = ManagedCatalogMigrationService(
+      supportDirectory: supportDir,
+      bulkDataClient: BulkDataClient(network: network, catalogAPIURL: apiURL),
+      availableCapacity: { _ in .max }
+    )
+
+    let staged = try await service.stageLatestCatalog(manual: true)
+    #expect(staged.version == buildB.manifest.version)
+
+    // Only the delta was fetched — never the full artifact.
+    let requested = await network.recordedURLs()
+    #expect(requested.contains(deltaURL))
+    #expect(!requested.contains(buildB.manifest.artifact.downloadURL))
+
+    // The staged catalog is logically identical to a fresh build of B.
+    let readyCatalog = supportDir.appendingPathComponent(".CatalogMigrationReady")
+      .appendingPathComponent("Catalog.sqlite")
+    #expect(try digests(of: readyCatalog) == digests(of: catalogB))
+  }
+
   // MARK: - Helpers
+
+  private func build(fixture: DeltaTestFixture, engineRoot: URL) async throws -> LocalBuildResult {
+    let environment = [
+      "GRIMORA_ENGINE_STATE_DIR": engineRoot.appendingPathComponent("state").path,
+      "GRIMORA_ENGINE_CACHE_DIR": engineRoot.appendingPathComponent("cache").path,
+      "GRIMORA_ENGINE_LOG_DIR": engineRoot.appendingPathComponent("logs").path,
+      "GRIMORA_CATALOG_PUBLIC_BASE_URL": "https://example.test/v1/catalog",
+    ]
+    let network = StubNetworkClient(responses: try fixture.responses())
+    let engine = try GrimoraDataEngine(environment: environment, network: network)
+    return try await engine.build(force: true)
+  }
 
   private func digests(of catalogURL: URL) throws -> CatalogContentDigests {
     let database = try SQLiteDatabase(storage: .readOnlyFile(catalogURL))

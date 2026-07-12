@@ -43,6 +43,10 @@ public struct TigrisPublisher {
     manifest: CatalogManifest,
     artifactURL: URL,
     manifestURL: URL,
+    deltaArtifactURL: URL? = nil,
+    deltaBaseVersion: String? = nil,
+    chainEntry: CatalogChainEntry? = nil,
+    chainWindow: Int = 30,
     progress: (@Sendable (Double, String) async -> Void)? = nil
   ) async throws {
     let client = AWSClient(
@@ -108,10 +112,58 @@ public struct TigrisPublisher {
         contentType: "application/json",
         key: "current.json"
       )
+
+      // Incremental delta (immutable, sibling of this version's artifact) + the mutable chain pointer.
+      if let deltaArtifactURL, let deltaBaseVersion {
+        let deltaRequest = S3.CreateMultipartUploadRequest(
+          bucket: configuration.artifactsBucket,
+          cacheControl: "public, max-age=31536000, immutable",
+          contentType: "application/gzip",
+          key: "\(prefix)/delta-from-\(deltaBaseVersion).sqlite.gz"
+        )
+        _ = try await s3.multipartUpload(
+          deltaRequest,
+          filename: deltaArtifactURL.path,
+          concurrentUploads: 3,
+          abortOnFail: true
+        ) { fraction in
+          await progress?(fraction, "Uploading delta")
+        }
+      }
+
+      if let chainEntry {
+        let chain = try await updatedChain(s3: s3, entry: chainEntry, window: chainWindow)
+        let chainData = try CatalogChain.encoder(prettyPrinted: true).encode(chain)
+        _ = try await s3.putObject(
+          body: AWSHTTPBody(bytes: chainData),
+          bucket: configuration.metadataBucket,
+          cacheControl: "public, max-age=60, must-revalidate",
+          contentType: "application/json",
+          key: "chain.json"
+        )
+      }
     } catch {
       try? await client.shutdown()
       throw error
     }
     try await client.shutdown()
+  }
+
+  /// Reads the current `chain.json` (empty if absent), appends `entry` (replacing any same-version
+  /// entry), and trims to the newest `window` builds. Ordered oldest → newest.
+  private func updatedChain(s3: S3, entry: CatalogChainEntry, window: Int) async throws -> CatalogChain {
+    var entries: [CatalogChainEntry] = []
+    if let existing = try? await s3.getObject(bucket: configuration.metadataBucket, key: "chain.json"),
+      let buffer = try? await existing.body.collect(upTo: 16 * 1024 * 1024),
+      let chain = try? CatalogChain.decoder().decode(CatalogChain.self, from: Data(buffer.readableBytesView))
+    {
+      entries = chain.entries
+    }
+    entries.removeAll { $0.version == entry.version }
+    entries.append(entry)
+    if entries.count > window {
+      entries.removeFirst(entries.count - window)
+    }
+    return CatalogChain(current: entry.version, entries: entries)
   }
 }

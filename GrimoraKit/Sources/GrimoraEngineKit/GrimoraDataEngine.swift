@@ -280,6 +280,11 @@ public struct GrimoraDataEngine {
     report: @escaping EngineProgressHandler
   ) async throws -> LocalBuildResult {
     let state = EngineState.load(from: configuration.stateFile)
+    // The prior build's manifest, captured before this run overwrites `lastBuiltManifestPath`, is the
+    // base for the incremental delta this build publishes.
+    let previousBuild = state.lastBuiltManifestPath
+      .map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
+      .flatMap { try? LocalBuildResult.load(directory: $0) }
     if !force,
       state.lastSuccessfulSources == sources,
       let manifestPath = state.lastBuiltManifestPath
@@ -326,18 +331,32 @@ public struct GrimoraDataEngine {
         sha256: compressedSHA256,
         uncompressedSHA256: try sha256(databaseURL)
       )
+      let contentDigests = try CatalogContentDigest.compute(
+        SQLiteDatabase(storage: .readOnlyFile(databaseURL))
+      )
       let manifest = CatalogManifest(
         version: version,
         generatedAt: Date(),
         sources: sources,
         enrichments: pipelineResult.enrichments,
         artifact: artifact,
-        counts: pipelineResult.counts
+        counts: pipelineResult.counts,
+        contentDigests: contentDigests
       )
       let manifestURL = workingDirectory.appendingPathComponent("manifest.json")
       try CatalogManifest.encoder(prettyPrinted: true).encode(manifest)
         .write(to: manifestURL, options: .atomic)
       _ = try CardDatabase.validateCatalog(at: databaseURL, expectedManifest: manifest)
+
+      // Generate the incremental delta from the previous build (best-effort; never fails the build).
+      generateDelta(
+        previousBuild: previousBuild,
+        targetCatalogURL: databaseURL,
+        targetVersion: version,
+        targetSchemaVersion: manifest.catalogSchemaVersion,
+        into: workingDirectory,
+        report: report
+      )
 
       let finalDirectory = configuration.buildsDirectory.appendingPathComponent(
         version,
@@ -364,6 +383,56 @@ public struct GrimoraDataEngine {
     }
   }
 
+  /// Builds and stages the consecutive `previous → this` delta alongside the full artifact. Purely
+  /// best-effort: any failure (missing/pruned base, schema bump, diff error) is swallowed so the
+  /// build still succeeds — clients simply fall back to a full download.
+  private func generateDelta(
+    previousBuild: LocalBuildResult?,
+    targetCatalogURL: URL,
+    targetVersion: String,
+    targetSchemaVersion: Int,
+    into workingDirectory: URL,
+    report: @escaping EngineProgressHandler
+  ) {
+    guard let previousBuild,
+      previousBuild.manifest.version != targetVersion,
+      previousBuild.manifest.catalogSchemaVersion == targetSchemaVersion
+    else {
+      return
+    }
+    let baseCatalog = previousBuild.directory.appendingPathComponent("catalog.sqlite")
+    guard fileManager.fileExists(atPath: baseCatalog.path) else { return }
+
+    do {
+      let deltaWork = workingDirectory.appendingPathComponent("delta.sqlite")
+      _ = try CatalogDeltaBuilder().buildDelta(
+        baseCatalogURL: baseCatalog,
+        targetCatalogURL: targetCatalogURL,
+        baseVersion: previousBuild.manifest.version,
+        targetVersion: targetVersion,
+        into: deltaWork
+      )
+      let fileName = "delta-from-\(previousBuild.manifest.version).sqlite.gz"
+      let deltaGz = workingDirectory.appendingPathComponent(fileName)
+      try GzipArchive.compressFile(at: deltaWork, to: deltaGz)
+      try? fileManager.removeItem(at: deltaWork)
+
+      let sidecar = CatalogDeltaSidecar(
+        baseVersion: previousBuild.manifest.version,
+        fileName: fileName,
+        sha256: try sha256(deltaGz),
+        bytes: try fileSize(deltaGz),
+        formatVersion: CatalogDelta.currentFormatVersion
+      )
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+      try encoder.encode(sidecar)
+        .write(to: workingDirectory.appendingPathComponent("delta.json"), options: .atomic)
+    } catch {
+      try? fileManager.removeItem(at: workingDirectory.appendingPathComponent("delta.sqlite"))
+    }
+  }
+
   private func performPublish(
     result: LocalBuildResult,
     report: @escaping EngineProgressHandler
@@ -372,10 +441,44 @@ public struct GrimoraDataEngine {
     let publisher = TigrisPublisher(
       configuration: try TigrisConfiguration(environment: environment)
     )
+
+    // Locate the staged delta (if any) and assemble this build's chain entry.
+    let deltaSidecar = (try? Data(contentsOf: result.directory.appendingPathComponent("delta.json")))
+      .flatMap { try? JSONDecoder().decode(CatalogDeltaSidecar.self, from: $0) }
+    let deltaArtifactURL = deltaSidecar
+      .map { result.directory.appendingPathComponent($0.fileName) }
+      .flatMap { fileManager.fileExists(atPath: $0.path) ? $0 : nil }
+
+    var chainEntry: CatalogChainEntry?
+    if let digests = result.manifest.contentDigests {
+      let descriptor: CatalogDeltaDescriptor? = deltaSidecar.flatMap { sidecar in
+        guard deltaArtifactURL != nil else { return nil }
+        return CatalogDeltaDescriptor(
+          baseVersion: sidecar.baseVersion,
+          url: configuration.publicCatalogBaseURL
+            .appendingPathComponent(result.manifest.version)
+            .appendingPathComponent("delta")
+            .appendingPathComponent(sidecar.baseVersion),
+          sha256: sidecar.sha256,
+          bytes: sidecar.bytes,
+          formatVersion: sidecar.formatVersion
+        )
+      }
+      chainEntry = CatalogChainEntry(
+        version: result.manifest.version,
+        catalogSchemaVersion: result.manifest.catalogSchemaVersion,
+        contentDigests: digests,
+        deltaFromPrevious: descriptor
+      )
+    }
+
     try await publisher.publish(
       manifest: result.manifest,
       artifactURL: result.artifactURL,
       manifestURL: result.manifestURL,
+      deltaArtifactURL: deltaArtifactURL,
+      deltaBaseVersion: deltaSidecar?.baseVersion,
+      chainEntry: chainEntry,
       progress: { fraction, label in
         await report(
           EngineRunProgress(

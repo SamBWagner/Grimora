@@ -25,6 +25,24 @@ public enum CatalogDeltaBuilderError: Error, Equatable, Sendable {
   case missingColumns(String)
 }
 
+/// On-disk record the engine writes next to a build's gzipped delta (`delta.json`), so the publish
+/// step can find and describe the delta without recomputing it.
+public struct CatalogDeltaSidecar: Codable, Sendable {
+  public var baseVersion: String
+  public var fileName: String
+  public var sha256: String
+  public var bytes: Int64
+  public var formatVersion: Int
+
+  public init(baseVersion: String, fileName: String, sha256: String, bytes: Int64, formatVersion: Int) {
+    self.baseVersion = baseVersion
+    self.fileName = fileName
+    self.sha256 = sha256
+    self.bytes = bytes
+    self.formatVersion = formatVersion
+  }
+}
+
 /// Diffs two built catalogs (`base` → `target`) into a patch database that ``CatalogDeltaApplier``
 /// can replay on a device sitting on `base` to reach `target`. Everything is expressed as
 /// set-difference SQL between the two attached databases; no per-row Swift marshaling.

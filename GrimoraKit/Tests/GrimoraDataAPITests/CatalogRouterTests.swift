@@ -28,7 +28,32 @@ func catalogRoutesServeManifestRedirectsAndHealth() async throws {
       #expect($0.status == .temporaryRedirect)
       #expect($0.body.readableBytes == 0)
     }
+    try await client.execute(uri: "/v1/catalog/chain", method: .get) {
+      #expect($0.status == .ok)
+      #expect($0.headers[.cacheControl] == "public, max-age=60, must-revalidate")
+      #expect(String(buffer: $0.body) == #"{"current":"v1-b","entries":[]}"#)
+    }
+    try await client.execute(uri: "/v1/catalog/v1-b/delta/v1-a", method: .get) {
+      #expect($0.status == .temporaryRedirect)
+      #expect($0.headers[.location] == "https://example.test/delta.sqlite.gz")
+    }
+    try await client.execute(uri: "/v1/catalog/v1-b/delta/v1-a", method: .head) {
+      #expect($0.status == .temporaryRedirect)
+      #expect($0.body.readableBytes == 0)
+    }
   }
+}
+
+@Test
+func deltaObjectLocationTargetsImmutableArtifactsBucket() {
+  #expect(
+    TigrisCatalogStorage.deltaObjectLocation(
+      version: "v1-b",
+      base: "v1-a",
+      artifactsBucket: "history"
+    )
+      == .init(bucket: "history", key: "catalogs/v1-b/delta-from-v1-a.sqlite.gz")
+  )
 }
 
 @Test
@@ -71,8 +96,16 @@ private struct StubCatalogStorage: CatalogObjectServing {
     Data(#"{"version":"stale-but-readable"}"#.utf8)
   }
 
+  func currentChainData() async throws -> Data {
+    Data(#"{"current":"v1-b","entries":[]}"#.utf8)
+  }
+
   func redirectResponse(version: String) async throws -> Response {
     Response.redirect(to: "https://example.test/catalog.sqlite.gz", type: .temporary)
+  }
+
+  func deltaRedirectResponse(version: String, base: String) async throws -> Response {
+    Response.redirect(to: "https://example.test/delta.sqlite.gz", type: .temporary)
   }
 
   func verifyReady() async throws {

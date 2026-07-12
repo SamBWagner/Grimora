@@ -196,6 +196,11 @@ public final class ManagedCatalogMigrationService: @unchecked Sendable {
       throw ManagedCatalogMigrationError.invalidManifest
     }
 
+    // Prefer a small incremental delta; any failure falls through to the full download below.
+    if let staged = try? await stageIncrementally(target: catalog, manual: manual, progress: progress) {
+      return staged
+    }
+
     let requiredBytes =
       catalog.artifact.compressedBytes
       + catalog.artifact.uncompressedBytes
@@ -254,6 +259,105 @@ public final class ManagedCatalogMigrationService: @unchecked Sendable {
     return catalog
   }
 
+  /// Attempts a single-step incremental update: patch a copy of the installed catalog with one delta
+  /// and stage the result, instead of downloading the full artifact. Returns the target manifest on
+  /// success; throws (→ caller falls back to a full download) on any mismatch, missing base, or a
+  /// multi-build gap. Phase 1 handles exactly one build behind.
+  private func stageIncrementally(
+    target: CatalogManifest,
+    manual: Bool,
+    progress: (@Sendable (ManagedCatalogMigrationStatus) async -> Void)?
+  ) async throws -> CatalogManifest {
+    guard let installed = try activeManifest(),
+      installed.version != target.version,
+      installed.catalogSchemaVersion == target.catalogSchemaVersion,
+      let targetDigests = target.contentDigests,
+      fileManager.fileExists(atPath: layout.activeCatalog.path)
+    else {
+      throw ManagedCatalogMigrationError.invalidManifest
+    }
+
+    let chain = try await bulkDataClient.fetchCatalogChain()
+    guard chain.current == target.version,
+      let path = chain.deltaPath(from: installed.version),
+      path.count == 1
+    else {
+      throw ManagedCatalogMigrationError.invalidManifest
+    }
+    let delta = path[0]
+
+    // Working copy of the catalog + the (small) delta, with headroom.
+    let requiredBytes =
+      target.artifact.uncompressedBytes
+      + delta.bytes
+      + max(256 * 1024 * 1024, target.artifact.uncompressedBytes / 8)
+    try requireAvailableCapacity(requiredBytes)
+
+    let buildingDirectory = layout.supportDirectory.appendingPathComponent(
+      ".CatalogMigrationBuilding-\(UUID().uuidString)",
+      isDirectory: true
+    )
+    try fileManager.createDirectory(at: buildingDirectory, withIntermediateDirectories: true)
+    defer { try? fileManager.removeItem(at: buildingDirectory) }
+
+    let workingCatalog = buildingDirectory.appendingPathComponent("Catalog.sqlite")
+    try fileManager.copyItem(at: layout.activeCatalog, to: workingCatalog)
+
+    let deltaGz = buildingDirectory.appendingPathComponent("delta.sqlite.gz")
+    try await bulkDataClient.downloadCatalogDelta(
+      from: delta.url,
+      to: deltaGz,
+      purpose: manual ? .bulkDownload : .automaticCatalogDownload
+    ) { downloadProgress in
+      await progress?(
+        .downloading(
+          completedBytes: downloadProgress.completedBytes,
+          totalBytes: downloadProgress.totalBytes ?? delta.bytes
+        )
+      )
+    }
+    guard try FileSHA256.hash(url: deltaGz) == delta.sha256 else {
+      throw CatalogStorageError.invalidCatalog("Downloaded delta SHA-256 does not match")
+    }
+
+    await progress?(.validating)
+    let deltaSQLite = buildingDirectory.appendingPathComponent("delta.sqlite")
+    try GzipArchive.decompressFile(at: deltaGz, to: deltaSQLite)
+    try CatalogDeltaApplier().apply(deltaURL: deltaSQLite, toWorkingCatalog: workingCatalog)
+
+    // The chained-hash check: the patched catalog must be logically identical to a fresh build of
+    // `target` (byte layout differs, but the content digests must match exactly).
+    let workingDigests = try CatalogContentDigest.compute(
+      SQLiteDatabase(storage: .readOnlyFile(workingCatalog))
+    )
+    guard workingDigests == targetDigests else {
+      throw CatalogStorageError.invalidCatalog("Patched catalog digests do not match target")
+    }
+    _ = try CardDatabase.validateCatalog(at: workingCatalog, expectedManifest: target)
+
+    try CatalogManifest.encoder(prettyPrinted: true).encode(target)
+      .write(to: buildingDirectory.appendingPathComponent("manifest.json"), options: .atomic)
+    try? fileManager.removeItem(at: deltaGz)
+    try? fileManager.removeItem(at: deltaSQLite)
+
+    if fileManager.fileExists(atPath: layout.readyDirectory.path) {
+      try fileManager.removeItem(at: layout.readyDirectory)
+    }
+    try fileManager.moveItem(at: buildingDirectory, to: layout.readyDirectory)
+    await progress?(.restartRequired(version: target.version))
+    return target
+  }
+
+  private func activeManifest() throws -> CatalogManifest? {
+    guard fileManager.fileExists(atPath: layout.activeManifest.path) else {
+      return nil
+    }
+    return try CatalogManifest.decoder().decode(
+      CatalogManifest.self,
+      from: Data(contentsOf: layout.activeManifest)
+    )
+  }
+
   public func readyManifest() throws -> CatalogManifest? {
     let manifestURL = layout.readyDirectory.appendingPathComponent("manifest.json")
     guard fileManager.fileExists(atPath: manifestURL.path) else {
@@ -297,6 +401,10 @@ public final class ManagedCatalogMigrationService: @unchecked Sendable {
           throw CatalogStorageError.invalidCatalog("Activated library is not ready")
         }
       }
+
+      // Persist the installed manifest (with digests) so the next update can go incremental.
+      try? CatalogManifest.encoder(prettyPrinted: true).encode(manifest)
+        .write(to: pendingDirectory.appendingPathComponent("manifest.json"), options: .atomic)
 
       try fileManager.moveItem(at: pendingDirectory, to: layout.activeDirectory)
       let lifecycle = LifecycleState(activatedAt: now(), healthyLaunches: 0)
@@ -436,6 +544,12 @@ private struct Layout {
 
   var activeCatalog: URL {
     activeDirectory.appendingPathComponent("Catalog.sqlite")
+  }
+
+  /// The installed build's manifest (with content digests), persisted so an incremental update knows
+  /// its base version + digests without opening the 464 MB catalog.
+  var activeManifest: URL {
+    activeDirectory.appendingPathComponent("manifest.json")
   }
 
   var readyDirectory: URL {

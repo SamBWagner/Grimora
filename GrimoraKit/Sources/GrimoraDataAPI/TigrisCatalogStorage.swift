@@ -59,6 +59,35 @@ final class TigrisCatalogStorage: CatalogObjectServing, @unchecked Sendable {
     return Data(buffer.readableBytesView)
   }
 
+  func currentChainData() async throws -> Data {
+    let output = try await s3.getObject(bucket: metadataBucket, key: "chain.json")
+    let buffer = try await output.body.collect(upTo: 16 * 1024 * 1024)
+    return Data(buffer.readableBytesView)
+  }
+
+  func deltaRedirectResponse(version: String, base: String) async throws -> Response {
+    guard Self.isValidVersion(version), Self.isValidVersion(base) else {
+      throw HTTPError(.badRequest)
+    }
+    let location = Self.deltaObjectLocation(
+      version: version,
+      base: base,
+      artifactsBucket: artifactsBucket
+    )
+    _ = try await s3.headObject(bucket: location.bucket, key: location.key)
+    let unsignedURL = URL(string: endpoint)!
+      .appendingPathComponent(location.bucket)
+      .appendingPathComponent(location.key)
+    let signedURL = try await s3.signURL(
+      url: unsignedURL,
+      httpMethod: .GET,
+      expires: .minutes(10)
+    )
+    var response = Response.redirect(to: signedURL.absoluteString, type: .temporary)
+    response.headers[.cacheControl] = "private, max-age=60"
+    return response
+  }
+
   func redirectResponse(version: String) async throws -> Response {
     guard Self.isValidVersion(version) else {
       throw HTTPError(.badRequest)
@@ -121,6 +150,19 @@ final class TigrisCatalogStorage: CatalogObjectServing, @unchecked Sendable {
     return ObjectLocation(
       bucket: artifactsBucket,
       key: "catalogs/\(requestedVersion)/catalog.sqlite.gz"
+    )
+  }
+
+  /// Deltas are always immutable siblings of the target version's artifact — never the mutable
+  /// `current` pointer — so they always resolve to the artifacts bucket.
+  static func deltaObjectLocation(
+    version: String,
+    base: String,
+    artifactsBucket: String
+  ) -> ObjectLocation {
+    ObjectLocation(
+      bucket: artifactsBucket,
+      key: "catalogs/\(version)/delta-from-\(base).sqlite.gz"
     )
   }
 }
