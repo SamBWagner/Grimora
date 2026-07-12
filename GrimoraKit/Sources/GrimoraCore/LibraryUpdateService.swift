@@ -104,6 +104,18 @@ public final class LibraryUpdateService: Sendable {
         guard let catalog = manifest.catalog else {
             throw CatalogStorageError.invalidCatalog("Catalog manifest payload is missing")
         }
+
+        // Prefer a small incremental delta patched onto the installed catalog; any failure (no chain,
+        // missing base, multi-schema gap, digest mismatch, …) falls through to the full download.
+        if let summary = try? await downloadAndInstallCatalogIncrementally(
+            target: catalog,
+            temporaryDirectory: temporaryDirectory,
+            automatic: automatic,
+            progress: progress
+        ) {
+            return summary
+        }
+
         let compressedURL = temporaryDirectory
             .appendingPathComponent("catalog-\(catalog.version.fileSafeComponent).sqlite.gz")
         let stagedURL = temporaryDirectory
@@ -138,6 +150,97 @@ public final class LibraryUpdateService: Sendable {
         await progress?(.cardDataReady(cardCount: catalog.counts.cards))
         return ImportSummary(
             importedCards: catalog.counts.cards,
+            failedImageURLs: [],
+            priceHistoryStatus: .skipped
+        )
+    }
+
+    /// Patches the installed catalog up to `target` using the delta chain, then swaps it in place via
+    /// `installCatalog` — no restart, same as a full download but with a fraction of the bytes.
+    /// Throws (→ caller falls back to a full download) on any mismatch, missing base, multi-build gap,
+    /// or when the deltas would together rival the full artifact.
+    private func downloadAndInstallCatalogIncrementally(
+        target: CatalogManifest,
+        temporaryDirectory: URL,
+        automatic: Bool,
+        progress: (@Sendable (ImportProgress) async -> Void)?
+    ) async throws -> ImportSummary {
+        guard let targetDigests = target.contentDigests,
+            let attachedCatalogURL = database.attachedCatalogURL,
+            let installedVersion = try database.metadataValue(
+                forKey: MetadataKey.defaultCardsUpdatedAt.rawValue
+            ),
+            installedVersion != target.version
+        else {
+            throw CatalogStorageError.invalidCatalog("Incremental catalog update unavailable")
+        }
+
+        let chain = try await bulkDataClient.fetchCatalogChain()
+        guard chain.current == target.version,
+            let path = chain.deltaPath(from: installedVersion),
+            !path.isEmpty,
+            path.count <= CatalogDelta.maxChainSteps
+        else {
+            throw CatalogStorageError.invalidCatalog("No usable delta chain to the target")
+        }
+        let totalDeltaBytes = path.reduce(0) { $0 + $1.bytes }
+        guard totalDeltaBytes < target.artifact.compressedBytes else {
+            throw CatalogStorageError.invalidCatalog("Delta path rivals a full download")
+        }
+
+        let workingDirectory = temporaryDirectory.appendingPathComponent(
+            "catalog-delta-\(target.version.fileSafeComponent)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: workingDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: workingDirectory) }
+
+        // Patch a copy of the currently-attached catalog, walking each consecutive delta.
+        let workingCatalog = workingDirectory.appendingPathComponent("Catalog.sqlite")
+        try FileManager.default.copyItem(at: attachedCatalogURL, to: workingCatalog)
+
+        await progress?(.downloadingBulkData)
+        var downloadedBytes: Int64 = 0
+        for (index, delta) in path.enumerated() {
+            let deltaGz = workingDirectory.appendingPathComponent("delta-\(index).sqlite.gz")
+            let priorBytes = downloadedBytes
+            try await bulkDataClient.downloadCatalogDelta(
+                from: delta.url,
+                to: deltaGz,
+                purpose: automatic ? .automaticCatalogDownload : .bulkDownload
+            ) { downloadProgress in
+                await progress?(
+                    .downloadingBulkDataProgress(
+                        completedBytes: priorBytes + downloadProgress.completedBytes,
+                        totalBytes: totalDeltaBytes
+                    )
+                )
+            }
+            guard try FileSHA256.hash(url: deltaGz) == delta.sha256 else {
+                throw CatalogStorageError.invalidCatalog("Downloaded delta SHA-256 does not match")
+            }
+            downloadedBytes += delta.bytes
+
+            let deltaSQLite = workingDirectory.appendingPathComponent("delta-\(index).sqlite")
+            try GzipArchive.decompressFile(at: deltaGz, to: deltaSQLite)
+            try CatalogDeltaApplier().apply(deltaURL: deltaSQLite, toWorkingCatalog: workingCatalog)
+            try? FileManager.default.removeItem(at: deltaGz)
+            try? FileManager.default.removeItem(at: deltaSQLite)
+        }
+
+        await progress?(.decodingCardData)
+        // The chained-hash check: the patched catalog must be logically identical to a fresh build.
+        let workingDigests = try CatalogContentDigest.compute(
+            SQLiteDatabase(storage: .readOnlyFile(workingCatalog))
+        )
+        guard workingDigests == targetDigests else {
+            throw CatalogStorageError.invalidCatalog("Patched catalog digests do not match target")
+        }
+
+        try database.installCatalog(from: workingCatalog, expectedManifest: target)
+        await progress?(.cardDataReady(cardCount: target.counts.cards))
+        return ImportSummary(
+            importedCards: target.counts.cards,
             failedImageURLs: [],
             priceHistoryStatus: .skipped
         )

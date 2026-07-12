@@ -41,7 +41,7 @@ public final class ManagedCatalogMigrationService: @unchecked Sendable {
   /// Upper bound on how many consecutive deltas an incremental update will walk before preferring a
   /// full download. A safety net above the `chain.json` window; the summed-bytes guard is the real
   /// limiter.
-  public static let maxIncrementalSteps = 30
+  public static let maxIncrementalSteps = CatalogDelta.maxChainSteps
 
   private let layout: Layout
   private let bulkDataClient: BulkDataClient

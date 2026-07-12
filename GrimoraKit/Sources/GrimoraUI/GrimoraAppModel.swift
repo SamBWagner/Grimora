@@ -269,6 +269,19 @@ public final class GrimoraAppModel {
   let temporaryDirectory: URL
   let valueHistoryBackgroundDirectory: URL
   let autoUpdateChecksEnabled: Bool
+
+  /// User preference (persisted, defaults on): when off, the app never auto-downloads catalog data
+  /// updates at launch. It still checks and surfaces that an update is available; the user installs
+  /// it on demand from the library menu ("Import Available Update"). This is the "decline" control.
+  public var automaticCatalogUpdatesEnabled: Bool {
+    didSet {
+      UserDefaults.standard.set(
+        automaticCatalogUpdatesEnabled,
+        forKey: Self.automaticCatalogUpdatesPreferenceKey
+      )
+    }
+  }
+  static let automaticCatalogUpdatesPreferenceKey = "GrimoraAutomaticCatalogUpdatesEnabled"
   let searchHistoryStore: GrimoraSearchHistoryStore
   let hiddenSearchTermsStore: HiddenSearchTermsStore
   let imageDownloadConfiguration: GrimoraImageDownloadConfiguration
@@ -353,6 +366,8 @@ public final class GrimoraAppModel {
     self.temporaryDirectory = environment.temporaryDirectory
     self.valueHistoryBackgroundDirectory = environment.valueHistoryBackgroundDirectory
     self.autoUpdateChecksEnabled = environment.autoUpdateChecksEnabled
+    self.automaticCatalogUpdatesEnabled =
+      UserDefaults.standard.object(forKey: Self.automaticCatalogUpdatesPreferenceKey) as? Bool ?? true
     self.searchHistoryStore = environment.searchHistoryStore
     self.hiddenSearchTermsStore = environment.hiddenSearchTermsStore
     self.imageDownloadConfiguration = environment.imageDownloadConfiguration
@@ -417,7 +432,10 @@ public final class GrimoraAppModel {
     } else if autoUpdateChecksEnabled {
       Task {
         await self.checkForUpdates(manual: false)
-        if self.usesManagedCatalog,
+        // The check always runs (so an available update is surfaced), but the automatic *download*
+        // only happens when the user hasn't declined via the automatic-updates preference.
+        if self.automaticCatalogUpdatesEnabled,
+          self.usesManagedCatalog,
           self.hasLocalCardData,
           self.updateManifest != nil
         {

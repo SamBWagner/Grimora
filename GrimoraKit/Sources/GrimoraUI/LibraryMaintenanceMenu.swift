@@ -85,6 +85,15 @@ struct LibraryMaintenanceMenuItems: View {
             .accessibilityIdentifier("import-available-update-button")
             .disabled(model.updateManifest == nil || model.isWorking)
 
+            Toggle(
+                "Automatic Data Updates",
+                isOn: Binding(
+                    get: { model.automaticCatalogUpdatesEnabled },
+                    set: { model.automaticCatalogUpdatesEnabled = $0 }
+                )
+            )
+            .accessibilityIdentifier("automatic-catalog-updates-toggle")
+
             Button {
                 Task { await model.refreshCardDatabase() }
             } label: {
@@ -196,6 +205,16 @@ public struct GrimoraLibraryCommands: Commands {
                 Task { await model?.importAvailableUpdate() }
             }
             .disabled(model?.updateManifest == nil || model?.isWorking != false)
+
+            if let model {
+                Toggle(
+                    "Automatic Data Updates",
+                    isOn: Binding(
+                        get: { model.automaticCatalogUpdatesEnabled },
+                        set: { model.automaticCatalogUpdatesEnabled = $0 }
+                    )
+                )
+            }
 
             Button("Refresh Card Database") {
                 Task { await model?.refreshCardDatabase() }

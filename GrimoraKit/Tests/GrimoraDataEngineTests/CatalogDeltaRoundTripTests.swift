@@ -306,6 +306,138 @@ struct CatalogDeltaRoundTripTests {
     #expect(!requested.contains(descAB.url))
   }
 
+  /// The real ongoing-update path: `LibraryUpdateService` patches the attached catalog A → B in
+  /// place (no restart) by downloading only the delta, and the database then serves B's data.
+  @Test
+  func libraryUpdateServiceAppliesDeltaInPlace() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InPlaceDelta-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let buildA = try await buildCatalog(fixture: .versionA, root: root, tag: "a")
+    let buildB = try await buildCatalog(fixture: .versionB, root: root, tag: "b")
+
+    // A CardDatabase attached to a copy of catalog A, recorded as the installed version.
+    let attachedCatalog = root.appendingPathComponent("attached.sqlite")
+    try FileManager.default.copyItem(
+      at: buildA.directory.appendingPathComponent("catalog.sqlite"),
+      to: attachedCatalog
+    )
+    let database = try CardDatabase(
+      userDatabaseURL: root.appendingPathComponent("user.sqlite"),
+      catalogURL: attachedCatalog
+    )
+    try database.recordInstalledCatalogManifest(buildA.manifest)
+
+    let apiURL = URL(string: "https://example.test/v1/catalog")!
+    let gzAB = try makeDeltaGz(from: buildA, to: buildB, in: root, name: "ab")
+    let descAB = try descriptor(base: buildA, target: buildB, apiURL: apiURL, gz: gzAB)
+    let chain = CatalogChain(
+      current: buildB.manifest.version,
+      entries: [
+        chainEntry(for: buildA, deltaFromPrevious: nil),
+        chainEntry(for: buildB, deltaFromPrevious: descAB),
+      ]
+    )
+    let network = StubNetworkClient(responses: [
+      apiURL: try CatalogManifest.encoder().encode(buildB.manifest),
+      apiURL.appendingPathComponent("chain"): try CatalogChain.encoder().encode(chain),
+      descAB.url: try Data(contentsOf: gzAB),
+    ])
+    let service = LibraryUpdateService(
+      database: database,
+      bulkDataClient: BulkDataClient(network: network, catalogAPIURL: apiURL),
+      minimumAutomaticCheckInterval: 0
+    )
+
+    let importer = LibraryImporter(
+      database: database,
+      imageResolver: DownloadingImageResolver(
+        store: ImageStore(rootDirectory: root.appendingPathComponent("images")),
+        network: network
+      )
+    )
+    let summary = try await service.downloadAndImport(
+      manifest: buildB.manifest.bulkDataManifest,
+      temporaryDirectory: root.appendingPathComponent("tmp"),
+      importer: importer,
+      refreshesPriceHistory: false,
+      automatic: true
+    )
+
+    #expect(summary.importedCards == buildB.manifest.counts.cards)
+    // The attached catalog now serves B's data, in place, without a restart.
+    #expect(try database.card(id: "engine-ghost") == nil)
+    #expect(try database.card(id: "engine-isle")?.name == "Engine Isle")
+    #expect(try database.valueGuide(forCardID: "engine-forest").entries.first?.currentPrice == 0.55)
+    #expect(
+      try digests(of: attachedCatalog)
+        == digests(of: buildB.directory.appendingPathComponent("catalog.sqlite"))
+    )
+
+    // Only the delta was fetched — never the full artifact.
+    let requested = await network.recordedURLs()
+    #expect(requested.contains(descAB.url))
+    #expect(!requested.contains(buildB.manifest.artifact.downloadURL))
+  }
+
+  /// When no delta chain is available, the ongoing path falls back to a full download and still
+  /// installs B correctly.
+  @Test
+  func libraryUpdateServiceFallsBackToFullDownloadWithoutChain() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InPlaceFallback-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let buildA = try await buildCatalog(fixture: .versionA, root: root, tag: "a")
+    let buildB = try await buildCatalog(fixture: .versionB, root: root, tag: "b")
+
+    let attachedCatalog = root.appendingPathComponent("attached.sqlite")
+    try FileManager.default.copyItem(
+      at: buildA.directory.appendingPathComponent("catalog.sqlite"),
+      to: attachedCatalog
+    )
+    let database = try CardDatabase(
+      userDatabaseURL: root.appendingPathComponent("user.sqlite"),
+      catalogURL: attachedCatalog
+    )
+    try database.recordInstalledCatalogManifest(buildA.manifest)
+
+    let apiURL = URL(string: "https://example.test/v1/catalog")!
+    // No chain served → incremental aborts; serve the full artifact for the fallback.
+    let network = StubNetworkClient(responses: [
+      apiURL: try CatalogManifest.encoder().encode(buildB.manifest),
+      buildB.manifest.artifact.downloadURL: try Data(contentsOf: buildB.artifactURL),
+    ])
+    let service = LibraryUpdateService(
+      database: database,
+      bulkDataClient: BulkDataClient(network: network, catalogAPIURL: apiURL),
+      minimumAutomaticCheckInterval: 0
+    )
+    let importer = LibraryImporter(
+      database: database,
+      imageResolver: DownloadingImageResolver(
+        store: ImageStore(rootDirectory: root.appendingPathComponent("images")),
+        network: network
+      )
+    )
+
+    let summary = try await service.downloadAndImport(
+      manifest: buildB.manifest.bulkDataManifest,
+      temporaryDirectory: root.appendingPathComponent("tmp"),
+      importer: importer,
+      refreshesPriceHistory: false,
+      automatic: true
+    )
+
+    #expect(summary.importedCards == buildB.manifest.counts.cards)
+    #expect(try database.card(id: "engine-isle")?.name == "Engine Isle")
+    let requested = await network.recordedURLs()
+    #expect(requested.contains(buildB.manifest.artifact.downloadURL))
+  }
+
   // MARK: - Helpers
 
   private func build(fixture: DeltaTestFixture, engineRoot: URL) async throws -> LocalBuildResult {
