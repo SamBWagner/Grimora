@@ -40,3 +40,22 @@ flyctl deploy --config fly.data-api.toml
 Configure a 90-day lifecycle expiry only on the artifacts bucket. The metadata
 bucket retains `current.json` and `current/catalog.sqlite.gz` without expiry.
 The engine intentionally does not receive list/delete permission.
+
+## Incremental updates (delta chain)
+
+Each build also publishes a consecutive `previous → this` **delta** so a client on
+the prior build downloads only the change (typically ~1–3 MB) instead of the full
+~126 MB artifact, patching its local catalog in place:
+
+- The manifest carries per-build `contentDigests` (SHA-256 over logical row values,
+  not file bytes — `VACUUM`/FTS make the file non-reproducible). The client verifies
+  its patched catalog against these before staging; any mismatch → full download.
+- Delta artifacts live at `catalogs/<version>/delta-from-<base>.sqlite.gz`
+  (immutable, artifacts bucket). An ordered `chain.json` (metadata bucket, 60s cache,
+  newest 30 builds) is served at `GET /v1/catalog/chain`; deltas resolve via
+  `GET /v1/catalog/:version/delta/:base`.
+- Delta generation is **best-effort**: it diffs against the previous build's
+  `Builds/<prev>/catalog.sqlite`. That directory must not be pruned within the chain
+  window (30 builds) or the chain breaks and clients fall back to a full download —
+  correct, just less efficient. A `catalogSchemaVersion` bump also breaks the chain
+  by design (one forced full download at rollout).
