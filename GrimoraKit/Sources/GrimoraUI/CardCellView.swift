@@ -931,6 +931,13 @@ struct CardIdentityLabel: View {
     }
 }
 
+/// Stand-in shown when a card has no front art available. It shows the Magic
+/// card back so an art-less slot reads as a face-down card, with the card's
+/// name, type, and set/number overlaid so the tile stays identifiable — this
+/// grid surfaces those nowhere else. A top/bottom scrim keeps the text legible
+/// over the (always-dark) card back, and the text is drawn light regardless of
+/// the app's light/dark theme for the same reason. Keeps the loading badge so a
+/// still-fetching preview stays distinguishable from a permanently art-less card.
 private struct TextOnlyCardArtView: View {
     var card: CardRecord
     var palette: GrimoraPalette
@@ -940,26 +947,44 @@ private struct TextOnlyCardArtView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(card.name)
                 .font(.headline.weight(.semibold))
-                .foregroundStyle(palette.primaryText.color)
+                .foregroundStyle(.white)
                 .lineLimit(4)
                 .minimumScaleFactor(0.78)
 
             Text(card.typeLine)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(palette.secondaryText.color)
+                .foregroundStyle(.white.opacity(0.82))
                 .lineLimit(3)
 
             Spacer(minLength: 0)
 
             Text("\(card.setCode.uppercased()) #\(card.collectorNumber)")
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(palette.secondaryText.color)
+                .foregroundStyle(.white.opacity(0.82))
                 .lineLimit(1)
         }
+        .shadow(color: .black.opacity(0.6), radius: 2, x: 0, y: 1)
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .aspectRatio(0.716, contentMode: .fit)
-        .background(palette.placeholderFill.color.opacity(0.65))
+        .aspectRatio(cardArtworkAspectRatio, contentMode: .fit)
+        .background {
+            ZStack {
+                CardBackArtView(contentMode: .fill)
+
+                // Darken the top and bottom bands where the metadata sits while
+                // leaving the card back's ornate centre visible.
+                LinearGradient(
+                    stops: [
+                        .init(color: .black.opacity(0.6), location: 0),
+                        .init(color: .black.opacity(0.2), location: 0.4),
+                        .init(color: .black.opacity(0.2), location: 0.68),
+                        .init(color: .black.opacity(0.62), location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        }
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(palette.hairline.color, lineWidth: 1)

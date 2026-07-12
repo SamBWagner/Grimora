@@ -39,15 +39,7 @@ struct LocalCardImage: View {
       if let image = platformImage {
         imageView(image)
       } else {
-        clipShape
-          .fill(palette.placeholderFill.color)
-          .overlay {
-            placeholderContent
-          }
-          .overlay {
-            clipShape
-              .stroke(palette.hairline.color, lineWidth: 1)
-          }
+        placeholderView(clipShape: clipShape)
       }
     }
     .clipShape(clipShape)
@@ -104,17 +96,25 @@ struct LocalCardImage: View {
     .cached(for: colorScheme)
   }
 
+  /// The placeholder shown until the real card art loads: the Magic card back,
+  /// laid out with the same `contentMode` and corner clip as the eventual art so
+  /// the tile reads as a face-down card that flips to the front once decoded.
+  /// A subtle spinner sits on top while a load is actively in flight so the
+  /// loading and failed states stay distinguishable.
   @ViewBuilder
-  private var placeholderContent: some View {
-    if loadState == .loading {
-      ProgressView()
-        .controlSize(.small)
-        .tint(palette.accent.color)
-    } else {
-      Image(systemName: "rectangle.portrait")
-        .font(.largeTitle)
-        .foregroundStyle(palette.secondaryText.color)
-    }
+  private func placeholderView(clipShape: CardArtClipShape) -> some View {
+    CardBackArtView(contentMode: contentMode)
+      .overlay {
+        if loadState == .loading {
+          ProgressView()
+            .controlSize(.small)
+            .tint(palette.accent.color)
+        }
+      }
+      .overlay {
+        clipShape
+          .stroke(palette.hairline.color, lineWidth: 1)
+      }
   }
 
   @ViewBuilder
@@ -147,6 +147,26 @@ struct LocalCardImage: View {
 enum LocalCardImageContentMode {
   case fit
   case fill
+}
+
+/// The Magic card back, used as the universal stand-in wherever a card's front
+/// art isn't shown — the still-loading tile and the no-artwork tile alike — so
+/// every art-less slot reads as a face-down card. Fills its frame at the given
+/// content mode; callers clip it to the card's corner.
+struct CardBackArtView: View {
+  var contentMode: LocalCardImageContentMode = .fill
+
+  var body: some View {
+    let image = Image("CardBack", bundle: .module)
+      .resizable()
+
+    switch contentMode {
+    case .fit:
+      image.scaledToFit()
+    case .fill:
+      image.scaledToFill()
+    }
+  }
 }
 
 /// A rounded rectangle that masks card art with a *circular* corner matching a
