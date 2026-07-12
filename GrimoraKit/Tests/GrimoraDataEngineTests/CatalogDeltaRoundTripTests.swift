@@ -195,6 +195,117 @@ struct CatalogDeltaRoundTripTests {
     #expect(try digests(of: readyCatalog) == digests(of: catalogB))
   }
 
+  /// Multi-step Phase 2 path: with build A installed and the chain advertising A→B→C, the client walks
+  /// both deltas (downloading each, never the full artifact) and stages a catalog identical to C.
+  @Test
+  func clientWalksMultipleDeltasWhenSeveralBuildsBehind() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("MultiStep-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let buildA = try await buildCatalog(fixture: .versionA, root: root, tag: "a")
+    let buildB = try await buildCatalog(fixture: .versionB, root: root, tag: "b")
+    let buildC = try await buildCatalog(fixture: .versionC, root: root, tag: "c")
+
+    let apiURL = URL(string: "https://example.test/v1/catalog")!
+    let gzAB = try makeDeltaGz(from: buildA, to: buildB, in: root, name: "ab")
+    let gzBC = try makeDeltaGz(from: buildB, to: buildC, in: root, name: "bc")
+    let descAB = try descriptor(base: buildA, target: buildB, apiURL: apiURL, gz: gzAB)
+    let descBC = try descriptor(base: buildB, target: buildC, apiURL: apiURL, gz: gzBC)
+
+    let supportDir = root.appendingPathComponent("Support", isDirectory: true)
+    try installActiveCatalog(buildA, supportDirectory: supportDir)
+
+    let chain = CatalogChain(
+      current: buildC.manifest.version,
+      entries: [
+        chainEntry(for: buildA, deltaFromPrevious: nil),
+        chainEntry(for: buildB, deltaFromPrevious: descAB),
+        chainEntry(for: buildC, deltaFromPrevious: descBC),
+      ]
+    )
+    let network = StubNetworkClient(responses: [
+      apiURL: try CatalogManifest.encoder().encode(buildC.manifest),
+      apiURL.appendingPathComponent("chain"): try CatalogChain.encoder().encode(chain),
+      descAB.url: try Data(contentsOf: gzAB),
+      descBC.url: try Data(contentsOf: gzBC),
+    ])
+    let service = ManagedCatalogMigrationService(
+      supportDirectory: supportDir,
+      bulkDataClient: BulkDataClient(network: network, catalogAPIURL: apiURL),
+      availableCapacity: { _ in .max }
+    )
+
+    let staged = try await service.stageLatestCatalog(manual: true)
+    #expect(staged.version == buildC.manifest.version)
+
+    let requested = await network.recordedURLs()
+    #expect(requested.contains(descAB.url))
+    #expect(requested.contains(descBC.url))
+    #expect(!requested.contains(buildC.manifest.artifact.downloadURL))
+
+    let readyCatalog = supportDir.appendingPathComponent(".CatalogMigrationReady")
+      .appendingPathComponent("Catalog.sqlite")
+    #expect(
+      try digests(of: readyCatalog)
+        == digests(of: buildC.directory.appendingPathComponent("catalog.sqlite"))
+    )
+  }
+
+  /// When the deltas would together rival the full compressed artifact, the client abandons the
+  /// incremental path and does a plain full download instead.
+  @Test
+  func clientFallsBackToFullWhenDeltaPathIsTooLarge() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("OversizedPath-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let buildA = try await buildCatalog(fixture: .versionA, root: root, tag: "a")
+    let buildB = try await buildCatalog(fixture: .versionB, root: root, tag: "b")
+
+    let apiURL = URL(string: "https://example.test/v1/catalog")!
+    let gzAB = try makeDeltaGz(from: buildA, to: buildB, in: root, name: "ab")
+    // Inflate the advertised delta size past B's full artifact so the summed-bytes guard trips.
+    let descAB = try descriptor(
+      base: buildA,
+      target: buildB,
+      apiURL: apiURL,
+      gz: gzAB,
+      bytesOverride: buildB.manifest.artifact.compressedBytes + 1
+    )
+
+    let supportDir = root.appendingPathComponent("Support", isDirectory: true)
+    try installActiveCatalog(buildA, supportDirectory: supportDir)
+
+    let chain = CatalogChain(
+      current: buildB.manifest.version,
+      entries: [
+        chainEntry(for: buildA, deltaFromPrevious: nil),
+        chainEntry(for: buildB, deltaFromPrevious: descAB),
+      ]
+    )
+    let network = StubNetworkClient(responses: [
+      apiURL: try CatalogManifest.encoder().encode(buildB.manifest),
+      apiURL.appendingPathComponent("chain"): try CatalogChain.encoder().encode(chain),
+      buildB.manifest.artifact.downloadURL: try Data(contentsOf: buildB.artifactURL),
+    ])
+    let service = ManagedCatalogMigrationService(
+      supportDirectory: supportDir,
+      bulkDataClient: BulkDataClient(network: network, catalogAPIURL: apiURL),
+      availableCapacity: { _ in .max }
+    )
+
+    let staged = try await service.stageLatestCatalog(manual: true)
+    #expect(staged.version == buildB.manifest.version)
+
+    // The full artifact was downloaded; the (oversized) delta was not.
+    let requested = await network.recordedURLs()
+    #expect(requested.contains(buildB.manifest.artifact.downloadURL))
+    #expect(!requested.contains(descAB.url))
+  }
+
   // MARK: - Helpers
 
   private func build(fixture: DeltaTestFixture, engineRoot: URL) async throws -> LocalBuildResult {
@@ -207,6 +318,65 @@ struct CatalogDeltaRoundTripTests {
     let network = StubNetworkClient(responses: try fixture.responses())
     let engine = try GrimoraDataEngine(environment: environment, network: network)
     return try await engine.build(force: true)
+  }
+
+  private func makeDeltaGz(
+    from base: LocalBuildResult,
+    to target: LocalBuildResult,
+    in directory: URL,
+    name: String
+  ) throws -> URL {
+    let deltaSQLite = directory.appendingPathComponent("\(name).sqlite")
+    _ = try CatalogDeltaBuilder().buildDelta(
+      baseCatalogURL: base.directory.appendingPathComponent("catalog.sqlite"),
+      targetCatalogURL: target.directory.appendingPathComponent("catalog.sqlite"),
+      baseVersion: base.manifest.version,
+      targetVersion: target.manifest.version,
+      into: deltaSQLite
+    )
+    let gz = directory.appendingPathComponent("\(name).sqlite.gz")
+    try GzipArchive.compressFile(at: deltaSQLite, to: gz)
+    return gz
+  }
+
+  private func descriptor(
+    base: LocalBuildResult,
+    target: LocalBuildResult,
+    apiURL: URL,
+    gz: URL,
+    bytesOverride: Int64? = nil
+  ) throws -> CatalogDeltaDescriptor {
+    CatalogDeltaDescriptor(
+      baseVersion: base.manifest.version,
+      url: apiURL.appendingPathComponent(target.manifest.version)
+        .appendingPathComponent("delta").appendingPathComponent(base.manifest.version),
+      sha256: try FileSHA256.hash(url: gz),
+      bytes: try bytesOverride ?? Int64(Data(contentsOf: gz).count),
+      formatVersion: CatalogDelta.currentFormatVersion
+    )
+  }
+
+  private func chainEntry(
+    for build: LocalBuildResult,
+    deltaFromPrevious: CatalogDeltaDescriptor?
+  ) -> CatalogChainEntry {
+    CatalogChainEntry(
+      version: build.manifest.version,
+      catalogSchemaVersion: build.manifest.catalogSchemaVersion,
+      contentDigests: build.manifest.contentDigests!,
+      deltaFromPrevious: deltaFromPrevious
+    )
+  }
+
+  private func installActiveCatalog(_ build: LocalBuildResult, supportDirectory: URL) throws {
+    let activeDir = supportDirectory.appendingPathComponent("Database-v2", isDirectory: true)
+    try FileManager.default.createDirectory(at: activeDir, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: build.directory.appendingPathComponent("catalog.sqlite"),
+      to: activeDir.appendingPathComponent("Catalog.sqlite")
+    )
+    try CatalogManifest.encoder(prettyPrinted: true).encode(build.manifest)
+      .write(to: activeDir.appendingPathComponent("manifest.json"))
   }
 
   private func digests(of catalogURL: URL) throws -> CatalogContentDigests {
@@ -245,17 +415,20 @@ struct CatalogDeltaRoundTripTests {
   }
 }
 
-/// Two related catalog snapshots. `versionB` differs from `versionA` by a price-only change (forest),
-/// a non-price change (relic oracle text), a new card (isle), a deletion (ghost), and one appended
-/// price day for forest.
+/// Related catalog snapshots. `versionB` differs from `versionA` by a price-only change (forest), a
+/// non-price change (relic oracle text), a new card (isle), a deletion (ghost), and one appended
+/// price day. `versionC` slides once more off `versionB` (forest price + one more price day), so
+/// A→B→C exercises multi-step chain walking.
 private enum DeltaTestFixture {
   case versionA
   case versionB
+  case versionC
 
   var scryfallUpdatedAt: String {
     switch self {
     case .versionA: "2026-06-14T09:00:00.000+00:00"
     case .versionB: "2026-06-15T09:00:00.000+00:00"
+    case .versionC: "2026-06-16T09:00:00.000+00:00"
     }
   }
 
@@ -263,6 +436,7 @@ private enum DeltaTestFixture {
     switch self {
     case .versionA: "2026-06-14"
     case .versionB: "2026-06-15"
+    case .versionC: "2026-06-16"
     }
   }
 
@@ -293,7 +467,12 @@ private enum DeltaTestFixture {
   }
 
   private func defaultCardsJSON() -> Data {
-    let forestPrice = self == .versionA ? "0.50" : "0.55"
+    let forestPrice: String
+    switch self {
+    case .versionA: forestPrice = "0.50"
+    case .versionB: forestPrice = "0.55"
+    case .versionC: forestPrice = "0.60"
+    }
     let relicOracle = self == .versionA ? "{T}: Add {C}." : "{T}: Add {C} or {W}."
     var cards = [
       """
@@ -323,7 +502,7 @@ private enum DeltaTestFixture {
          "games":["paper"],"digital":false,"set":"eng","set_name":"Engine Fixture Set",
          "set_type":"expansion","collector_number":"3","rarity":"uncommon"}
         """)
-    case .versionB:
+    case .versionB, .versionC:
       cards.append(
         """
         {"object":"card","id":"engine-isle","oracle_id":"oracle-engine-isle","name":"Engine Isle",
@@ -356,6 +535,8 @@ private enum DeltaTestFixture {
       days = #""2026-06-13": 0.48, "2026-06-14": 0.50"#
     case .versionB:
       days = #""2026-06-13": 0.48, "2026-06-14": 0.50, "2026-06-15": 0.55"#
+    case .versionC:
+      days = #""2026-06-13": 0.48, "2026-06-14": 0.50, "2026-06-15": 0.55, "2026-06-16": 0.60"#
     }
     return Data("""
       {"data": {"uuid-engine-forest": {"paper": {"tcgplayer": {"retail": {"normal": {\(days)}}}}}}}

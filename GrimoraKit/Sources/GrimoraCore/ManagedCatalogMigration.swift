@@ -38,6 +38,10 @@ public final class ManagedCatalogMigrationService: @unchecked Sendable {
 
   public static let activeDirectoryName = "Database-v2"
   public static let rollbackRetention: TimeInterval = 7 * 24 * 60 * 60
+  /// Upper bound on how many consecutive deltas an incremental update will walk before preferring a
+  /// full download. A safety net above the `chain.json` window; the summed-bytes guard is the real
+  /// limiter.
+  public static let maxIncrementalSteps = 30
 
   private let layout: Layout
   private let bulkDataClient: BulkDataClient
@@ -259,10 +263,11 @@ public final class ManagedCatalogMigrationService: @unchecked Sendable {
     return catalog
   }
 
-  /// Attempts a single-step incremental update: patch a copy of the installed catalog with one delta
-  /// and stage the result, instead of downloading the full artifact. Returns the target manifest on
-  /// success; throws (→ caller falls back to a full download) on any mismatch, missing base, or a
-  /// multi-build gap. Phase 1 handles exactly one build behind.
+  /// Attempts an incremental update: patch a copy of the installed catalog with the chain of deltas
+  /// that reach `target`, instead of downloading the full artifact. Returns the target manifest on
+  /// success; throws (→ caller falls back to a full download) on any mismatch, missing base, gap in
+  /// the chain, or when the deltas together would rival a full download. Walks one delta (one build
+  /// behind) or many (several builds behind).
   private func stageIncrementally(
     target: CatalogManifest,
     manual: Bool,
@@ -280,16 +285,22 @@ public final class ManagedCatalogMigrationService: @unchecked Sendable {
     let chain = try await bulkDataClient.fetchCatalogChain()
     guard chain.current == target.version,
       let path = chain.deltaPath(from: installed.version),
-      path.count == 1
+      !path.isEmpty,
+      path.count <= Self.maxIncrementalSteps
     else {
       throw ManagedCatalogMigrationError.invalidManifest
     }
-    let delta = path[0]
+    // If the deltas together approach the full compressed artifact, a plain full download is simpler
+    // and no larger — bail so the caller takes that path.
+    let totalDeltaBytes = path.reduce(0) { $0 + $1.bytes }
+    guard totalDeltaBytes < target.artifact.compressedBytes else {
+      throw ManagedCatalogMigrationError.invalidManifest
+    }
 
-    // Working copy of the catalog + the (small) delta, with headroom.
+    // Working copy of the catalog + the deltas, with headroom.
     let requiredBytes =
       target.artifact.uncompressedBytes
-      + delta.bytes
+      + totalDeltaBytes
       + max(256 * 1024 * 1024, target.artifact.uncompressedBytes / 8)
     try requireAvailableCapacity(requiredBytes)
 
@@ -303,30 +314,40 @@ public final class ManagedCatalogMigrationService: @unchecked Sendable {
     let workingCatalog = buildingDirectory.appendingPathComponent("Catalog.sqlite")
     try fileManager.copyItem(at: layout.activeCatalog, to: workingCatalog)
 
-    let deltaGz = buildingDirectory.appendingPathComponent("delta.sqlite.gz")
-    try await bulkDataClient.downloadCatalogDelta(
-      from: delta.url,
-      to: deltaGz,
-      purpose: manual ? .bulkDownload : .automaticCatalogDownload
-    ) { downloadProgress in
-      await progress?(
-        .downloading(
-          completedBytes: downloadProgress.completedBytes,
-          totalBytes: downloadProgress.totalBytes ?? delta.bytes
+    // Walk the chain, applying each consecutive delta to the working copy in order. Each delta
+    // reproduces its build's content exactly, so after step K the working copy equals build K —
+    // which is precisely the base the next delta was diffed against.
+    var downloadedBytes: Int64 = 0
+    for (index, delta) in path.enumerated() {
+      let deltaGz = buildingDirectory.appendingPathComponent("delta-\(index).sqlite.gz")
+      let priorBytes = downloadedBytes
+      try await bulkDataClient.downloadCatalogDelta(
+        from: delta.url,
+        to: deltaGz,
+        purpose: manual ? .bulkDownload : .automaticCatalogDownload
+      ) { downloadProgress in
+        await progress?(
+          .downloading(
+            completedBytes: priorBytes + downloadProgress.completedBytes,
+            totalBytes: totalDeltaBytes
+          )
         )
-      )
-    }
-    guard try FileSHA256.hash(url: deltaGz) == delta.sha256 else {
-      throw CatalogStorageError.invalidCatalog("Downloaded delta SHA-256 does not match")
+      }
+      guard try FileSHA256.hash(url: deltaGz) == delta.sha256 else {
+        throw CatalogStorageError.invalidCatalog("Downloaded delta SHA-256 does not match")
+      }
+      downloadedBytes += delta.bytes
+
+      let deltaSQLite = buildingDirectory.appendingPathComponent("delta-\(index).sqlite")
+      try GzipArchive.decompressFile(at: deltaGz, to: deltaSQLite)
+      try CatalogDeltaApplier().apply(deltaURL: deltaSQLite, toWorkingCatalog: workingCatalog)
+      try? fileManager.removeItem(at: deltaGz)
+      try? fileManager.removeItem(at: deltaSQLite)
     }
 
     await progress?(.validating)
-    let deltaSQLite = buildingDirectory.appendingPathComponent("delta.sqlite")
-    try GzipArchive.decompressFile(at: deltaGz, to: deltaSQLite)
-    try CatalogDeltaApplier().apply(deltaURL: deltaSQLite, toWorkingCatalog: workingCatalog)
-
-    // The chained-hash check: the patched catalog must be logically identical to a fresh build of
-    // `target` (byte layout differs, but the content digests must match exactly).
+    // The chained-hash check: the fully-patched catalog must be logically identical to a fresh build
+    // of `target` (byte layout differs, but the content digests must match exactly).
     let workingDigests = try CatalogContentDigest.compute(
       SQLiteDatabase(storage: .readOnlyFile(workingCatalog))
     )
@@ -337,8 +358,6 @@ public final class ManagedCatalogMigrationService: @unchecked Sendable {
 
     try CatalogManifest.encoder(prettyPrinted: true).encode(target)
       .write(to: buildingDirectory.appendingPathComponent("manifest.json"), options: .atomic)
-    try? fileManager.removeItem(at: deltaGz)
-    try? fileManager.removeItem(at: deltaSQLite)
 
     if fileManager.fileExists(atPath: layout.readyDirectory.path) {
       try fileManager.removeItem(at: layout.readyDirectory)

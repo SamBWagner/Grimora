@@ -59,3 +59,8 @@ the prior build downloads only the change (typically ~1–3 MB) instead of the f
   window (30 builds) or the chain breaks and clients fall back to a full download —
   correct, just less efficient. A `catalogSchemaVersion` bump also breaks the chain
   by design (one forced full download at rollout).
+- A device several builds behind walks the whole chain, applying each consecutive
+  delta in order (each delta reproduces its build exactly, so the working copy after
+  step K is precisely the base the next delta was diffed against). If the deltas would
+  together rival the full compressed artifact (or the path exceeds 30 steps), the
+  client prefers a plain full download.
