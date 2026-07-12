@@ -267,7 +267,10 @@ struct PerfHUDView: View {
     .allowsHitTesting(false)
     .accessibilityElement(children: .ignore)
     .accessibilityIdentifier("perf-hud-status")
+    // Publish the status as BOTH value and label: iOS XCUITest reads it as `.value`, but macOS
+    // doesn't surface `AXValue` on a non-control element, so the Mac benchmark reads `.label`.
     .accessibilityValue(monitor.statusValue)
+    .accessibilityLabel(monitor.statusValue)
     .task {
       monitor.start()
     }

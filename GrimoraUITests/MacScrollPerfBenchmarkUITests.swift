@@ -130,7 +130,9 @@ final class MacScrollPerfBenchmarkUITests: XCTestCase {
   private func readStatus(_ app: XCUIApplication) throws -> Sample {
     let status = app.descendants(matching: .any).matching(identifier: "perf-hud-status").firstMatch
     XCTAssertTrue(status.waitForExistence(timeout: 5), "perf HUD status element not found")
-    let value = (status.value as? String) ?? ""
+    // macOS surfaces the status string as the AX label, not the value (unlike iOS) — fall back.
+    let rawValue = (status.value as? String) ?? ""
+    let value = rawValue.isEmpty ? status.label : rawValue
     func field(_ key: String) -> Int {
       guard
         let token = value.split(separator: " ").first(where: { $0.hasPrefix("\(key)=") }),
