@@ -4,6 +4,9 @@ import SwiftUI
 
 #if canImport(UIKit)
   import UIKit
+#elseif os(macOS)
+  import AppKit
+  import QuartzCore
 #endif
 
 /// Shared plumbing for Grimora's scroll-performance instrumentation.
@@ -13,7 +16,10 @@ import SwiftUI
 /// the work that caused it (image decode, section rebuild, …). The hitch monitor below also mirrors
 /// a plain-text summary to the unified log so slowdowns can be watched live from a terminal:
 ///
+///     # iOS simulator:
 ///     xcrun simctl spawn booted log stream --predicate 'subsystem == "com.grimora.perf"'
+///     # macOS app:
+///     log stream --predicate 'subsystem == "com.grimora.perf"'
 ///
 /// Everything here is opt-in — nothing starts unless `GRIMORA_PERF_HUD=1` is set — so it adds no
 /// cost to a normal run.
@@ -113,18 +119,77 @@ final class ScrollHitchMonitor {
 
   private init() {}
 
+  private var lastTimestamp: CFTimeInterval = 0
+
+  /// Records one frame's timing. Fed by the platform display-link source — a self-owned
+  /// `CADisplayLink` on iOS/visionOS, an `NSView`-vended one on macOS — so the hitch/jank/counter
+  /// math is byte-identical across platforms.
+  func recordFrame(timestamp: CFTimeInterval, targetTimestamp: CFTimeInterval) {
+    let now = timestamp
+    defer { lastTimestamp = now }
+    guard lastTimestamp > 0 else { return }
+
+    let frameDuration = now - lastTimestamp
+    // The display link's own advertised interval to the next frame is the nominal budget for this
+    // device/refresh rate; fall back to 60Hz if it isn't reported yet.
+    let nominal = targetTimestamp > timestamp ? targetTimestamp - timestamp : 1.0 / 60.0
+    let hitchThreshold = nominal * 1.5
+
+    cumulativeJankMilliseconds += max(0, frameDuration - nominal) * 1000
+    windowFrames += 1
+    windowElapsed += frameDuration
+
+    if frameDuration > hitchThreshold {
+      windowHitches += 1
+      totalHitches += 1
+      windowWorstSeconds = max(windowWorstSeconds, frameDuration)
+      GrimoraPerf.signposter.emitEvent("hitch")
+      // Only shout about big stalls individually; the per-window summary covers the rest.
+      if frameDuration > nominal * 3 {
+        GrimoraPerf.log.error(
+          "hitch \(frameDuration * 1000, format: .fixed(precision: 1))ms (budget \(nominal * 1000, format: .fixed(precision: 1))ms)"
+        )
+      }
+    }
+
+    guard windowElapsed >= Self.windowSeconds else { return }
+
+    framesPerSecond = Double(windowFrames) / windowElapsed
+    hitchesInWindow = windowHitches
+    worstFrameMilliseconds = windowWorstSeconds * 1000
+    let counters = PerfCounters.shared
+    gridRowPacks = counters.gridRowPacks
+    tileBodyEvals = counters.tileBodyEvals
+    snapshotBuilds = counters.snapshotBuilds
+    if windowHitches > 0 {
+      GrimoraPerf.log.log(
+        "fps \(self.framesPerSecond, format: .fixed(precision: 0)) hitches \(self.windowHitches) worst \(self.worstFrameMilliseconds, format: .fixed(precision: 1))ms"
+      )
+    }
+    resetWindow()
+  }
+
+  private func beginRun() {
+    resetWindow()
+    lastTimestamp = 0
+    isRunning = true
+  }
+
+  private func endRun() {
+    lastTimestamp = 0
+    isRunning = false
+  }
+
   #if canImport(UIKit)
     private var displayLink: CADisplayLink?
     private let proxy = HitchDisplayLinkProxy()
-    private var lastTimestamp: CFTimeInterval = 0
 
     func start() {
       guard displayLink == nil else { return }
-      resetWindow()
-      lastTimestamp = 0
+      beginRun()
       proxy.onTick = { [weak self] link in
         MainActor.assumeIsolated {
-          self?.tick(link)
+          self?.recordFrame(timestamp: link.timestamp, targetTimestamp: link.targetTimestamp)
         }
       }
       let link = CADisplayLink(target: proxy, selector: #selector(HitchDisplayLinkProxy.tick(_:)))
@@ -133,66 +198,28 @@ final class ScrollHitchMonitor {
       link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 120, preferred: 120)
       link.add(to: .main, forMode: .common)
       displayLink = link
-      isRunning = true
     }
 
     func stop() {
       displayLink?.invalidate()
       displayLink = nil
-      lastTimestamp = 0
-      isRunning = false
+      endRun()
+    }
+  #elseif os(macOS)
+    // macOS has no standalone CADisplayLink — it must be vended by a view — so the invisible
+    // `MacFrameTicker` embedded in the HUD owns the link and feeds `recordFrame`. start()/stop()
+    // just bracket a measurement run (reset counters, flip `isRunning`).
+    func start() {
+      guard !isRunning else { return }
+      beginRun()
     }
 
-    private func tick(_ link: CADisplayLink) {
-      let now = link.timestamp
-      defer { lastTimestamp = now }
-      guard lastTimestamp > 0 else { return }
-
-      let frameDuration = now - lastTimestamp
-      // The display link's own advertised interval to the next frame is the nominal budget for this
-      // device/refresh rate; fall back to 60Hz if it isn't reported yet.
-      let nominal = link.targetTimestamp > link.timestamp
-        ? link.targetTimestamp - link.timestamp
-        : 1.0 / 60.0
-      let hitchThreshold = nominal * 1.5
-
-      cumulativeJankMilliseconds += max(0, frameDuration - nominal) * 1000
-      windowFrames += 1
-      windowElapsed += frameDuration
-
-      if frameDuration > hitchThreshold {
-        windowHitches += 1
-        totalHitches += 1
-        windowWorstSeconds = max(windowWorstSeconds, frameDuration)
-        GrimoraPerf.signposter.emitEvent("hitch")
-        // Only shout about big stalls individually; the per-window summary covers the rest.
-        if frameDuration > nominal * 3 {
-          GrimoraPerf.log.error(
-            "hitch \(frameDuration * 1000, format: .fixed(precision: 1))ms (budget \(nominal * 1000, format: .fixed(precision: 1))ms)"
-          )
-        }
-      }
-
-      guard windowElapsed >= Self.windowSeconds else { return }
-
-      framesPerSecond = Double(windowFrames) / windowElapsed
-      hitchesInWindow = windowHitches
-      worstFrameMilliseconds = windowWorstSeconds * 1000
-      let counters = PerfCounters.shared
-      gridRowPacks = counters.gridRowPacks
-      tileBodyEvals = counters.tileBodyEvals
-      snapshotBuilds = counters.snapshotBuilds
-      if windowHitches > 0 {
-        GrimoraPerf.log.log(
-          "fps \(self.framesPerSecond, format: .fixed(precision: 0)) hitches \(self.windowHitches) worst \(self.worstFrameMilliseconds, format: .fixed(precision: 1))ms"
-        )
-      }
-      resetWindow()
+    func stop() {
+      endRun()
     }
   #else
     func start() {}
     func stop() {}
-    private func tick() {}
   #endif
 
   private func resetWindow() {
@@ -235,6 +262,7 @@ struct PerfHUDView: View {
     .padding(.horizontal, 8)
     .padding(.vertical, 5)
     .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    .background { frameTicker }
     .foregroundStyle(.white)
     .allowsHitTesting(false)
     .accessibilityElement(children: .ignore)
@@ -246,6 +274,17 @@ struct PerfHUDView: View {
     .onDisappear {
       monitor.stop()
     }
+  }
+
+  /// On macOS the display link has to be vended by a view, so the HUD hosts an invisible ticker that
+  /// drives the shared monitor. iOS/visionOS drive the monitor's own `CADisplayLink`, so no ticker.
+  @ViewBuilder
+  private var frameTicker: some View {
+    #if os(macOS)
+      MacFrameTicker().allowsHitTesting(false)
+    #else
+      Color.clear
+    #endif
   }
 
   private var fpsColor: Color {
@@ -262,18 +301,67 @@ extension View {
   /// untouched, so the instrumentation is entirely absent from a normal run.
   @ViewBuilder
   func grimoraPerfHUD() -> some View {
-    #if canImport(UIKit)
-      if GrimoraPerf.isHUDEnabled {
-        overlay(alignment: .topTrailing) {
-          PerfHUDView()
-            .padding(.top, 8)
-            .padding(.trailing, 8)
-        }
-      } else {
-        self
+    if GrimoraPerf.isHUDEnabled {
+      overlay(alignment: .topTrailing) {
+        PerfHUDView()
+          .padding(.top, 8)
+          .padding(.trailing, 8)
       }
-    #else
+    } else {
       self
-    #endif
+    }
   }
 }
+
+#if os(macOS)
+  /// Bridges an `NSView`-vended `CADisplayLink` (macOS 14+) into the shared `ScrollHitchMonitor`, so
+  /// the Mac gets the same vsync-aligned frame callbacks as the iOS path. The link is created once the
+  /// view is in a window (it needs the window's screen) and torn down when the view leaves or the
+  /// representable is dismantled.
+  private struct MacFrameTicker: NSViewRepresentable {
+    func makeNSView(context: Context) -> MacFrameTickerView {
+      MacFrameTickerView()
+    }
+
+    func updateNSView(_ nsView: MacFrameTickerView, context: Context) {}
+
+    static func dismantleNSView(_ nsView: MacFrameTickerView, coordinator: Coordinator) {
+      nsView.stopFrameLink()
+    }
+  }
+
+  final class MacFrameTickerView: NSView {
+    private var frameLink: CADisplayLink?
+
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      if window == nil {
+        stopFrameLink()
+      } else {
+        startFrameLink()
+      }
+    }
+
+    private func startFrameLink() {
+      guard frameLink == nil else { return }
+      let link = displayLink(target: self, selector: #selector(frameTick(_:)))
+      // Track the display's real ceiling (ProMotion up to 120Hz) so a hitch is measured against the
+      // cadence the app is trying to hit. `.common` keeps the link firing during scroll tracking.
+      link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 120, preferred: 120)
+      link.add(to: .main, forMode: .common)
+      frameLink = link
+    }
+
+    func stopFrameLink() {
+      frameLink?.invalidate()
+      frameLink = nil
+    }
+
+    @objc private func frameTick(_ link: CADisplayLink) {
+      MainActor.assumeIsolated {
+        ScrollHitchMonitor.shared.recordFrame(
+          timestamp: link.timestamp, targetTimestamp: link.targetTimestamp)
+      }
+    }
+  }
+#endif
