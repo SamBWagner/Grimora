@@ -278,6 +278,7 @@ public final class GrimoraAppModel {
   var cloudSyncSearchSettingsUpdatedAt: Date
   var searchTask: Task<Void, Never>?
   var searchDebounceTask: Task<Void, Never>?
+  var listSearchTask: Task<Void, Never>?
   var nextPagePrefetchTask: Task<Void, Never>?
   var searchHistoryRecordTask: Task<Void, Never>?
   var cloudSyncTask: Task<Void, Never>?

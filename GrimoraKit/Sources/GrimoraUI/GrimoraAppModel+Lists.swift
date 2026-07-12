@@ -104,7 +104,21 @@ extension GrimoraAppModel {
     setSelectedListSearchDraft("")
   }
 
+  /// Off-main outcome of a list search, carrying only `Sendable` values back across the task hop.
+  private enum ListSearchOutcome: Sendable {
+    case results([CardCollectionEntryRecord])
+    case unsupported(String)
+    case failed
+  }
+
+  /// Runs the in-list search off the main thread, debounced. Previously this ran
+  /// `database.searchCardCollectionEntries` *synchronously on the main thread on every keystroke* —
+  /// a full-text query that blocks the render loop for the whole scan, seconds on a big list. Now it
+  /// mirrors the global card search: cancel the in-flight search, wait out the debounce, run the DB
+  /// query on a detached task, and publish back on the main actor. An empty query still clears
+  /// synchronously so the full list snaps back instantly.
   func reloadSelectedListSearch() {
+    listSearchTask?.cancel()
     let query = GrimoraSearchHistoryStore.normalizedQuery(selectedCollectionSearchText)
     selectedCollectionSearchUnsupportedMessage = nil
     guard let selectedCollectionID, !query.isEmpty else {
@@ -112,23 +126,73 @@ extension GrimoraAppModel {
       return
     }
 
-    do {
-      switch try database.searchCardCollectionEntries(forListID: selectedCollectionID, text: query) {
-      case .results(let entries):
-        searchedSelectedListEntries = entries
-      case .unsupported(let reason):
-        searchedSelectedListEntries = []
-        selectedCollectionSearchUnsupportedMessage = reason.message
+    let database = database
+    let debounceNanoseconds = searchPerformance.textDebounceNanoseconds
+    listSearchTask = Task { [weak self, database, selectedCollectionID, query, debounceNanoseconds] in
+      if debounceNanoseconds > 0 {
+        try? await Task.sleep(nanoseconds: debounceNanoseconds)
       }
-    } catch {
+      guard !Task.isCancelled else {
+        return
+      }
+
+      let outcome = await Task.detached(priority: .userInitiated) { () -> ListSearchOutcome in
+        do {
+          switch try database.searchCardCollectionEntries(forListID: selectedCollectionID, text: query) {
+          case .results(let entries):
+            return .results(entries)
+          case .unsupported(let reason):
+            return .unsupported(reason.message)
+          }
+        } catch {
+          return .failed
+        }
+      }.value
+
+      guard !Task.isCancelled else {
+        return
+      }
+      self?.applyListSearchOutcome(outcome, forListID: selectedCollectionID, query: query)
+    }
+  }
+
+  /// Publishes a completed list-search outcome, but only if it still matches what the user is looking
+  /// at — the selected list and current query can both change while a search is in flight.
+  private func applyListSearchOutcome(
+    _ outcome: ListSearchOutcome,
+    forListID listID: String,
+    query: String
+  ) {
+    guard selectedCollectionID == listID,
+      GrimoraSearchHistoryStore.normalizedQuery(selectedCollectionSearchText) == query
+    else {
+      return
+    }
+
+    switch outcome {
+    case .results(let entries):
+      searchedSelectedListEntries = entries
+      selectedCollectionSearchUnsupportedMessage = nil
+    case .unsupported(let message):
+      searchedSelectedListEntries = []
+      selectedCollectionSearchUnsupportedMessage = message
+    case .failed:
       searchedSelectedListEntries = []
       statusMessage = "Collection search failed."
     }
   }
 
   func resetSelectedListSearchResults() {
+    listSearchTask?.cancel()
+    listSearchTask = nil
     searchedSelectedListEntries = nil
     selectedCollectionSearchUnsupportedMessage = nil
+  }
+
+  /// Test hook: awaits the in-flight list search (debounce + off-main query + publish) so a test can
+  /// assert on `searchedSelectedListEntries` deterministically. Mirrors `drainSelectedListLoadForTesting`.
+  func drainSelectedListSearchForTesting() async {
+    await listSearchTask?.value
   }
 
   /// Runs a Scryfall query across every list, returning the lists whose cards match together with

@@ -6248,6 +6248,7 @@ final class GrimoraAppModelTests: XCTestCase {
 
     // A list search narrows the visible rows but the header total stays the full-list total.
     model.setSelectedListSearchDraft("forest")
+    await model.drainSelectedListSearchForTesting()
     XCTAssertEqual(model.searchedSelectedListEntries?.map(\.cardID), ["forest"])
     XCTAssertEqual(model.selectedCollectionEntryTotal, 5)
   }
