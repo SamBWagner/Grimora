@@ -71,7 +71,7 @@ struct RealDeltaValidationTests {
       ── Real delta validation ──────────────────────────────────────
       base    \(baseManifest.version)  (mtgjson \(baseManifest.sources.mtgjsonDate))
       target  \(targetManifest.version)  (mtgjson \(targetManifest.sources.mtgjsonDate))
-      stats   priceUpd=\(stats.cardsPriceUpdated) upsert=\(stats.cardsUpserted) del=\(stats.cardsDeleted) \
+      stats   fieldChg=\(stats.cardFieldChanges) upsert=\(stats.cardsUpserted) del=\(stats.cardsDeleted) \
       faces=\(stats.cardFacesReplacedCards) slide=\(stats.seriesSlid) replace=\(stats.seriesReplaced) \
       seriesDel=\(stats.seriesDeleted) map+=\(stats.mappingsUpserted) map-=\(stats.mappingsDeleted) meta=\(stats.metadataSet)
       delta   \(mb(deltaGzBytes))   vs full   \(mb(fullBytes))   →  \(String(format: "%.1f", ratio))× smaller

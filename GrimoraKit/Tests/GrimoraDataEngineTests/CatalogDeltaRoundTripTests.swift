@@ -35,7 +35,7 @@ struct CatalogDeltaRoundTripTests {
       targetVersion: buildB.manifest.version,
       into: deltaURL
     )
-    #expect(stats.cardsPriceUpdated == 1) // forest price 0.50 -> 0.55, nothing else changed
+    #expect(stats.cardFieldChanges == 1) // forest price_usd 0.50 -> 0.55, nothing else changed
     #expect(stats.cardsUpserted == 2) // relic (oracle changed) + isle (new)
     #expect(stats.cardsDeleted == 1) // ghost
     #expect(stats.seriesSlid == 1) // forest's 91-day window slid one day

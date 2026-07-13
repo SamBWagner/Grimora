@@ -3,7 +3,8 @@ import GrimoraCore
 
 /// Row counts for each section of a generated patch database — handy for logging and tests.
 public struct CatalogDeltaStats: Equatable, Sendable {
-  public var cardsPriceUpdated: Int
+  /// Number of narrow (id, field, value) card field-change rows.
+  public var cardFieldChanges: Int
   public var cardsUpserted: Int
   public var cardsDeleted: Int
   public var cardFacesReplacedCards: Int
@@ -15,7 +16,7 @@ public struct CatalogDeltaStats: Equatable, Sendable {
   public var metadataSet: Int
 
   public var isEmpty: Bool {
-    cardsPriceUpdated == 0 && cardsUpserted == 0 && cardsDeleted == 0
+    cardFieldChanges == 0 && cardsUpserted == 0 && cardsDeleted == 0
       && cardFacesReplacedCards == 0 && seriesSlid == 0 && seriesReplaced == 0
       && seriesDeleted == 0 && mappingsUpserted == 0 && mappingsDeleted == 0 && metadataSet == 0
   }
@@ -73,8 +74,11 @@ public struct CatalogDeltaBuilder {
     guard !cardColumns.isEmpty, !faceColumns.isEmpty else {
       throw CatalogDeltaBuilderError.missingColumns("cards/card_faces columns unavailable")
     }
-    let priceColumns = Set(CatalogDeltaSchema.cardsPriceColumns)
-    let nonPriceCardColumns = cardColumns.filter { $0 != "id" && !priceColumns.contains($0) }
+    // Narrow columns get per-field diffs; everything else (the "stable" columns) triggers a full
+    // upsert when it changes. Only narrow columns actually present in the schema are diffed narrowly.
+    let narrowColumns = CatalogDeltaSchema.narrowUpdateColumns.filter(cardColumns.contains)
+    let narrowSet = Set(narrowColumns)
+    let stableCardColumns = cardColumns.filter { $0 != "id" && !narrowSet.contains($0) }
 
     try patch.execute(CatalogDeltaSchema.fixedTableDDL)
     try createDynamicPatchTables(patch, cardColumns: cardColumns, faceColumns: faceColumns)
@@ -83,7 +87,8 @@ public struct CatalogDeltaBuilder {
       try populate(
         patch,
         cardColumns: cardColumns,
-        nonPriceCardColumns: nonPriceCardColumns,
+        stableCardColumns: stableCardColumns,
+        narrowColumns: narrowColumns,
         faceColumns: faceColumns
       )
     }
@@ -141,11 +146,11 @@ public struct CatalogDeltaBuilder {
   private func populate(
     _ patch: SQLiteDatabase,
     cardColumns: [String],
-    nonPriceCardColumns: [String],
+    stableCardColumns: [String],
+    narrowColumns: [String],
     faceColumns: [String]
   ) throws {
-    let nonPriceChanged = orDiffers(nonPriceCardColumns)
-    let priceChanged = orDiffers(CatalogDeltaSchema.cardsPriceColumns)
+    let stableChanged = orDiffers(stableCardColumns)
 
     // Deleted cards (dependents cascade on apply).
     try patch.execute(
@@ -155,17 +160,21 @@ public struct CatalogDeltaBuilder {
       """
     )
 
-    // Price-only changes: present in both, every non-price column equal, some price column differs.
-    try patch.execute(
-      """
-      INSERT INTO \(CatalogDeltaSchema.cardsPriceUpdate) (id, price_usd, price_tix, price_eur)
-      SELECT t.id, t.price_usd, t.price_tix, t.price_eur
-      FROM target.cards t JOIN base.cards b ON b.id = t.id
-      WHERE NOT (\(nonPriceChanged)) AND (\(priceChanged))
-      """
-    )
+    // Narrow per-field changes: cards present in both whose stable columns are all equal, but a
+    // volatile column (price / rank / image URL) moved. One (id, field, value) row per changed
+    // column — ships only what changed and skips the FTS rebuild on apply.
+    for column in narrowColumns {
+      try patch.execute(
+        """
+        INSERT INTO \(CatalogDeltaSchema.cardFieldChange) (id, field, value)
+        SELECT t.id, '\(column)', t.\(Self.quoted(column))
+        FROM target.cards t JOIN base.cards b ON b.id = t.id
+        WHERE NOT (\(stableChanged)) AND (b.\(Self.quoted(column)) IS NOT t.\(Self.quoted(column)))
+        """
+      )
+    }
 
-    // Full-row upserts: new cards, or cards whose non-price columns changed. Materialize the FTS
+    // Full-row upserts: new cards, or cards whose stable columns changed. Materialize the FTS
     // search text into an indexed temp table first: `cards_fts` is fts5 keyed only by an implicit
     // rowid, so a per-row correlated lookup scans the whole index each time — O(changed-cards × N),
     // which grinds for hours on a set release. One scan + indexed joins instead.
@@ -184,7 +193,7 @@ public struct CatalogDeltaBuilder {
       FROM target.cards t
       LEFT JOIN base.cards b ON b.id = t.id
       LEFT JOIN temp.cards_search s ON s.card_id = t.id
-      WHERE b.id IS NULL OR (\(nonPriceChanged))
+      WHERE b.id IS NULL OR (\(stableChanged))
       """
     )
 
@@ -395,7 +404,7 @@ public struct CatalogDeltaBuilder {
 
   private func collectStats(_ patch: SQLiteDatabase) throws -> CatalogDeltaStats {
     CatalogDeltaStats(
-      cardsPriceUpdated: try count(patch, CatalogDeltaSchema.cardsPriceUpdate),
+      cardFieldChanges: try count(patch, CatalogDeltaSchema.cardFieldChange),
       cardsUpserted: try count(patch, CatalogDeltaSchema.cardsUpsert),
       cardsDeleted: try count(patch, CatalogDeltaSchema.cardsDelete),
       cardFacesReplacedCards: try count(patch, CatalogDeltaSchema.cardFacesReplaceCards),

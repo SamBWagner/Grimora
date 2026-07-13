@@ -31,6 +31,7 @@ public struct CatalogDeltaApplier {
 
     try database.transaction {
       try applyCardDeletes(database)
+      try applyFieldChanges(database, cardColumns: cardColumns)
       try applyCardUpserts(database, cardColumns: cardColumns)
       try applyFaceReplacements(database, faceColumns: faceColumns)
       try applySeriesReplacements(database)
@@ -83,18 +84,29 @@ public struct CatalogDeltaApplier {
     )
   }
 
-  private func applyCardUpserts(_ database: SQLiteDatabase, cardColumns: [String]) throws {
-    // Price-only changes first (narrow, common).
-    try database.execute(
-      """
-      UPDATE cards SET
-          price_usd = (SELECT price_usd FROM delta.\(CatalogDeltaSchema.cardsPriceUpdate) u WHERE u.id = cards.id),
-          price_tix = (SELECT price_tix FROM delta.\(CatalogDeltaSchema.cardsPriceUpdate) u WHERE u.id = cards.id),
-          price_eur = (SELECT price_eur FROM delta.\(CatalogDeltaSchema.cardsPriceUpdate) u WHERE u.id = cards.id)
-      WHERE id IN (SELECT id FROM delta.\(CatalogDeltaSchema.cardsPriceUpdate))
-      """
-    )
+  /// Narrow per-field updates (prices / ranks / image URLs). One UPDATE per whitelisted column,
+  /// touching only the cards that changed it — no FTS rebuild, since these columns don't feed search.
+  /// Iterates the local whitelist (not fields from the delta) so a malformed/newer delta can't drive
+  /// an arbitrary column write; any field the applier doesn't recognize is simply left unapplied,
+  /// which the post-apply digest check catches (→ full-download fallback).
+  private func applyFieldChanges(_ database: SQLiteDatabase, cardColumns: [String]) throws {
+    let known = Set(cardColumns)
+    for column in CatalogDeltaSchema.narrowUpdateColumns where known.contains(column) {
+      try database.execute(
+        """
+        UPDATE cards SET \(Self.quoted(column)) = (
+            SELECT value FROM delta.\(CatalogDeltaSchema.cardFieldChange) c
+            WHERE c.id = cards.id AND c.field = '\(column)'
+        )
+        WHERE id IN (
+            SELECT id FROM delta.\(CatalogDeltaSchema.cardFieldChange) WHERE field = '\(column)'
+        )
+        """
+      )
+    }
+  }
 
+  private func applyCardUpserts(_ database: SQLiteDatabase, cardColumns: [String]) throws {
     let nonIDColumns = cardColumns.filter { $0 != "id" }
     guard !nonIDColumns.isEmpty else { return }
     let assignList = nonIDColumns.map(Self.quoted).joined(separator: ", ")
