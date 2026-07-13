@@ -165,16 +165,25 @@ public struct CatalogDeltaBuilder {
       """
     )
 
-    // Full-row upserts: new cards, or cards whose non-price columns changed.
+    // Full-row upserts: new cards, or cards whose non-price columns changed. Materialize the FTS
+    // search text into an indexed temp table first: `cards_fts` is fts5 keyed only by an implicit
+    // rowid, so a per-row correlated lookup scans the whole index each time — O(changed-cards × N),
+    // which grinds for hours on a set release. One scan + indexed joins instead.
+    try patch.execute(
+      "CREATE TEMP TABLE cards_search AS SELECT card_id, search_text FROM target.cards_fts"
+    )
+    try patch.execute("CREATE INDEX temp.idx_cards_search ON cards_search(card_id)")
+
     let cardList = cardColumns.map(Self.quoted).joined(separator: ", ")
     let targetCardList = cardColumns.map { "t.\(Self.quoted($0))" }.joined(separator: ", ")
     try patch.execute(
       """
       INSERT INTO \(CatalogDeltaSchema.cardsUpsert)
           (\(cardList), \(CatalogDeltaSchema.cardsUpsertSearchTextColumn))
-      SELECT \(targetCardList),
-          (SELECT f.search_text FROM target.cards_fts f WHERE f.card_id = t.id)
-      FROM target.cards t LEFT JOIN base.cards b ON b.id = t.id
+      SELECT \(targetCardList), s.search_text
+      FROM target.cards t
+      LEFT JOIN base.cards b ON b.id = t.id
+      LEFT JOIN temp.cards_search s ON s.card_id = t.id
       WHERE b.id IS NULL OR (\(nonPriceChanged))
       """
     )
