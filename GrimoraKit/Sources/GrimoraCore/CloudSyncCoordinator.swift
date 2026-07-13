@@ -1,5 +1,9 @@
 import Foundation
-import OSLog
+
+// OSLog is Apple-only; guard it so GrimoraCore still compiles on Linux (the data-API build target).
+#if canImport(OSLog)
+  import OSLog
+#endif
 
 #if canImport(CloudKit)
   import CloudKit
@@ -127,10 +131,20 @@ public actor MemoryCloudSyncTransport: CloudSyncTransport {
 public actor CloudSyncCoordinator {
   private let database: CardDatabase
   private let transport: any CloudSyncTransport
-  private let logger = Logger(
-    subsystem: "com.samwagner.Grimora",
-    category: "CloudSync"
-  )
+  #if canImport(OSLog)
+    private let logger = Logger(
+      subsystem: "com.samwagner.Grimora",
+      category: "CloudSync"
+    )
+  #endif
+
+  /// Cross-platform error logging: uses OSLog on Apple platforms, no-ops on Linux (the data-API
+  /// links GrimoraCore but never exercises CloudKit sync).
+  private func logSyncError(_ message: String) {
+    #if canImport(OSLog)
+      logger.error("\(message, privacy: .public)")
+    #endif
+  }
 
   public init(database: CardDatabase, transport: any CloudSyncTransport) {
     self.database = database
@@ -278,7 +292,7 @@ public actor CloudSyncCoordinator {
     } catch is CloudSyncSnapshotValidationError {
       return .failed("iCloud sync data could not be validated. Local data was not changed.")
     } catch {
-      logger.error("CloudSync start() failed: \(self.describe(error), privacy: .public)")
+      logSyncError("CloudSync start() failed: \(self.describe(error))")
       return .unavailable(
         Self.userFacingSyncMessage(
           for: error,
@@ -416,7 +430,7 @@ public actor CloudSyncCoordinator {
     } catch is CloudSyncSnapshotValidationError {
       return .failed("iCloud sync data could not be validated. Local data was not changed.")
     } catch {
-      logger.error("CloudSync reconcile() failed: \(self.describe(error), privacy: .public)")
+      logSyncError("CloudSync reconcile() failed: \(self.describe(error))")
       return .failed(
         Self.userFacingSyncMessage(
           for: error,
