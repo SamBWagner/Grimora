@@ -41,6 +41,12 @@ final class EngineDashboardModel {
   /// The operation currently running, used to choose which steps the stepper shows.
   private(set) var activeOperation: EngineRunRecord.Operation?
 
+  /// How stale the cached source-status check may get before it's auto-refreshed while idle.
+  private static let checkRefreshInterval: TimeInterval = 15 * 60
+  /// The local build version as of the last source check, so a newly-landed build (from either an
+  /// in-app run or a scheduled launchd run) triggers a fresh check and clears "Update available".
+  private var lastCheckedBuildVersion: String?
+
   var isBusy: Bool {
     if case .running = activity { return true }
     return isStartingRun
@@ -82,7 +88,21 @@ final class EngineDashboardModel {
     } else {
       activity = .idle
       activeOperation = nil
+      autoRefreshSourceCheckIfNeeded()
     }
+  }
+
+  /// Re-probe the data sources without a manual click when the panel has never been populated, has
+  /// gone stale, or a new build has landed — so "Update available" reflects reality and clears once
+  /// a build (in-app or scheduled) consumes the sources, instead of lingering indefinitely.
+  private func autoRefreshSourceCheckIfNeeded() {
+    guard !isChecking, !isStartingRun else { return }
+    let buildChanged = localBuild?.version != lastCheckedBuildVersion
+    let stale = lastCheck.map {
+      Date().timeIntervalSince($0.checkedAt) >= Self.checkRefreshInterval
+    } ?? true
+    guard buildChanged || stale else { return }
+    Task { await self.performCheck(silent: true) }
   }
 
   /// Build the catalog locally without publishing.
@@ -133,16 +153,24 @@ final class EngineDashboardModel {
   }
 
   func checkForUpdates() async {
+    await performCheck(silent: false)
+  }
+
+  /// Probes the data sources and records the result. `silent` auto-refreshes (from polling) don't
+  /// clear or set `runErrorMessage`, so a transient network blip in the background doesn't surface
+  /// as an error; a manual check still reports failures.
+  private func performCheck(silent: Bool) async {
     guard !isChecking else { return }
     isChecking = true
-    runErrorMessage = nil
+    if !silent { runErrorMessage = nil }
     defer { isChecking = false }
 
     do {
       let result = try await controller.checkForUpdate()
       lastCheck = CheckResult(check: result, checkedAt: Date())
+      lastCheckedBuildVersion = localBuild?.version
     } catch {
-      runErrorMessage = String(describing: error)
+      if !silent { runErrorMessage = String(describing: error) }
     }
   }
 }
