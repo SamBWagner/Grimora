@@ -89,7 +89,9 @@ let package = Package(
         .executableTarget(
             name: "GrimoraDataAPI",
             dependencies: [
-                "GrimoraCore",
+                // Intentionally does NOT depend on GrimoraCore: this redirect service links no app
+                // code, so its Linux build never has to compile GrimoraCore's Apple-only subsystems
+                // (Scry, CloudKit sync). It decodes only the current version from current.json.
                 .product(name: "Hummingbird", package: "hummingbird"),
                 .product(name: "SotoS3", package: "soto")
             ]

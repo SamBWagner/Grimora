@@ -1,11 +1,17 @@
 import Foundation
-import GrimoraCore
 import Hummingbird
 import SotoS3
 
 enum CatalogAPIConfigurationError: Error {
   case missing(String)
   case invalidVersion
+}
+
+/// The one field the data-API needs from the published `current.json`. Declared locally so this
+/// redirect service links no app code — keeping its Linux build free of GrimoraCore's Apple-only
+/// subsystems (Scry camera recognition, CloudKit sync).
+private struct CurrentCatalogManifest: Decodable {
+  let version: String
 }
 
 final class TigrisCatalogStorage: CatalogObjectServing, @unchecked Sendable {
@@ -93,7 +99,7 @@ final class TigrisCatalogStorage: CatalogObjectServing, @unchecked Sendable {
       throw HTTPError(.badRequest)
     }
     let currentData = try await currentManifestData()
-    let current = try CatalogManifest.decoder().decode(CatalogManifest.self, from: currentData)
+    let current = try JSONDecoder().decode(CurrentCatalogManifest.self, from: currentData)
     let location = Self.objectLocation(
       requestedVersion: version,
       currentVersion: current.version,
@@ -116,7 +122,7 @@ final class TigrisCatalogStorage: CatalogObjectServing, @unchecked Sendable {
 
   func verifyReady() async throws {
     let data = try await currentManifestData()
-    _ = try CatalogManifest.decoder().decode(CatalogManifest.self, from: data)
+    _ = try JSONDecoder().decode(CurrentCatalogManifest.self, from: data)
     _ = try await s3.headObject(
       bucket: metadataBucket,
       key: "current/catalog.sqlite.gz"
