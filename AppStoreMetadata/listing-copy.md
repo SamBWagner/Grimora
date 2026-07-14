@@ -1,6 +1,6 @@
 # Grimora App Store Listing Copy
 
-Use this copy for version 1.6 (build 2026070702). All public screenshots use
+Use this copy for version 1.7 (build 2026071401). All public screenshots use
 the clean fictional-card screenshot set.
 
 ## App Name
@@ -18,7 +18,7 @@ Card Library & Lists
 ## Promotional Text
 
 ```text
-New in 1.6: build proper Commander decks — one copy of each card, one-tap organising by type — and iCloud sync now keeps every edit in step across all your devices.
+New in 1.7: card data updates are now a fraction of the size — only what changed is downloaded — plus smoother scrolling and faster search in big collections.
 ```
 
 ## Keywords
@@ -49,24 +49,26 @@ Grimora is independently developed and is not affiliated with or endorsed by any
 ## What's New
 
 ```text
-Version 1.6 adds Commander decks and makes iCloud sync dependable.
+Version 1.7 shrinks data updates and smooths out scrolling, search, and editing.
 
-- iCloud sync that sticks: an edit made on one device now holds everywhere instead of quietly reverting to an older copy — change a quantity or swap a printing and it stays put across all your devices
-- Commander decks: create a collection as a Commander deck and Grimora keeps it to a single copy of each card (across printings), with an "Add Anyway" option when you mean it. Promote a card to your commander or trim duplicate copies in one step
-- Reorganise by Type: file a deck's cards into Creatures, Instants, Lands and the rest with a single action
-- Multi-category tags: tag a card with more than one category so it can sit in several groupings at once, shown as tags in list view and a badge on grid tiles
-- Steadier syncing: sync no longer stalls on "unavailable", uploads only what actually changed, and a new Settings menu Sync panel shows the last sync and what's pending
-- Simpler collections: every collection is now either a plain Collection or a Commander deck, and older decks carry over cleanly
+- Much smaller, faster data updates: when the card catalogue changes, Grimora now downloads only what's actually different instead of the whole database — a fraction of the size, far quicker, and still applied safely in the background
+- Update on your terms: a new Automatic Data Updates setting lets you switch off automatic catalogue downloads and refresh manually from the Library menu whenever you like
+- Smoother scrolling: card art is now prepared off the main thread before it's shown, so scrolling through large grids stays fluid instead of hitching
+- Faster in-list search: searching within a collection runs off the main thread, so typing no longer freezes the list
+- Snappier editing: changing a card's category, quantity, or zone no longer recomputes every collection — large libraries stop stalling on each edit
+- Tidier multi-category view: empty categories stay hidden until they're needed, and a card tagged into several categories appears as a dimmed ghost in the ones it isn't filed under
+- Maybeboard for Commander decks: adding an extra card to a full Commander deck now offers to place it on the Maybeboard
+- Card-back placeholder: cards without loaded art now show the classic card back instead of a blank tile
 ```
 
 ## App Review Notes
 
 ```text
-Version 1.6 (2026070702) requires no account or reviewer credentials. iCloud sync is optional. This release adds no new permissions.
+Version 1.7 (2026071401) requires no account or reviewer credentials. iCloud sync is optional. This release adds no new permissions.
 
 Scry, the camera "Scry" tab on iPhone and iPad, uses the device camera to recognise cards. All recognition runs on-device with the Vision framework; the camera image is used only to read a card's name and set or collector number and is never uploaded. Grant camera access when prompted to try it, or skip it and the rest of the app works unchanged. Recognised cards are filed into a local "Scanned" collection. A Commander deck's menu offers "Re-scan Deck", which uses the same on-device camera recognition to reconcile a physical deck against the saved list; it needs no new permissions.
 
-Grimora's card catalogue is a managed, prebuilt database. For an existing installation, the current library stays fully usable while any catalogue update stages on an allowed network and activates atomically on the next cold launch. A failed download, validation, or activation leaves the existing library untouched. A manual refresh (pull-to-refresh on the Cards screen, or the Library menu on Mac) may use any network.
+Grimora's card catalogue is a managed, prebuilt database served from the developer's own endpoint. In 1.7 an update downloads incrementally where possible — only the data that changed since the installed version — and falls back to a full download otherwise; every downloaded update is integrity-checked before it is applied. The current library stays fully usable throughout, and a failed download, validation, or activation leaves the existing library untouched. Automatic catalogue downloads can be turned off in the new Automatic Data Updates setting; a manual refresh (pull-to-refresh on the Cards screen, or the Library menu on Mac) may use any network. No account is involved and no user data is sent to fetch catalogue data.
 
 iCloud sync is deterministic: changes from all signed-in devices merge automatically with no prompts and no manual conflict resolution. A new manual "Sync with iCloud" action (pull-to-refresh on iPhone and iPad, or the File menu and toolbar on Mac) forces an immediate two-way sync.
 
