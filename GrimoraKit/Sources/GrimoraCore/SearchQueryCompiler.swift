@@ -4,6 +4,7 @@ struct CompiledClause: Equatable {
     var sql: String?
     var bindings: [SearchQuery.SQLBinding] = []
     var postFilters: [SearchQuery.PostFilter] = []
+    var labelConditions: [SearchQuery.LabelCondition] = []
 }
 
 struct Compiler {
@@ -22,12 +23,16 @@ struct Compiler {
             return CompiledClause(
                 sql: sql.isEmpty ? nil : sql.map { "(\($0))" }.joined(separator: " AND "),
                 bindings: clauses.flatMap(\.bindings),
-                postFilters: clauses.flatMap(\.postFilters)
+                postFilters: clauses.flatMap(\.postFilters),
+                labelConditions: clauses.flatMap(\.labelConditions)
             )
         case .or(let nodes):
             let clauses = try nodes.map { try compile($0) }
             guard clauses.allSatisfy({ $0.postFilters.isEmpty }) else {
                 throw QueryError.unsupported(query: query, token: "OR", message: "Regular expression searches cannot be combined with OR offline yet.")
+            }
+            guard clauses.allSatisfy({ $0.labelConditions.isEmpty }) else {
+                throw QueryError.unsupported(query: query, token: "OR", message: "Label filters cannot be combined with OR yet.")
             }
             let sql = clauses.compactMap(\.sql).filter { !$0.isEmpty }
             return CompiledClause(
@@ -63,6 +68,9 @@ struct Compiler {
             bindings: clause.bindings,
             postFilters: clause.postFilters.map {
                 SearchQuery.PostFilter(field: $0.field, pattern: $0.pattern, negated: !$0.negated)
+            },
+            labelConditions: clause.labelConditions.map {
+                SearchQuery.LabelCondition(name: $0.name, negated: !$0.negated)
             }
         )
     }
@@ -117,6 +125,16 @@ struct Compiler {
 
         if field == "produces" {
             return try compileColor(column: "produced_mana_key", countColumn: "produced_mana_count", op: rawOp, value: normalizedValue, original: original)
+        }
+
+        if field == "label" {
+            // Labels are entry-level, not a `cards` column: carry the term through and let the
+            // collection entry-search resolve + apply it. `value` keeps the user's spelling; the
+            // resolver matches separator-insensitively.
+            guard !value.isEmpty else {
+                throw QueryError.unsupported(query: query, token: original)
+            }
+            return CompiledClause(labelConditions: [SearchQuery.LabelCondition(name: value, negated: false)])
         }
 
         switch field {

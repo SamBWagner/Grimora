@@ -169,6 +169,7 @@ extension CardCollectionDetailView {
                 listViewModePicker(for: selectedCollection)
                 commanderDeckToolbarToggle(for: selectedCollection)
                 listSortMenu(for: selectedCollection)
+                labelFilterMenu(for: selectedCollection)
 
                 Button {
                     model.setCardCollectionDashboardVisibility(
@@ -440,6 +441,8 @@ extension CardCollectionDetailView {
         }
         .accessibilityIdentifier("list-sort-menu")
 
+        labelFilterMenu(for: selectedCollection)
+
         commanderDeckToggleButton(for: selectedCollection)
 
         Button {
@@ -593,6 +596,8 @@ extension CardCollectionDetailView {
         }
         .accessibilityIdentifier("list-sort-menu")
         .accessibilityValue(listSortDescription(for: selectedCollection))
+
+        labelFilterMenu(for: selectedCollection)
 
         Section("View") {
             Button {
@@ -777,6 +782,33 @@ extension CardCollectionDetailView {
         .help("Commander Deck")
         .accessibilityIdentifier("list-commander-deck-toggle")
         .accessibilityValue(selectedCollection.ruleset == .commander ? "On" : "Off")
+    }
+
+    /// A submenu that filters the collection down to one label by setting the search draft to a
+    /// `label:` query. Hidden when the collection has no applicable labels. The label operator is
+    /// always available by typing it directly; this is the discoverable, tap-to-filter path.
+    @ViewBuilder
+    func labelFilterMenu(for selectedCollection: CardCollectionRecord) -> some View {
+        let labels = model.applicableLabels(forListID: selectedCollection.id)
+        if !labels.isEmpty {
+            Menu {
+                ForEach(labels) { label in
+                    Button(label.name) {
+                        model.setSelectedListSearchDraft("label:\"\(label.name)\"")
+                    }
+                    .accessibilityIdentifier("list-filter-by-label-\(label.id)")
+                }
+                Divider()
+                Button {
+                    model.clearSelectedListSearch()
+                } label: {
+                    Label("Clear Filter", systemImage: "xmark")
+                }
+            } label: {
+                Label("Filter by Label", systemImage: "line.3.horizontal.decrease.circle")
+            }
+            .accessibilityIdentifier("list-filter-by-label-menu")
+        }
     }
 
     @ViewBuilder

@@ -254,6 +254,7 @@ extension CardCollectionDetailView {
                     quantityAccessibilityIdentifier: "quantity-list-entry-\(entry.id)",
                     categoryEntry: entry,
                     categories: model.selectedCollectionCategories,
+                    labels: model.labels(for: entry),
                     hidesCategoryAndZone: isScannedCollection,
                     isSelectionEnabled: true,
                     isSelectedInSelection: listEntrySelection.selectedIDs.contains(entry.id),

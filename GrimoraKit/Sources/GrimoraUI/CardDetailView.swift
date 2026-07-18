@@ -31,6 +31,7 @@ public struct CardDetailView: View {
     @State private var buyFeedbackTrigger = 0
     @State private var isValueDetailsExpanded = false
     @State private var artistPendingArtSearch: String?
+    @State private var isCreatingDetailLabel = false
     // Printings whose artwork is currently turned to a landscape (quarter-turn) variant, e.g. a
     // rotated split or aftermath card. The compact gallery reserves a landscape box for these so the
     // rotated card fills the width instead of shrinking inside a portrait frame.
@@ -286,9 +287,91 @@ public struct CardDetailView: View {
             if showsInlinePrintingsSection {
                 printingsSection
             }
+            labelsSection
             valueSection
             metadataSection(for: card)
         }
+    }
+
+    /// The per-entry label editor shown when the detail card came from a collection: its current
+    /// labels as removable chips, plus an "Add Label" menu (toggles + create). Labels are per-entry,
+    /// so this appears only for a collection entry, never plain catalog browsing.
+    @ViewBuilder
+    private var labelsSection: some View {
+        if let entry = model.detailEntry {
+            let labels = model.labels(for: entry)
+            let applicable = model.applicableLabels(forListID: entry.listID)
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    if labels.isEmpty {
+                        Text("No labels yet")
+                            .font(.callout)
+                            .foregroundStyle(palette.secondaryText.color)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        LazyVGrid(
+                            columns: [GridItem(.adaptive(minimum: 84), alignment: .leading)],
+                            alignment: .leading,
+                            spacing: 6
+                        ) {
+                            ForEach(labels) { label in
+                                LabelChip(label: label, showsScopeHint: true) {
+                                    model.toggleLabel(label.id, forEntryID: entry.id)
+                                }
+                            }
+                        }
+                    }
+                    labelAddMenu(entry: entry, applicable: applicable)
+                }
+                .padding(.top, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } label: {
+                Text("Labels")
+                    .accessibilityIdentifier("card-detail-labels-section")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .foregroundStyle(palette.primaryText.color)
+            .labelEditor(
+                isPresented: $isCreatingDetailLabel,
+                title: "New Label",
+                saveButtonTitle: "Create"
+            ) { name, color in
+                if let label = model.createLabel(named: name, color: color, listID: entry.listID) {
+                    model.toggleLabel(label.id, forEntryID: entry.id)
+                }
+            }
+        }
+    }
+
+    private func labelAddMenu(
+        entry: CardCollectionEntryRecord,
+        applicable: [CardLabelRecord]
+    ) -> some View {
+        Menu {
+            ForEach(applicable) { label in
+                Button {
+                    model.toggleLabel(label.id, forEntryID: entry.id)
+                } label: {
+                    if entry.labelIDs.contains(label.id) {
+                        Label(label.name, systemImage: "checkmark")
+                    } else {
+                        Text(label.name)
+                    }
+                }
+            }
+            if !applicable.isEmpty {
+                Divider()
+            }
+            Button {
+                isCreatingDetailLabel = true
+            } label: {
+                Label("New Label…", systemImage: "plus")
+            }
+        } label: {
+            Label("Add Label", systemImage: "plus.circle")
+                .font(.callout)
+        }
+        .accessibilityIdentifier("card-detail-add-label")
     }
 
     private var oracleSection: some View {

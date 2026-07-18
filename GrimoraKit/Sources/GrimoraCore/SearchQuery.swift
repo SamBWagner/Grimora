@@ -41,6 +41,19 @@ public enum SearchQuery {
         }
     }
 
+    /// A `label:` filter term. Labels live on the collection entry (not the shared card catalog), so
+    /// these are carried alongside the compiled `cards` predicate and applied by the entry-search
+    /// paths in `CardDatabase+Lists`; the global catalog search ignores them.
+    public struct LabelCondition: Equatable, Sendable {
+        public var name: String
+        public var negated: Bool
+
+        public init(name: String, negated: Bool) {
+            self.name = name
+            self.negated = negated
+        }
+    }
+
     public static func compile(_ text: String) -> Result<SearchQueryPlan, SearchQueryUnsupportedReason> {
         switch ScryfallSyntaxParser.parse(text) {
         case .success(let tree):
@@ -65,7 +78,8 @@ public enum SearchQuery {
                     whereSQL: clause.sql,
                     bindings: clause.bindings,
                     displayOptions: compiler.displayOptions,
-                    postFilters: clause.postFilters
+                    postFilters: clause.postFilters,
+                    labelConditions: clause.labelConditions
                 ))
         } catch {
             return .failure((error as! QueryError).reason)

@@ -379,6 +379,7 @@ extension CardDatabase {
     "card_lists",
     "card_list_categories",
     "card_list_entries",
+    "card_labels",
   ]
 
   private static let transientCatalogTables = [

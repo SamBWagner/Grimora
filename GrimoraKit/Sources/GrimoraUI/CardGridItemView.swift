@@ -34,6 +34,9 @@ struct CardGridItemView: View {
     var quantityAccessibilityIdentifier: String?
     var categoryEntry: CardCollectionEntryRecord?
     var categories: [CardCollectionCategoryRecord] = []
+    /// The colored labels attached to this collection entry, resolved + ordered by the app model.
+    /// Rendered as bottom-left pips. Empty for search-result tiles (no entry).
+    var labels: [CardLabelRecord] = []
     var hidesCategoryAndZone: Bool = false
     var isSelectionEnabled = false
     var isSelectedInSelection = false
@@ -193,13 +196,18 @@ struct CardGridItemView: View {
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
             .overlay(alignment: .bottomLeading) {
-                // Plain foil already reads from the shimmer; name the distinctive treatments
-                // (etched + special promo foils) so a halo/surge/galaxy tile is identifiable.
-                if foilTreatment.isSpecial || foilTreatment == .etched {
-                    FoilTreatmentBadge(treatment: foilTreatment)
-                        .padding(6)
-                        .allowsHitTesting(false)
+                VStack(alignment: .leading, spacing: 4) {
+                    // Plain foil already reads from the shimmer; name the distinctive treatments
+                    // (etched + special promo foils) so a halo/surge/galaxy tile is identifiable.
+                    if foilTreatment.isSpecial || foilTreatment == .etched {
+                        FoilTreatmentBadge(treatment: foilTreatment)
+                    }
+                    // Colored label pips run along the bottom-left corner. Non-interactive so they
+                    // never intercept the tile's click/drag/context gestures.
+                    LabelPipRow(labels: labels)
                 }
+                .padding(6)
+                .allowsHitTesting(false)
             }
             .cardArtworkContextMenu(
                 card: card,

@@ -48,6 +48,7 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
     @State private var refinementPresentationID = 0
     @State private var pendingAlwaysHiddenRefinement: SearchRefinement?
     @State private var isNamingNewCategory = false
+    @State private var isCreatingLabel = false
 
     var card: CardRecord
     var selectedCardIDs: [CardRecord.ID]
@@ -79,12 +80,23 @@ private struct CardArtworkContextMenuModifier: ViewModifier {
                     isMoveDestinationDisabled: isMoveDestinationDisabled,
                     openAction: openAction,
                     onRefineSearch: presentRefinement,
-                    onAlwaysHide: { pendingAlwaysHiddenRefinement = $0 }
+                    onAlwaysHide: { pendingAlwaysHiddenRefinement = $0 },
+                    onCreateLabel: categoryEntry == nil ? nil : { isCreatingLabel = true }
                 )
                 .environment(model)
             }
             .cardCollectionNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
                 onCreateCategory?(name)
+            }
+            .labelEditor(
+                isPresented: $isCreatingLabel,
+                title: "New Label",
+                saveButtonTitle: "Create"
+            ) { name, color in
+                // A label created from a card lives in that card's collection until exported, and is
+                // applied to the card straight away.
+                guard let categoryEntry else { return }
+                model.addNewLabel(named: name, color: color, toEntry: categoryEntry)
             }
             .popover(isPresented: $isRefinementPresented, arrowEdge: .bottom) {
                 SearchRefinementPanel(
@@ -156,6 +168,7 @@ private struct CardArtworkContextMenuContent: View {
     var openAction: CardArtworkContextMenuAction?
     var onRefineSearch: () -> Void
     var onAlwaysHide: (SearchRefinement) -> Void
+    var onCreateLabel: (() -> Void)?
 
     var body: some View {
         let refinementGroups = model.candidateRefinements(for: card)
@@ -172,6 +185,8 @@ private struct CardArtworkContextMenuContent: View {
             Label("Add to Favourites", systemImage: "star")
         }
         .accessibilityIdentifier("card-artwork-add-favourites-\(card.id)")
+
+        labelsMenu
 
         #if os(macOS)
         foilToggleButton
@@ -280,6 +295,36 @@ private struct CardArtworkContextMenuContent: View {
             }
             .accessibilityIdentifier("card-artwork-move-category-\(categoryEntry.id)")
         }
+    }
+
+    /// Toggle the collection's applicable labels on the target entry (or the whole selection), plus
+    /// a shortcut to create a new label. Shown only for a collection tile (which owns an entry).
+    @ViewBuilder
+    private var labelsMenu: some View {
+        if let categoryEntry, let onCreateLabel {
+            Menu {
+                CardLabelMenuItems(
+                    entry: categoryEntry,
+                    targetEntryIDs: targetEntryIDs,
+                    onNewLabel: onCreateLabel
+                )
+            } label: {
+                Label("Labels", systemImage: "circle.grid.2x2.fill")
+            }
+            .accessibilityIdentifier("card-artwork-labels-menu-\(categoryEntry.id)")
+        }
+    }
+
+    /// The entries a label action should touch: just the tile's entry normally, or every selected
+    /// entry when a multi-selection is active.
+    private var targetEntryIDs: [CardCollectionEntryRecord.ID] {
+        guard let categoryEntry else { return [] }
+        let cardIDs = Set(targetCardIDs)
+        guard cardIDs.count > 1 else { return [categoryEntry.id] }
+        let matched = model.selectedCollectionEntries
+            .filter { cardIDs.contains($0.cardID) }
+            .map(\.id)
+        return matched.isEmpty ? [categoryEntry.id] : matched
     }
 
     private var addToListMenu: some View {

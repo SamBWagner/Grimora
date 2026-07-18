@@ -52,6 +52,11 @@ public struct GrimoraSettingsView: View {
         Label("Value", systemImage: "chart.line.uptrend.xyaxis")
       }
 
+      labelsForm
+      .tabItem {
+        Label("Labels", systemImage: "circle.grid.2x2.fill")
+      }
+
       legalForm
       .tabItem {
         Label("Legal", systemImage: "info.circle")
@@ -161,6 +166,8 @@ public struct GrimoraSettingsView: View {
       #endif
 
       #if os(iOS) || os(visionOS)
+      GrimoraSettingsLabelsSection()
+
       GrimoraSettingsValueSection()
 
       GrimoraSettingsSyncSections()
@@ -180,6 +187,12 @@ public struct GrimoraSettingsView: View {
   private var valueForm: some View {
     Form {
       GrimoraSettingsValueSection()
+    }
+  }
+
+  private var labelsForm: some View {
+    Form {
+      GrimoraSettingsLabelsSection()
     }
   }
 

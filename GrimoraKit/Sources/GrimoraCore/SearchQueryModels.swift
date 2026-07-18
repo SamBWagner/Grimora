@@ -136,8 +136,15 @@ public struct SearchQueryPlan: Equatable, Sendable {
     public var bindings: [SearchQuery.SQLBinding]
     public var displayOptions: SearchDisplayOptions
     public var postFilters: [SearchQuery.PostFilter]
+    /// Entry-level `label:` filters. Empty for ordinary catalog queries; applied only by the
+    /// collection entry-search paths (the global `cards` search ignores them).
+    public var labelConditions: [SearchQuery.LabelCondition] = []
 
     public var hasPostFilters: Bool {
         !postFilters.isEmpty
+    }
+
+    public var hasLabelConditions: Bool {
+        !labelConditions.isEmpty
     }
 }

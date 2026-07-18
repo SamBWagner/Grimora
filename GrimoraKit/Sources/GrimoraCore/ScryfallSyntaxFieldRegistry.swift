@@ -60,7 +60,10 @@ public enum ScryfallSyntaxFieldRegistry {
         .init(canonicalName: "prefer", aliases: ["prefer"], valueRule: .display),
         .init(canonicalName: "direction", aliases: ["direction"], valueRule: .direction),
         .init(canonicalName: "include", aliases: ["include"], valueRule: .include),
-        .init(canonicalName: "name", aliases: ["name"], valueRule: .regexText)
+        .init(canonicalName: "name", aliases: ["name"], valueRule: .regexText),
+        // Grimora-specific: filter a collection by a user's colored labels. Entry-level, not a
+        // Scryfall catalog field; deliberately named to avoid Scryfall's atag:/otag: tagger terms.
+        .init(canonicalName: "label", aliases: ["label"])
     ]
 
     public static func field(for name: String) -> ScryfallSyntaxField? {

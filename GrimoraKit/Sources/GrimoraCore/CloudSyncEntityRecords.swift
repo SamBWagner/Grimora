@@ -109,6 +109,17 @@ public enum CloudSyncEntityCodec {
         )
       )
     }
+    for label in snapshot.listSnapshot.labels {
+      insert(
+        CloudSyncEntityRecord(
+          entityType: .cardLabel,
+          recordID: label.id,
+          payload: try CardDatabase.syncJSONData(label),
+          updatedAt: label.updatedAt,
+          sourceDeviceID: snapshot.id
+        )
+      )
+    }
 
     let tombstones =
       snapshot.deletedEntities
@@ -230,11 +241,18 @@ public enum CloudSyncEntityCodec {
       return entry
     }
 
+    let labels = try decodedValues(
+      CardLabelRecord.self,
+      entityType: .cardLabel,
+      records: merged
+    ).filter { $0.listID == nil || listIDs.contains($0.listID!) }
+
     let tombstones = merged.compactMap { record -> SyncTombstone? in
       guard let deletedAt = record.deletedAt,
         record.entityType == .cardCollection
           || record.entityType == .cardCollectionCategory
           || record.entityType == .cardCollectionEntry
+          || record.entityType == .cardLabel
       else {
         return nil
       }
@@ -268,7 +286,8 @@ public enum CloudSyncEntityCodec {
       listSnapshot: CardCollectionLibrarySnapshot(
         lists: lists,
         categories: categories,
-        entries: entries
+        entries: entries,
+        labels: labels
       ),
       deletedLists: deletedLists,
       deletedEntities: tombstones,
@@ -350,6 +369,9 @@ public enum CloudSyncEntityCodec {
     snapshot.listSnapshot.lists.removeAll { prunableListIDs.contains($0.id) }
     snapshot.listSnapshot.categories.removeAll { prunableListIDs.contains($0.listID) }
     snapshot.listSnapshot.entries.removeAll { prunableListIDs.contains($0.listID) }
+    snapshot.listSnapshot.labels.removeAll { label in
+      label.listID.map { prunableListIDs.contains($0) } ?? false
+    }
     for listID in prunableListIDs {
       if !snapshot.deletedLists.contains(where: { $0.id == listID }) {
         snapshot.deletedLists.append(SyncListDeletion(id: listID, deletedAt: deletedAt))
@@ -400,6 +422,7 @@ public enum CloudSyncEntityCodec {
       canonicalEntry.zone = .mainboard
       canonicalEntry.categoryID = nil
       canonicalEntry.secondaryCategoryIDs = []
+      canonicalEntry.labelIDs = []
       canonicalEntry.quantity = 1
       canonicalEntry.card = nil
       favouriteEntriesByCardID[entry.cardID] = canonicalEntry
@@ -419,6 +442,9 @@ public enum CloudSyncEntityCodec {
       + [canonicalList]
     snapshot.listSnapshot.categories.removeAll {
       favouriteListIDs.contains($0.listID)
+    }
+    snapshot.listSnapshot.labels.removeAll { label in
+      label.listID.map { favouriteListIDs.contains($0) } ?? false
     }
     snapshot.listSnapshot.entries =
       snapshot.listSnapshot.entries.filter { !favouriteListIDs.contains($0.listID) }

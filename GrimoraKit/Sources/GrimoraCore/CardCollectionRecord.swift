@@ -226,6 +226,10 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
     /// The finish the user pinned for this entry. `nil` means normal (the default).
     /// Persisted and synced so a foil choice survives like a printing/art swap.
     public var selectedFinish: CardValueFinish?
+    /// User-defined colored labels attached to this entry — free-form status metadata such as
+    /// "on the way" or "owned". Stored as label-definition ids (a label may be list-local or
+    /// global). Persisted and synced with the entry exactly like `secondaryCategoryIDs`.
+    public var labelIDs: [String]
     public var card: CardRecord?
 
     public init(
@@ -240,6 +244,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         createdAt: Date,
         updatedAt: Date? = nil,
         selectedFinish: CardValueFinish? = nil,
+        labelIDs: [String] = [],
         card: CardRecord? = nil
     ) {
         self.id = id
@@ -253,6 +258,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         self.createdAt = createdAt
         self.updatedAt = updatedAt ?? createdAt
         self.selectedFinish = selectedFinish
+        self.labelIDs = labelIDs
         self.card = card
     }
 
@@ -268,6 +274,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         case createdAt
         case updatedAt
         case selectedFinish
+        case labelIDs
         case card
     }
 
@@ -284,6 +291,7 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
         selectedFinish = try container.decodeIfPresent(CardValueFinish.self, forKey: .selectedFinish)
+        labelIDs = try container.decodeIfPresent([String].self, forKey: .labelIDs) ?? []
         card = try container.decodeIfPresent(CardRecord.self, forKey: .card)
     }
 
@@ -302,6 +310,9 @@ public struct CardCollectionEntryRecord: Identifiable, Codable, Equatable, Senda
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(selectedFinish, forKey: .selectedFinish)
+        if !labelIDs.isEmpty {
+            try container.encode(labelIDs, forKey: .labelIDs)
+        }
         try container.encodeIfPresent(card, forKey: .card)
     }
 }
@@ -376,15 +387,42 @@ public struct CardCollectionLibrarySnapshot: Codable, Equatable, Sendable {
     public var lists: [CardCollectionRecord]
     public var categories: [CardCollectionCategoryRecord]
     public var entries: [CardCollectionEntryRecord]
+    public var labels: [CardLabelRecord]
 
     public init(
         lists: [CardCollectionRecord],
         categories: [CardCollectionCategoryRecord],
-        entries: [CardCollectionEntryRecord]
+        entries: [CardCollectionEntryRecord],
+        labels: [CardLabelRecord] = []
     ) {
         self.lists = lists
         self.categories = categories
         self.entries = entries
+        self.labels = labels
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case lists
+        case categories
+        case entries
+        case labels
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        lists = try container.decode([CardCollectionRecord].self, forKey: .lists)
+        categories = try container.decode([CardCollectionCategoryRecord].self, forKey: .categories)
+        entries = try container.decode([CardCollectionEntryRecord].self, forKey: .entries)
+        // Older snapshots (pre-Labels) carry no labels key.
+        labels = try container.decodeIfPresent([CardLabelRecord].self, forKey: .labels) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(lists, forKey: .lists)
+        try container.encode(categories, forKey: .categories)
+        try container.encode(entries, forKey: .entries)
+        try container.encode(labels, forKey: .labels)
     }
 }
 
@@ -393,6 +431,7 @@ public enum CardCollectionDatabaseError: Error, Equatable, Sendable {
     case listNotFound
     case categoryNotFound
     case entryNotFound
+    case labelNotFound
     case duplicateName
     /// Adding this card would break the list ruleset's copy limit (e.g. a second copy of a
     /// non-basic card in a Commander deck). Thrown only when `enforceRulesetLimits` is on.

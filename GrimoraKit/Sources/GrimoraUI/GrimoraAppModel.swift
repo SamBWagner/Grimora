@@ -106,6 +106,11 @@ public final class GrimoraAppModel {
   /// Card IDs currently in the Favourites list, refreshed whenever the lists reload.
   /// Backs the star toggle surfaced on search result cards.
   public internal(set) var favouriteCardIDs: Set<CardRecord.ID> = []
+  /// Every label definition (global + list-local), refreshed whenever the lists reload. Drives the
+  /// Settings manager, the context-menu / detail pickers, and pip rendering.
+  public internal(set) var cardLabels: [CardLabelRecord] = []
+  /// Fast id → label lookup for resolving an entry's `labelIDs` into pips without scanning.
+  public internal(set) var labelsByID: [CardLabelRecord.ID: CardLabelRecord] = [:]
   public internal(set) var sidebarSelection: GrimoraSidebarSelection = .search
   public internal(set) var selectedCollectionID: CardCollectionRecord.ID?
   public internal(set) var selectedCollectionCategories: [CardCollectionCategoryRecord] = []

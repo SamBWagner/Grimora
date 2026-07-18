@@ -137,7 +137,9 @@ struct CardGridQuantityStepper: View {
 /// and this "more" control, keeping the bottom bar uncluttered.
 struct CardGridMoreMenu: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(GrimoraAppModel.self) private var model
     @State private var isNamingNewCategory = false
+    @State private var isCreatingLabel = false
 
     var card: CardRecord?
     var selectedCardIDs: [CardRecord.ID] = []
@@ -173,10 +175,28 @@ struct CardGridMoreMenu: View {
         .cardCollectionNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
             onCreateCategory?(name)
         }
+        .labelEditor(
+            isPresented: $isCreatingLabel,
+            title: "New Label",
+            saveButtonTitle: "Create"
+        ) { name, color in
+            if let categoryEntry {
+                model.addNewLabel(named: name, color: color, toEntry: categoryEntry)
+            }
+        }
     }
 
     @ViewBuilder
     private var menuContent: some View {
+        if let categoryEntry {
+            Menu {
+                CardLabelMenuItems(entry: categoryEntry, onNewLabel: { isCreatingLabel = true })
+            } label: {
+                Label("Labels", systemImage: "circle.grid.2x2.fill")
+            }
+            .accessibilityIdentifier("more-menu-labels-\(categoryEntry.id)")
+        }
+
         if let card, let onCreateListForCard {
             Menu("Add to Collection") {
                 CardCollectionAddMenuContent(

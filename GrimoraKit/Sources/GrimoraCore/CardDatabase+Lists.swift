@@ -40,7 +40,8 @@ extension CardDatabase {
       var entries = try cardCollectionEntriesUnlocked(
         forListID: listID,
         cardWhereSQL: plan.whereSQL,
-        cardWhereBindings: plan.bindings
+        cardWhereBindings: plan.bindings,
+        labelConditions: plan.labelConditions
       )
 
       if plan.hasPostFilters {
@@ -76,7 +77,8 @@ extension CardDatabase {
 
       var entries = try allMatchingCardCollectionEntriesUnlocked(
         cardWhereSQL: plan.whereSQL,
-        cardWhereBindings: plan.bindings
+        cardWhereBindings: plan.bindings,
+        labelConditions: plan.labelConditions
       )
 
       if plan.hasPostFilters {
@@ -97,7 +99,8 @@ extension CardDatabase {
   /// over large libraries.
   func allMatchingCardCollectionEntriesUnlocked(
     cardWhereSQL: String?,
-    cardWhereBindings: [SearchQuery.SQLBinding] = []
+    cardWhereBindings: [SearchQuery.SQLBinding] = [],
+    labelConditions: [SearchQuery.LabelCondition] = []
   ) throws -> [CardCollectionEntryRecord] {
     let searchClause = cardWhereSQL.map { whereSQL in
       """
@@ -108,17 +111,22 @@ extension CardDatabase {
       )
       """
     } ?? ""
+    // Cross-list search resolves label names against every scope (listID nil).
+    let labelFilter = try labelFilterSQLUnlocked(labelConditions, listID: nil)
     let statement = try database.prepare(
       """
       SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
-          COALESCE(sync_updated_at, updated_at), selected_finish, secondary_category_ids
+          COALESCE(sync_updated_at, updated_at), selected_finish, secondary_category_ids, label_ids
       FROM card_list_entries
       WHERE 1 = 1
-      \(searchClause)
+      \(searchClause)\(labelFilter.sql)
       ORDER BY list_id ASC, zone ASC, position ASC, created_at ASC, id ASC
       """)
     for (index, binding) in cardWhereBindings.enumerated() {
       try binding.apply(to: statement, index: Int32(index + 1))
+    }
+    for (index, binding) in labelFilter.bindings.enumerated() {
+      try binding.apply(to: statement, index: Int32(cardWhereBindings.count + index + 1))
     }
 
     var entries: [CardCollectionEntryRecord] = []
@@ -154,7 +162,8 @@ extension CardDatabase {
   func cardCollectionEntriesUnlocked(
     forListID listID: String,
     cardWhereSQL: String? = nil,
-    cardWhereBindings: [SearchQuery.SQLBinding] = []
+    cardWhereBindings: [SearchQuery.SQLBinding] = [],
+    labelConditions: [SearchQuery.LabelCondition] = []
   ) throws -> [CardCollectionEntryRecord] {
     let searchClause = cardWhereSQL.map { whereSQL in
       """
@@ -165,18 +174,23 @@ extension CardDatabase {
       )
       """
     } ?? ""
+    // Within a collection, label names resolve to global labels plus this list's own labels.
+    let labelFilter = try labelFilterSQLUnlocked(labelConditions, listID: listID)
     let statement = try database.prepare(
       """
       SELECT id, list_id, zone, category_id, card_id, position, quantity, created_at,
-          COALESCE(sync_updated_at, updated_at), selected_finish, secondary_category_ids
+          COALESCE(sync_updated_at, updated_at), selected_finish, secondary_category_ids, label_ids
       FROM card_list_entries
       WHERE list_id = ?
-      \(searchClause)
+      \(searchClause)\(labelFilter.sql)
       ORDER BY zone ASC, position ASC, created_at ASC, id ASC
       """)
     try statement.bind(listID, at: 1)
     for (index, binding) in cardWhereBindings.enumerated() {
       try binding.apply(to: statement, index: Int32(index + 2))
+    }
+    for (index, binding) in labelFilter.bindings.enumerated() {
+      try binding.apply(to: statement, index: Int32(cardWhereBindings.count + index + 2))
     }
 
     var entries: [CardCollectionEntryRecord] = []
@@ -196,6 +210,35 @@ extension CardDatabase {
       entries[index].card = cardsByID[entries[index].cardID]
     }
     return entries
+  }
+
+  /// Builds the entry-level SQL fragment (leading `\nAND …`) and bindings for a set of `label:`
+  /// filters. Each term resolves to matching label ids and matches the entry's serialized
+  /// `label_ids`. An unknown positive term becomes `AND 0` (matches nothing); an unknown negated
+  /// term is dropped (excludes nothing). `listID` scopes resolution to global + that list; nil
+  /// (cross-list) considers every label.
+  private func labelFilterSQLUnlocked(
+    _ conditions: [SearchQuery.LabelCondition],
+    listID: String?
+  ) throws -> (sql: String, bindings: [SearchQuery.SQLBinding]) {
+    guard !conditions.isEmpty else { return ("", []) }
+    var sql = ""
+    var bindings: [SearchQuery.SQLBinding] = []
+    for condition in conditions {
+      let ids = try cardLabelIDsUnlocked(matchingName: condition.name, listID: listID)
+      if ids.isEmpty {
+        if !condition.negated {
+          sql += "\n      AND 0"
+        }
+        continue
+      }
+      // COALESCE so a never-labeled entry (label_ids NULL) still evaluates under NOT — otherwise
+      // `NOT (NULL LIKE …)` is NULL (falsy) and negated filters would drop unlabeled entries.
+      let likeParts = ids.map { _ in "COALESCE(label_ids, '') LIKE ?" }.joined(separator: " OR ")
+      sql += condition.negated ? "\n      AND NOT (\(likeParts))" : "\n      AND (\(likeParts))"
+      bindings.append(contentsOf: ids.map { .text("%|\($0)|%") })
+    }
+    return (sql, bindings)
   }
 
   public func cardCollectionCategories(forListID listID: String) throws -> [CardCollectionCategoryRecord] {
@@ -222,13 +265,15 @@ extension CardDatabase {
     try CardCollectionLibrarySnapshot(
       lists: cardCollectionsUnlocked(),
       categories: cardCollectionCategoriesUnlocked(),
-      entries: cardCollectionEntriesUnlocked()
+      entries: cardCollectionEntriesUnlocked(),
+      labels: cardLabelsUnlocked()
     )
   }
 
   func restoreCardCollectionLibrarySnapshotUnlocked(_ snapshot: CardCollectionLibrarySnapshot) throws {
     try database.execute("DELETE FROM card_list_entries")
     try database.execute("DELETE FROM card_list_categories")
+    try database.execute("DELETE FROM card_labels")
     try database.execute("DELETE FROM card_lists")
 
     let listInsert = try database.prepare(
@@ -281,8 +326,8 @@ extension CardDatabase {
       """
       INSERT INTO card_list_entries (
           id, list_id, zone, category_id, card_id, position, quantity, created_at, updated_at,
-          selected_finish, secondary_category_ids
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          selected_finish, secondary_category_ids, label_ids
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       """)
     for entry in snapshot.entries {
       try entryInsert.bind(entry.id, at: 1)
@@ -296,8 +341,24 @@ extension CardDatabase {
       try entryInsert.bind(Self.formattedListDate(entry.updatedAt), at: 9)
       try entryInsert.bind(entry.selectedFinish?.rawValue, at: 10)
       try entryInsert.bind(Self.serializedList(entry.secondaryCategoryIDs), at: 11)
+      try entryInsert.bind(Self.serializedList(entry.labelIDs), at: 12)
       try entryInsert.step()
       try entryInsert.reset()
+    }
+
+    // Reinsert labels last (globals + any list-local label whose list survived the merge). Filtering
+    // dangling list-local labels here keeps the FK to card_lists satisfied without a throwing
+    // validation that could abort the whole restore.
+    let validListIDs = Set(snapshot.lists.map(\.id))
+    for label in snapshot.labels where label.listID == nil || validListIDs.contains(label.listID ?? "") {
+      try insertCardLabelRowUnlocked(
+        id: label.id,
+        listID: label.listID,
+        name: label.name,
+        color: label.color,
+        position: label.position,
+        createdAt: Self.formattedListDate(label.createdAt),
+        updatedAt: Self.formattedListDate(label.updatedAt))
     }
   }
 

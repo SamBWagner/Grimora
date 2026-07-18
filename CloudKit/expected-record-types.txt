@@ -5,4 +5,5 @@ GrimoraUserPreferences
 GrimoraCardList
 GrimoraCardListCategory
 GrimoraCardListEntry
+GrimoraCardLabel
 GrimoraRecoveryRevision

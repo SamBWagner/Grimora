@@ -90,4 +90,10 @@ public enum ChangeLogAction {
   public static let renameCategory = "renameCategory"
   public static let deleteCategory = "deleteCategory"
   public static let reorderCategory = "reorderCategory"
+  public static let createLabel = "createLabel"
+  public static let updateLabel = "updateLabel"
+  public static let deleteLabel = "deleteLabel"
+  public static let exportLabel = "exportLabel"
+  public static let addLabel = "addLabel"
+  public static let removeLabel = "removeLabel"
 }

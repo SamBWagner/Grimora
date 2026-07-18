@@ -325,9 +325,11 @@ extension GrimoraAppModel {
   ) {
     do {
       try ensureFavouritesList()
+      try? database.ensureDefaultLabelsSeeded()
       let lists = orderedCardCollectionsForDisplay(try database.cardCollections())
       cardCollections = lists
       refreshFavouriteCardIDs()
+      refreshCardLabels()
       if let requestedSelection,
         lists.contains(where: { $0.id == requestedSelection })
       {
@@ -349,6 +351,8 @@ extension GrimoraAppModel {
       resetSelectedListSearchResults()
       sidebarSelection = .search
       favouriteCardIDs = []
+      cardLabels = []
+      labelsByID = [:]
     }
   }
 

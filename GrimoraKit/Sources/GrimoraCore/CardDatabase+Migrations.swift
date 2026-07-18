@@ -372,6 +372,23 @@ extension CardDatabase {
       )
       """)
 
+    // User-defined colored labels. `list_id` is nullable: NULL = a global (instance-wide) label,
+    // non-NULL = a label local to that collection (cascade-deleted with the list). Mirrors
+    // card_list_categories, plus a `color` token and the nullable scope. Synced as its own entity.
+    try database.execute(
+      """
+      CREATE TABLE IF NOT EXISTS card_labels (
+          id TEXT PRIMARY KEY,
+          list_id TEXT REFERENCES card_lists(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          color TEXT NOT NULL DEFAULT 'grey',
+          position INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          sync_updated_at TEXT
+      )
+      """)
+
     try addColumnIfNeeded("cards", column: "lang", definition: "lang TEXT")
     try addColumnIfNeeded(
       "cards", column: "display_name_key", definition: "display_name_key TEXT NOT NULL DEFAULT ''")
@@ -510,6 +527,12 @@ extension CardDatabase {
       column: "secondary_category_ids",
       definition: "secondary_category_ids TEXT"
     )
+    // The card's attached labels, serialized as a `|id|id|` list exactly like secondary_category_ids.
+    try addColumnIfNeeded(
+      "card_list_entries",
+      column: "label_ids",
+      definition: "label_ids TEXT"
+    )
     try migrateCardValueMappingTablesIfNeeded()
 
     try database.execute(
@@ -600,6 +623,9 @@ extension CardDatabase {
       "CREATE INDEX IF NOT EXISTS idx_card_list_categories_list_zone_position ON card_list_categories(list_id, zone, position)"
     )
     try database.execute(
+      "CREATE INDEX IF NOT EXISTS idx_card_labels_list_position ON card_labels(list_id, position)"
+    )
+    try database.execute(
       "CREATE INDEX IF NOT EXISTS idx_card_lists_pinned_position ON card_lists(is_pinned, position)"
     )
     try database.execute("DROP INDEX IF EXISTS idx_card_list_categories_list_name")
@@ -646,6 +672,25 @@ extension CardDatabase {
       WHEN NEW.sync_updated_at IS OLD.sync_updated_at
       BEGIN
           UPDATE card_list_categories
+          SET sync_updated_at = CASE
+              WHEN OLD.sync_updated_at IS NULL OR NEW.updated_at > OLD.sync_updated_at
+              THEN NEW.updated_at
+              ELSE strftime(
+                  '%Y-%m-%dT%H:%M:%fZ',
+                  julianday(OLD.sync_updated_at) + (0.001 / 86400.0)
+              )
+          END
+          WHERE id = NEW.id;
+      END
+      """)
+    try database.execute("DROP TRIGGER IF EXISTS trg_card_labels_sync_updated_at")
+    try database.execute(
+      """
+      CREATE TRIGGER trg_card_labels_sync_updated_at
+      AFTER UPDATE OF updated_at ON card_labels
+      WHEN NEW.sync_updated_at IS OLD.sync_updated_at
+      BEGIN
+          UPDATE card_labels
           SET sync_updated_at = CASE
               WHEN OLD.sync_updated_at IS NULL OR NEW.updated_at > OLD.sync_updated_at
               THEN NEW.updated_at
@@ -737,6 +782,15 @@ extension CardDatabase {
       """)
     try database.execute(
       """
+      CREATE TRIGGER IF NOT EXISTS trg_card_labels_sync_timestamp_insert
+      AFTER INSERT ON card_labels
+      WHEN NEW.sync_updated_at IS NULL
+      BEGIN
+          UPDATE card_labels SET sync_updated_at = NEW.updated_at WHERE id = NEW.id;
+      END
+      """)
+    try database.execute(
+      """
       CREATE TRIGGER IF NOT EXISTS trg_card_list_entries_sync_timestamp_insert
       AFTER INSERT ON card_list_entries
       WHEN NEW.sync_updated_at IS NULL
@@ -746,7 +800,7 @@ extension CardDatabase {
           WHERE id = NEW.id;
       END
       """)
-    for table in ["card_lists", "card_list_categories", "card_list_entries"] {
+    for table in ["card_lists", "card_list_categories", "card_list_entries", "card_labels"] {
       for operation in ["INSERT", "UPDATE", "DELETE"] {
         try database.execute(
           """

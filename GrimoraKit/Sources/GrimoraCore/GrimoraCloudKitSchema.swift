@@ -13,6 +13,7 @@ public enum GrimoraCloudKitSchema {
     public static let cardCollectionCategory = "GrimoraCardListCategory"
     public static let cardCollectionEntry = "GrimoraCardListEntry"
     public static let changeLogEntry = "GrimoraChangeLogEntry"
+    public static let cardLabel = "GrimoraCardLabel"
     public static let recoveryRevision = "GrimoraRecoveryRevision"
   }
 
@@ -45,6 +46,7 @@ public enum GrimoraCloudKitSchema {
     RecordType.cardCollectionCategory,
     RecordType.cardCollectionEntry,
     RecordType.changeLogEntry,
+    RecordType.cardLabel,
   ]
 
   public static let legacyRecordTypes = [

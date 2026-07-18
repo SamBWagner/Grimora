@@ -464,6 +464,19 @@ extension DeviceSyncSnapshot {
       }
     }
 
+    // Labels are id-keyed (LWW) rather than carried per-winning-list, because a global label
+    // (listID nil) belongs to no list; list-local labels are filtered to surviving lists below.
+    var winningLabels: [CardLabelRecord.ID: (snapshot: DeviceSyncSnapshot, label: CardLabelRecord)] = [:]
+    for snapshot in candidates {
+      for label in snapshot.listSnapshot.labels {
+        let candidate = (snapshot: snapshot, label: label)
+        if let current = winningLabels[label.id], !isNewer(candidate, than: current) {
+          continue
+        }
+        winningLabels[label.id] = candidate
+      }
+    }
+
     var lists: [CardCollectionRecord] = []
     var categories: [CardCollectionCategoryRecord] = []
     var entries: [CardCollectionEntryRecord] = []
@@ -509,6 +522,14 @@ extension DeviceSyncSnapshot {
     }
 
     lists = normalizedListPositions(lists)
+    let survivingListIDs = Set(lists.map(\.id))
+    let labels = winningLabels.values
+      .map(\.label)
+      .filter { $0.listID == nil || survivingListIDs.contains($0.listID!) }
+      .sorted {
+        if $0.position != $1.position { return $0.position < $1.position }
+        return $0.id < $1.id
+      }
     let searchSettings = SyncSearchSettings.merged(candidates.map(\.searchSettings))
     var latestDeletedEntities: [String: SyncTombstone] = [:]
     for tombstone in candidates.flatMap(\.deletedEntities) {
@@ -528,7 +549,8 @@ extension DeviceSyncSnapshot {
       listSnapshot: CardCollectionLibrarySnapshot(
         lists: lists,
         categories: categories,
-        entries: entries
+        entries: entries,
+        labels: labels
       ),
       deletedLists: deletedLists.sorted {
         if $0.deletedAt != $1.deletedAt {
@@ -556,6 +578,18 @@ extension DeviceSyncSnapshot {
       timestamp: candidate.list.updatedAt,
       snapshot: candidate.snapshot,
       toTimestamp: current.list.updatedAt,
+      snapshot: current.snapshot
+    ) == .orderedDescending
+  }
+
+  private static func isNewer(
+    _ candidate: (snapshot: DeviceSyncSnapshot, label: CardLabelRecord),
+    than current: (snapshot: DeviceSyncSnapshot, label: CardLabelRecord)
+  ) -> Bool {
+    compare(
+      timestamp: candidate.label.updatedAt,
+      snapshot: candidate.snapshot,
+      toTimestamp: current.label.updatedAt,
       snapshot: current.snapshot
     ) == .orderedDescending
   }
@@ -639,6 +673,7 @@ public enum SyncEntityType: String, Codable, Equatable, Sendable {
   case cardCollectionCategory = "cardListCategory"
   case cardCollectionEntry = "cardListEntry"
   case changeLogEntry = "changeLogEntry"
+  case cardLabel = "cardLabel"
   case snapshot
 }
 

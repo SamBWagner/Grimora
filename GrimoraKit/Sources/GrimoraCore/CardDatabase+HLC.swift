@@ -80,6 +80,7 @@ extension CardDatabase {
     snapshot.listSnapshot.lists.forEach { consider($0.updatedAt) }
     snapshot.listSnapshot.categories.forEach { consider($0.updatedAt) }
     snapshot.listSnapshot.entries.forEach { consider($0.updatedAt) }
+    snapshot.listSnapshot.labels.forEach { consider($0.updatedAt) }
     snapshot.deletedEntities.forEach { consider($0.deletedAt) }
     snapshot.deletedLists.forEach { consider($0.deletedAt) }
     consider(snapshot.searchSettings.updatedAt)

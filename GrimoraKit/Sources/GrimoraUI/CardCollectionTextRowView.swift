@@ -6,6 +6,7 @@ struct CardCollectionTextRowView: View {
     @Environment(GrimoraAppModel.self) private var model
     @State private var selectionFeedbackTrigger = 0
     @State private var isNamingNewCategory = false
+    @State private var isCreatingLabel = false
 
     var entry: CardCollectionEntryRecord
     var card: CardRecord?
@@ -78,6 +79,12 @@ struct CardCollectionTextRowView: View {
                     .foregroundStyle(palette.accent.color)
                     .accessibilityIdentifier("list-entry-\(entry.id)-secondary-categories")
                 }
+
+                let entryLabels = model.labels(for: entry)
+                if !entryLabels.isEmpty {
+                    LabelPipRow(labels: entryLabels, pipSize: 8)
+                        .accessibilityIdentifier("list-entry-\(entry.id)-labels")
+                }
             }
 
             Spacer(minLength: 10)
@@ -119,6 +126,13 @@ struct CardCollectionTextRowView: View {
         .cardCollectionNewCategoryPrompt(isPresented: $isNamingNewCategory) { name in
             onCreateCategory?(name)
         }
+        .labelEditor(
+            isPresented: $isCreatingLabel,
+            title: "New Label",
+            saveButtonTitle: "Create"
+        ) { name, color in
+            model.addNewLabel(named: name, color: color, toEntry: entry)
+        }
         .listRowBackground(CardCollectionTextRowBackground(card: card, palette: palette, isActiveDetail: isActiveDetail))
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
@@ -145,6 +159,8 @@ struct CardCollectionTextRowView: View {
         }
 
         Divider()
+
+        labelsMenu
 
         Button {
             onEditQuantity()
@@ -180,6 +196,16 @@ struct CardCollectionTextRowView: View {
             moveCategoryMenu
             moveZoneMenu
         }
+    }
+
+    @ViewBuilder
+    private var labelsMenu: some View {
+        Menu {
+            CardLabelMenuItems(entry: entry, onNewLabel: { isCreatingLabel = true })
+        } label: {
+            Label("Labels", systemImage: "circle.grid.2x2.fill")
+        }
+        .accessibilityIdentifier("list-entry-labels-menu-\(entry.id)")
     }
 
     private var isScannedList: Bool {
