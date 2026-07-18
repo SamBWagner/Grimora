@@ -533,6 +533,124 @@ final class CatalogStorageTests: XCTestCase {
     )
   }
 
+  // MARK: - estimatedDownloadSize
+
+  func testEstimatedDownloadSizePrefersTheDeltaChainOverTheFullCatalog() async throws {
+    let directory = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let catalogURL = directory.appendingPathComponent("Catalog.sqlite")
+    try createCatalog(at: catalogURL, cards: [Fixtures.records()[0]])
+    let database = try CardDatabase(
+      userDatabaseURL: directory.appendingPathComponent("User.sqlite"),
+      catalogURL: catalogURL
+    )
+    try database.saveMetadataValue("v1", forKey: MetadataKey.defaultCardsUpdatedAt.rawValue)
+
+    let apiURL = URL(string: "https://example.test/v1/catalog")!
+    let deltaBytes: Int64 = 3_000_000
+    let chain = deltaChain(from: "v1", to: "v2", deltaBytes: deltaBytes)
+    let network = RecordingNetworkClient(dataResponses: [
+      apiURL.appendingPathComponent("chain"): try CatalogChain.encoder().encode(chain)
+    ])
+    let service = LibraryUpdateService(
+      database: database,
+      bulkDataClient: BulkDataClient(network: network, catalogAPIURL: apiURL)
+    )
+
+    let target = deltaTargetManifest(version: "v2", fullCompressedBytes: 126_000_000)
+    let size = await service.estimatedDownloadSize(for: target.bulkDataManifest)
+
+    // The pull-to-refresh prompt must advertise the small delta, not the full ~126 MB artifact.
+    XCTAssertEqual(size, deltaBytes)
+  }
+
+  func testEstimatedDownloadSizeFallsBackToTheFullCatalogWhenNoDeltaApplies() async throws {
+    // An in-memory database has no attached catalog to patch, so the incremental path can't apply
+    // and the estimate must report the full compressed artifact size.
+    let database = try CardDatabase(storage: .inMemory)
+    let service = LibraryUpdateService(
+      database: database,
+      bulkDataClient: BulkDataClient(network: RecordingNetworkClient(), catalogAPIURL: nil)
+    )
+    let target = deltaTargetManifest(version: "v2", fullCompressedBytes: 126_000_000)
+
+    let size = await service.estimatedDownloadSize(for: target.bulkDataManifest)
+    XCTAssertEqual(size, 126_000_000)
+  }
+
+  func testEstimatedDownloadSizeReturnsManifestSizeForNonCatalogManifest() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let service = LibraryUpdateService(
+      database: database,
+      bulkDataClient: BulkDataClient(network: RecordingNetworkClient())
+    )
+    let manifest = BulkDataManifest(
+      id: "id",
+      type: "default_cards",
+      updatedAt: "new",
+      name: "Default Cards",
+      size: 4096,
+      downloadURI: URL(string: "https://example.test/default.json")!
+    )
+
+    let size = await service.estimatedDownloadSize(for: manifest)
+    XCTAssertEqual(size, 4096)
+  }
+
+  private func deltaChainDigests() -> CatalogContentDigests {
+    CatalogContentDigests(
+      cards: "c", cardFaces: "f", series: "s", summaries: "u", mappings: "m", overall: "o"
+    )
+  }
+
+  private func deltaChain(from base: String, to target: String, deltaBytes: Int64) -> CatalogChain {
+    let digests = deltaChainDigests()
+    return CatalogChain(
+      current: target,
+      entries: [
+        CatalogChainEntry(
+          version: base,
+          catalogSchemaVersion: CatalogManifest.currentSchemaVersion,
+          contentDigests: digests,
+          deltaFromPrevious: nil
+        ),
+        CatalogChainEntry(
+          version: target,
+          catalogSchemaVersion: CatalogManifest.currentSchemaVersion,
+          contentDigests: digests,
+          deltaFromPrevious: CatalogDeltaDescriptor(
+            baseVersion: base,
+            url: URL(string: "https://example.test/v1/catalog/\(target)/delta/\(base)")!,
+            sha256: "abc",
+            bytes: deltaBytes,
+            formatVersion: CatalogDelta.currentFormatVersion
+          )
+        ),
+      ]
+    )
+  }
+
+  private func deltaTargetManifest(version: String, fullCompressedBytes: Int64) -> CatalogManifest {
+    CatalogManifest(
+      version: version,
+      generatedAt: Date(timeIntervalSince1970: 0),
+      sources: CatalogSourceVersions(
+        scryfallUpdatedAt: "2026-06-14T00:00:00Z",
+        mtgjsonDate: "2026-06-14",
+        mtgjsonVersion: "5.3.0"
+      ),
+      artifact: CatalogArtifact(
+        downloadURL: URL(string: "https://example.test/v1/catalog/\(version)")!,
+        compressedBytes: fullCompressedBytes,
+        uncompressedBytes: 0,
+        sha256: "",
+        uncompressedSHA256: ""
+      ),
+      counts: CatalogCounts(cards: 1, priceSeries: 0),
+      contentDigests: deltaChainDigests()
+    )
+  }
+
   private func temporaryDirectory() -> URL {
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("CatalogStorageTests-\(UUID().uuidString)", isDirectory: true)

@@ -16,8 +16,10 @@ extension GrimoraAppModel {
 
     switch progress {
     case .downloadingBulkData:
+      // Use the resolved delta size (when one applies) so the byte count matches what's transferring.
+      let downloadBytes = updateDownloadSizeEstimate ?? Int64(manifest.size)
       statusMessage =
-        "Downloading \(manifest.name) (\(Self.byteCountFormatter.string(fromByteCount: Int64(manifest.size))))..."
+        "Downloading \(manifest.name) (\(Self.byteCountFormatter.string(fromByteCount: downloadBytes)))..."
     case .downloadingBulkDataProgress(let completedBytes, let totalBytes):
       statusMessage = downloadStatusMessage(
         label: manifest.name,
@@ -72,6 +74,7 @@ extension GrimoraAppModel {
         progress,
         manifest: manifest,
         operation: self.libraryActivity?.operation,
+        downloadSizeOverride: self.updateDownloadSizeEstimate,
         to: &steps
       )
     }

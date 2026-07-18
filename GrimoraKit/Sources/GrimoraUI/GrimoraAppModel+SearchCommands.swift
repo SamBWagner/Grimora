@@ -175,12 +175,17 @@ extension GrimoraAppModel {
         break
       case .noLocalLibrary(let manifest):
         updateManifest = manifest
+        // A first import always downloads the full artifact, so `manifest.size` is already accurate.
+        updateDownloadSizeEstimate = nil
         statusMessage = "Ready to import \(manifest.name) card data."
       case .upToDate:
         updateManifest = nil
+        updateDownloadSizeEstimate = nil
         statusMessage = "Library is current."
       case .updateAvailable(let manifest):
         updateManifest = manifest
+        // Resolve the true download size (small delta vs full catalog) so the prompt is honest.
+        updateDownloadSizeEstimate = await updateService.estimatedDownloadSize(for: manifest)
         statusMessage = usesManagedCatalog
           ? "A new Grimora catalog is available."
           : "New Scryfall data is available."

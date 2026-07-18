@@ -86,6 +86,11 @@ public final class GrimoraAppModel {
   /// `GrimoraAppModel`, not the root view's private onboarding object.
   public internal(set) var onboardingReplayRequestID = 0
   public internal(set) var updateManifest: BulkDataManifest?
+  /// The bytes an available update will actually download, resolved at check time. For a managed
+  /// catalog this is the incremental delta size (a few MB) when a delta path applies, which is far
+  /// smaller than `updateManifest.size` (the full ~100+ MB artifact). `nil` when there's no available
+  /// update or no delta advantage — callers then fall back to `updateManifest.size`.
+  public internal(set) var updateDownloadSizeEstimate: Int64?
   public internal(set) var isWorking = false
   public internal(set) var canLoadMoreCards = false
   public internal(set) var isLoadingMoreCards = false

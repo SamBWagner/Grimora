@@ -274,7 +274,10 @@ private struct UpdateCalloutView: View {
             Text(manifest.name)
                 .font(.callout.weight(.semibold))
                 .foregroundStyle(palette.primaryText.color)
-            Text(ByteCountFormatter.string(fromByteCount: Int64(manifest.size), countStyle: .file))
+            Text(ByteCountFormatter.string(
+                fromByteCount: model.updateDownloadSizeEstimate ?? Int64(manifest.size),
+                countStyle: .file
+            ))
                 .font(.caption)
                 .foregroundStyle(palette.secondaryText.color)
             Button {

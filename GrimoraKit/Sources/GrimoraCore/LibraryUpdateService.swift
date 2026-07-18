@@ -51,6 +51,26 @@ public final class LibraryUpdateService: Sendable {
         return .updateAvailable(manifest)
     }
 
+    /// The number of bytes importing `manifest` will actually transfer, so a pre-download prompt can
+    /// show the real cost rather than the full artifact size.
+    ///
+    /// For a managed catalog this prefers the incremental delta path (typically a few MB) whenever one
+    /// applies, and otherwise reports the full compressed artifact (~100+ MB) — exactly what
+    /// ``downloadAndImport(manifest:temporaryDirectory:importer:imagePolicy:refreshesPriceHistory:preservesCardValueHistory:automatic:progress:)``
+    /// will do. Best-effort and non-throwing: any resolution failure (no chain, missing base, digest
+    /// gap, …) falls back to the full size, matching the download's own fallback.
+    public func estimatedDownloadSize(for manifest: BulkDataManifest) async -> Int64 {
+        guard manifest.type == BulkDataManifest.grimoraCatalogType,
+            let catalog = manifest.catalog
+        else {
+            return Int64(manifest.size)
+        }
+        if let plan = try? await resolveCatalogDeltaPlan(target: catalog) {
+            return plan.totalBytes
+        }
+        return catalog.artifact.compressedBytes
+    }
+
     public func downloadAndImport(
         manifest: BulkDataManifest,
         temporaryDirectory: URL,
@@ -155,16 +175,24 @@ public final class LibraryUpdateService: Sendable {
         )
     }
 
-    /// Patches the installed catalog up to `target` using the delta chain, then swaps it in place via
-    /// `installCatalog` — no restart, same as a full download but with a fraction of the bytes.
-    /// Throws (→ caller falls back to a full download) on any mismatch, missing base, multi-build gap,
-    /// or when the deltas would together rival the full artifact.
-    private func downloadAndInstallCatalogIncrementally(
-        target: CatalogManifest,
-        temporaryDirectory: URL,
-        automatic: Bool,
-        progress: (@Sendable (ImportProgress) async -> Void)?
-    ) async throws -> ImportSummary {
+    /// The resolved incremental-update plan: the consecutive deltas to apply, the base catalog they
+    /// patch, and the digests the result is verified against. Shared by the pre-download size estimate
+    /// (``estimatedDownloadSize(for:)``) and the actual install
+    /// (``downloadAndInstallCatalogIncrementally(target:temporaryDirectory:automatic:progress:)``) so
+    /// the two can never disagree about whether a delta path applies or how many bytes it costs.
+    private struct CatalogDeltaPlan {
+        var path: [CatalogDeltaDescriptor]
+        var attachedCatalogURL: URL
+        var targetDigests: CatalogContentDigests
+        var totalBytes: Int64
+    }
+
+    /// Resolves the delta plan reaching `target` from the installed catalog, applying every guard the
+    /// incremental install relies on: the target must advertise content digests, there must be an
+    /// attached catalog to patch, the installed version must differ, and the fetched chain must resolve
+    /// to a usable path (see ``usableDeltaPath(chain:targetVersion:fullDownloadBytes:installedVersion:)``).
+    /// Throws when a full download should be preferred instead.
+    private func resolveCatalogDeltaPlan(target: CatalogManifest) async throws -> CatalogDeltaPlan {
         guard let targetDigests = target.contentDigests,
             let attachedCatalogURL = database.attachedCatalogURL,
             let installedVersion = try database.metadataValue(
@@ -176,17 +204,63 @@ public final class LibraryUpdateService: Sendable {
         }
 
         let chain = try await bulkDataClient.fetchCatalogChain()
-        guard chain.current == target.version,
+        guard let path = Self.usableDeltaPath(
+            chain: chain,
+            targetVersion: target.version,
+            fullDownloadBytes: target.artifact.compressedBytes,
+            installedVersion: installedVersion
+        ) else {
+            throw CatalogStorageError.invalidCatalog("No usable delta chain to the target")
+        }
+        return CatalogDeltaPlan(
+            path: path,
+            attachedCatalogURL: attachedCatalogURL,
+            targetDigests: targetDigests,
+            totalBytes: path.reduce(0) { $0 + $1.bytes }
+        )
+    }
+
+    /// The consecutive deltas to walk from `installedVersion` up to the target, or `nil` when a full
+    /// download should be preferred. Pure (no I/O) so the branching is unit-testable and can never
+    /// diverge between the pre-download size estimate and the real install. A full download wins when
+    /// the chain doesn't reach the target, the installed version isn't on it, the path spans a schema
+    /// change or an unrecognized delta format, it exceeds ``CatalogDelta/maxChainSteps``, or the summed
+    /// delta bytes would rival the full artifact.
+    static func usableDeltaPath(
+        chain: CatalogChain,
+        targetVersion: String,
+        fullDownloadBytes: Int64,
+        installedVersion: String
+    ) -> [CatalogDeltaDescriptor]? {
+        guard chain.current == targetVersion,
             let path = chain.deltaPath(from: installedVersion),
             !path.isEmpty,
             path.count <= CatalogDelta.maxChainSteps
         else {
-            throw CatalogStorageError.invalidCatalog("No usable delta chain to the target")
+            return nil
         }
         let totalDeltaBytes = path.reduce(0) { $0 + $1.bytes }
-        guard totalDeltaBytes < target.artifact.compressedBytes else {
-            throw CatalogStorageError.invalidCatalog("Delta path rivals a full download")
+        guard totalDeltaBytes < fullDownloadBytes else {
+            return nil
         }
+        return path
+    }
+
+    /// Patches the installed catalog up to `target` using the delta chain, then swaps it in place via
+    /// `installCatalog` — no restart, same as a full download but with a fraction of the bytes.
+    /// Throws (→ caller falls back to a full download) on any mismatch, missing base, multi-build gap,
+    /// or when the deltas would together rival the full artifact.
+    private func downloadAndInstallCatalogIncrementally(
+        target: CatalogManifest,
+        temporaryDirectory: URL,
+        automatic: Bool,
+        progress: (@Sendable (ImportProgress) async -> Void)?
+    ) async throws -> ImportSummary {
+        let plan = try await resolveCatalogDeltaPlan(target: target)
+        let path = plan.path
+        let attachedCatalogURL = plan.attachedCatalogURL
+        let targetDigests = plan.targetDigests
+        let totalDeltaBytes = plan.totalBytes
 
         let workingDirectory = temporaryDirectory.appendingPathComponent(
             "catalog-delta-\(target.version.fileSafeComponent)",

@@ -137,7 +137,9 @@ private struct CatalogUpdateRefreshable: ViewModifier {
   }
 
   private func updateMessage(for manifest: BulkDataManifest) -> String {
-    let size = ByteCountFormatter.string(fromByteCount: Int64(manifest.size), countStyle: .file)
+    // Prefer the resolved download size (a small delta when one applies) over the full artifact size.
+    let bytes = model.updateDownloadSizeEstimate ?? Int64(manifest.size)
+    let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
     return "\(manifest.name) · \(size). Download now?"
   }
 

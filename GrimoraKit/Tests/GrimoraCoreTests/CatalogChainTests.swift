@@ -55,6 +55,73 @@ struct CatalogChainTests {
     #expect(chain.deltaPath(from: "v1") == nil)
   }
 
+  // MARK: - usableDeltaPath (the pre-download size estimate + install share this decision)
+
+  @Test
+  func usableDeltaPathWalksTheChainWhenCheaperThanAFullDownload() {
+    let chain = makeChain(["v1", "v2", "v3"])
+    let path = LibraryUpdateService.usableDeltaPath(
+      chain: chain,
+      targetVersion: "v3",
+      fullDownloadBytes: 126_000_000,
+      installedVersion: "v1"
+    )
+    #expect(path?.map(\.baseVersion) == ["v1", "v2"])
+  }
+
+  @Test
+  func usableDeltaPathIsNilWhenTheChainDoesNotReachTheTarget() {
+    // The chain's newest build is v3, but we're targeting a v4 that isn't published on it yet.
+    let chain = makeChain(["v1", "v2", "v3"])
+    #expect(LibraryUpdateService.usableDeltaPath(
+      chain: chain,
+      targetVersion: "v4",
+      fullDownloadBytes: 126_000_000,
+      installedVersion: "v2"
+    ) == nil)
+  }
+
+  @Test
+  func usableDeltaPathIsNilWhenAlreadyCurrent() {
+    let chain = makeChain(["v1", "v2", "v3"])
+    #expect(LibraryUpdateService.usableDeltaPath(
+      chain: chain,
+      targetVersion: "v3",
+      fullDownloadBytes: 126_000_000,
+      installedVersion: "v3"
+    ) == nil)
+  }
+
+  @Test
+  func usableDeltaPathIsNilWhenInstalledVersionExpiredFromTheChain() {
+    let chain = makeChain(["v1", "v2", "v3"])
+    #expect(LibraryUpdateService.usableDeltaPath(
+      chain: chain,
+      targetVersion: "v3",
+      fullDownloadBytes: 126_000_000,
+      installedVersion: "v0-expired"
+    ) == nil)
+  }
+
+  @Test
+  func usableDeltaPathIsNilWhenDeltasWouldRivalAFullDownload() {
+    // Two 1024-byte deltas (v1→v3) total 2048; a full download that small wins.
+    let chain = makeChain(["v1", "v2", "v3"])
+    #expect(LibraryUpdateService.usableDeltaPath(
+      chain: chain,
+      targetVersion: "v3",
+      fullDownloadBytes: 2048,
+      installedVersion: "v1"
+    ) == nil)
+    // One byte larger and the delta path is the cheaper choice.
+    #expect(LibraryUpdateService.usableDeltaPath(
+      chain: chain,
+      targetVersion: "v3",
+      fullDownloadBytes: 2049,
+      installedVersion: "v1"
+    )?.count == 2)
+  }
+
   private func makeChain(_ versions: [String]) -> CatalogChain {
     let digests = CatalogContentDigests(
       cards: "c", cardFaces: "f", series: "s", summaries: "u", mappings: "m", overall: "o"

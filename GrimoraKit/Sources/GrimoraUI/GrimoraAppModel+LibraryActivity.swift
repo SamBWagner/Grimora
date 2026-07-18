@@ -394,6 +394,7 @@ extension GrimoraAppModel {
     _ progress: ImportProgress,
     manifest: BulkDataManifest?,
     operation: GrimoraLibraryActivityOperation? = nil,
+    downloadSizeOverride: Int64? = nil,
     to steps: inout [GrimoraLibraryActivityStep]
   ) {
     switch progress {
@@ -402,7 +403,9 @@ extension GrimoraAppModel {
       updateStep(
         LibraryActivityStepID.downloadCardData,
         title: "Download card data",
-        detail: manifest.map { Self.byteCountFormatter.string(fromByteCount: Int64($0.size)) },
+        // Prefer the resolved delta size over the full-artifact `manifest.size` when one applies.
+        detail: (downloadSizeOverride ?? manifest.map { Int64($0.size) })
+          .map { Self.byteCountFormatter.string(fromByteCount: $0) },
         progress: 0.02,
         state: .running,
         in: &steps
