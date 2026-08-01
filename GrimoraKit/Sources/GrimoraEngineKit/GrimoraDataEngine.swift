@@ -533,12 +533,25 @@ public struct GrimoraDataEngine {
     let identifiersURL = sourceDirectory.appendingPathComponent("mtgjson-identifiers.json.gz")
     let pricesURL = sourceDirectory.appendingPathComponent("mtgjson-prices.json.gz")
     if !fileManager.fileExists(atPath: scryfallURL.path) {
+      // Scryfall now serves the bulk artifact gzipped, so stage the download and expand it before
+      // handing the plain stream to the pipeline scanner.
+      let stagedURL = sourceDirectory.appendingPathComponent("scryfall-default-cards.download")
+      if fileManager.fileExists(atPath: stagedURL.path) {
+        try fileManager.removeItem(at: stagedURL)
+      }
       try await BulkDataClient(network: network)
         .downloadDefaultCards(
           manifest: scryfallManifest,
-          to: scryfallURL,
+          to: stagedURL,
           progress: downloadReporter("Scryfall card data")
         )
+      if try Self.isGzipped(stagedURL) {
+        await report(EngineRunProgress(phase: .downloading, detail: "Expanding Scryfall card data"))
+        try GzipArchive.decompressFile(at: stagedURL, to: scryfallURL)
+        try fileManager.removeItem(at: stagedURL)
+      } else {
+        try fileManager.moveItem(at: stagedURL, to: scryfallURL)
+      }
     }
     let mtgjsonClient = MTGJSONPriceHistoryClient(network: network)
     if !fileManager.fileExists(atPath: identifiersURL.path) {
@@ -590,6 +603,14 @@ public struct GrimoraDataEngine {
       hasher.update(data: data)
     }
     return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+  }
+
+  /// Sniffs the gzip magic number so the engine keeps working whichever way the source is served.
+  static func isGzipped(_ url: URL) throws -> Bool {
+    let handle = try FileHandle(forReadingFrom: url)
+    defer { try? handle.close() }
+    let magic = try handle.read(upToCount: 2) ?? Data()
+    return magic.count == 2 && magic[magic.startIndex] == 0x1f && magic[magic.startIndex + 1] == 0x8b
   }
 
   private func fileSize(_ url: URL) throws -> Int64 {

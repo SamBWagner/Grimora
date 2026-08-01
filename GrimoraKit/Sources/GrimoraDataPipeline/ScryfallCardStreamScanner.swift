@@ -1,11 +1,14 @@
 import Foundation
 
-public enum ScryfallJSONArrayScannerError: Error, Equatable, Sendable {
-  case expectedArray
+public enum ScryfallCardStreamScannerError: Error, Equatable, Sendable {
+  case unrecognizedStream
   case unterminatedObject
 }
 
-public enum ScryfallJSONArrayScanner {
+/// Streams the top-level card objects out of a Scryfall bulk artifact without holding the whole
+/// file in memory. Handles both shapes Scryfall has served: a single top-level JSON array, and the
+/// current JSON Lines stream (one card object per line).
+public enum ScryfallCardStreamScanner {
   public static func scan(
     url: URL,
     progress: (@Sendable (Int64) async -> Void)? = nil,
@@ -14,7 +17,7 @@ public enum ScryfallJSONArrayScanner {
     let handle = try FileHandle(forReadingFrom: url)
     defer { try? handle.close() }
 
-    var foundArray = false
+    var started = false
     var collecting = false
     var objectDepth = 0
     var isInsideString = false
@@ -30,15 +33,21 @@ public enum ScryfallJSONArrayScanner {
       }
       scannedBytes += Int64(chunk.count)
       for byte in chunk {
-        if !foundArray {
+        if !started {
           if byte.isJSONWhitespace {
             continue
           }
-          guard byte == UInt8(ascii: "[") else {
-            throw ScryfallJSONArrayScannerError.expectedArray
+          switch byte {
+          case UInt8(ascii: "["):
+            // Legacy shape: every card object sits inside one top-level array.
+            started = true
+            continue
+          case UInt8(ascii: "{"):
+            // JSON Lines: this byte already opens the first card, so fall through and collect it.
+            started = true
+          default:
+            throw ScryfallCardStreamScannerError.unrecognizedStream
           }
-          foundArray = true
-          continue
         }
 
         if collecting {
@@ -83,11 +92,11 @@ public enum ScryfallJSONArrayScanner {
       }
     }
 
-    guard foundArray else {
-      throw ScryfallJSONArrayScannerError.expectedArray
+    guard started else {
+      throw ScryfallCardStreamScannerError.unrecognizedStream
     }
     guard !collecting else {
-      throw ScryfallJSONArrayScannerError.unterminatedObject
+      throw ScryfallCardStreamScannerError.unterminatedObject
     }
     await progress?(scannedBytes)
   }

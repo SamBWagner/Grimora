@@ -110,7 +110,7 @@ public struct CatalogPipeline: Sendable {
     var batch: [CardRecord] = []
     batch.reserveCapacity(cardBatchSize)
     var cardCount = 0
-    try await ScryfallJSONArrayScanner.scan(
+    try await ScryfallCardStreamScanner.scan(
       url: inputs.scryfallJSONURL,
       progress: { scannedBytes in
         await progress?(

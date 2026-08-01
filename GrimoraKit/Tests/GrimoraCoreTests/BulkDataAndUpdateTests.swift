@@ -23,6 +23,23 @@ final class BulkDataAndUpdateTests: XCTestCase {
         XCTAssertEqual(purposes, [.manifestCheck, .bulkDownload])
     }
 
+    func testBulkDataClientReadsCurrentGzippedJSONLinesManifest() async throws {
+        let downloadURL = URL(string: "https://data.scryfall.io/default-cards/default-cards.jsonl.gz")!
+        let network = RecordingNetworkClient(dataResponses: [
+            BulkDataClient.bulkDataURL: currentManifestListJSON(
+                type: "default_cards",
+                downloadURL: downloadURL
+            )
+        ])
+        let client = BulkDataClient(network: network)
+
+        let manifest = try await client.fetchDefaultCardsManifest()
+        XCTAssertEqual(manifest.type, "default_cards")
+        XCTAssertEqual(manifest.downloadURI, downloadURL)
+        XCTAssertEqual(manifest.size, 77_176_423)
+        XCTAssertEqual(manifest.updatedAt, "2026-07-31T21:10:28.315+00:00")
+    }
+
     func testBulkDataClientFailsWhenDefaultCardsManifestIsMissing() async throws {
         let network = RecordingNetworkClient(dataResponses: [
             BulkDataClient.bulkDataURL: manifestListJSON(type: "oracle_cards", downloadURL: URL(string: "https://example.test/oracle.json")!)
@@ -804,6 +821,33 @@ final class BulkDataAndUpdateTests: XCTestCase {
             crc = table[index] ^ (crc >> 8)
         }
         return crc ^ 0xffff_ffff
+    }
+
+    /// The shape Scryfall serves today: gzipped JSON Lines, with no legacy `size`/`download_uri`.
+    private func currentManifestListJSON(
+        type: String,
+        updatedAt: String = "2026-07-31T21:10:28.315+00:00",
+        downloadURL: URL
+    ) -> Data {
+        Data("""
+        {
+          "object": "list",
+          "has_more": false,
+          "data": [
+            {
+              "object": "bulk_data",
+              "id": "bulk-id",
+              "type": "\(type)",
+              "updated_at": "\(updatedAt)",
+              "uri": "https://api.scryfall.com/bulk-data/bulk-id",
+              "name": "Default Cards",
+              "description": "Fixture",
+              "jsonl_download_uri": "\(downloadURL.absoluteString)",
+              "compressed_size": 77176423
+            }
+          ]
+        }
+        """.utf8)
     }
 
     private func manifestListJSON(

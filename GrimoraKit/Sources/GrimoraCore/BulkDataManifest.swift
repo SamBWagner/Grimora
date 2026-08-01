@@ -35,8 +35,29 @@ public struct BulkDataManifest: Decodable, Equatable, Sendable {
         case updatedAt = "updated_at"
         case name
         case size
+        case compressedSize = "compressed_size"
         case downloadURI = "download_uri"
+        case jsonlDownloadURI = "jsonl_download_uri"
         case catalog
+    }
+
+    /// Scryfall moved its bulk artifacts to gzipped JSON Lines: `download_uri`/`size` became
+    /// `jsonl_download_uri`/`compressed_size`, and the legacy `.json` URLs now 404. We prefer the
+    /// current keys and fall back to the legacy pair so an older mirror still decodes.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        type = try container.decode(String.self, forKey: .type)
+        updatedAt = try container.decode(String.self, forKey: .updatedAt)
+        name = try container.decode(String.self, forKey: .name)
+        catalog = try container.decodeIfPresent(CatalogManifest.self, forKey: .catalog)
+        if let jsonlDownloadURI = try container.decodeIfPresent(URL.self, forKey: .jsonlDownloadURI) {
+            downloadURI = jsonlDownloadURI
+            size = try container.decodeIfPresent(Int.self, forKey: .compressedSize) ?? 0
+        } else {
+            downloadURI = try container.decode(URL.self, forKey: .downloadURI)
+            size = try container.decodeIfPresent(Int.self, forKey: .size) ?? 0
+        }
     }
 }
 

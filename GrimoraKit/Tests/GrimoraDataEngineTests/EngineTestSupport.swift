@@ -54,12 +54,14 @@ enum StubNetworkError: Error, CustomStringConvertible {
 /// Builds the canned source data the engine fetches during a build, wiring the same URLs the
 /// production clients hit. `cards` = 2, `priceSeries` = 1 (only one card has a price).
 enum EngineFixtures {
-  static let scryfallDownloadURL = URL(string: "https://data.scryfall.io/default-cards/fixture.json")!
+  static let scryfallDownloadURL = URL(
+    string: "https://data.scryfall.io/default-cards/fixture.jsonl.gz"
+  )!
 
   static func responses() throws -> [URL: Data] {
     [
       BulkDataClient.bulkDataURL: bulkManifestJSON(),
-      scryfallDownloadURL: defaultCardsJSON(),
+      scryfallDownloadURL: try defaultCardsJSONLinesGzipped(),
       MTGJSONPriceHistoryClient.metaURL: mtgjsonMetaJSON(),
       MTGJSONPriceHistoryClient.allPrintingsURL: try gzip(mtgjsonPrintingsJSON()),
       MTGJSONPriceHistoryClient.allPricesURL: try gzip(mtgjsonPricesJSON()),
@@ -80,14 +82,23 @@ enum EngineFixtures {
           "uri": "https://api.scryfall.com/bulk-data/bulk-default",
           "name": "Default Cards",
           "description": "Engine fixture",
-          "size": 123,
-          "download_uri": "\(scryfallDownloadURL.absoluteString)",
-          "content_type": "application/json",
-          "content_encoding": "gzip"
+          "compressed_size": 123,
+          "jsonl_download_uri": "\(scryfallDownloadURL.absoluteString)"
         }
       ]
     }
     """.utf8)
+  }
+
+  /// Scryfall's current bulk shape: gzipped JSON Lines, one card object per line. The legacy
+  /// single-array shape is still covered by `CatalogDeltaRoundTripTests`, which exercises the
+  /// manifest/scanner fallback path.
+  static func defaultCardsJSONLinesGzipped() throws -> Data {
+    let cards = try JSONSerialization.jsonObject(with: defaultCardsJSON()) as? [Any] ?? []
+    let lines = try cards.map { card in
+      String(decoding: try JSONSerialization.data(withJSONObject: card), as: UTF8.self)
+    }
+    return try gzip(Data(lines.joined(separator: "\n").utf8))
   }
 
   static func defaultCardsJSON() -> Data {
