@@ -4,23 +4,17 @@ import SwiftUI
 
 /// Bottom-corner floating controls for the Cards tab.
 ///
-/// On compact width (iPhone) the settings cog parks in the bottom-leading
-/// corner, flanking the floating tab bar so the centre stays clear for cards.
-/// On regular width (iPad / visionOS) it rests on the trailing side.
+/// The settings cog parks in the bottom-leading corner on every size class,
+/// keeping the trailing corner clear for the jump-to-top button (which docks
+/// bottom-trailing). On iPad regular width the two previously shared the
+/// trailing corner and overlapped.
 struct SearchFloatingControls: View {
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
     var onOpenSearchSettings: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            if horizontalSizeClass == .regular {
-                Spacer(minLength: 0)
-                SearchSettingsMenu(onOpenSearchSettings: onOpenSearchSettings)
-            } else {
-                SearchSettingsMenu(onOpenSearchSettings: onOpenSearchSettings)
-                Spacer(minLength: 0)
-            }
+            SearchSettingsMenu(onOpenSearchSettings: onOpenSearchSettings)
+            Spacer(minLength: 0)
         }
     }
 }
