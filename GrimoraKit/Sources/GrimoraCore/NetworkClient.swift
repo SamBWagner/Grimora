@@ -173,6 +173,119 @@ public struct URLSessionNetworkClient: NetworkClient {
     }
 }
 
+public extension URLSessionNetworkClient {
+    /// Session tuned for the headless engine.
+    ///
+    /// launchd fires the engine on a schedule but cannot wake the Mac, so a scheduled run usually
+    /// starts during an opportunistic dark wake — often before Wi-Fi has a route, which surfaces as
+    /// `URLError.notConnectedToInternet`. `waitsForConnectivity` turns that instant failure into a
+    /// wait. The source downloads also run to hundreds of megabytes, so the resource window has to be
+    /// far more generous than the 60s default `URLSession.shared` applies per request.
+    static func engineSession() -> URLSession {
+        let configuration = URLSessionConfiguration.default
+        #if !os(Linux)
+        configuration.waitsForConnectivity = true
+        #endif
+        configuration.timeoutIntervalForRequest = 120
+        configuration.timeoutIntervalForResource = 3600
+        return URLSession(configuration: configuration)
+    }
+}
+
+/// Retries transient network failures with exponential backoff.
+///
+/// Distinct from `waitsForConnectivity`, which only covers establishing the *initial* connection: this
+/// also recovers a transfer that died mid-flight because the machine suspended underneath it.
+public struct RetryingNetworkClient: NetworkClient {
+    private let wrapped: any NetworkClient
+    private let maxAttempts: Int
+    private let initialDelay: Duration
+    private let onRetry: (@Sendable (Int, any Error) -> Void)?
+
+    public init(
+        wrapping wrapped: any NetworkClient,
+        maxAttempts: Int = 4,
+        initialDelay: Duration = .seconds(2),
+        onRetry: (@Sendable (Int, any Error) -> Void)? = nil
+    ) {
+        self.wrapped = wrapped
+        self.maxAttempts = maxAttempts
+        self.initialDelay = initialDelay
+        self.onRetry = onRetry
+    }
+
+    public func data(from url: URL, purpose: NetworkPurpose) async throws -> Data {
+        var delay = initialDelay
+        var attempt = 1
+        while true {
+            do {
+                return try await wrapped.data(from: url, purpose: purpose)
+            } catch {
+                guard attempt < maxAttempts, Self.isTransient(error) else {
+                    throw error
+                }
+                onRetry?(attempt, error)
+                try await Task.sleep(for: delay)
+                delay *= 2
+                attempt += 1
+            }
+        }
+    }
+
+    public func download(
+        from url: URL,
+        to destination: URL,
+        purpose: NetworkPurpose,
+        progress: (@Sendable (NetworkDownloadProgress) async -> Void)? = nil
+    ) async throws {
+        var delay = initialDelay
+        var attempt = 1
+        while true {
+            do {
+                // Safe to restart: `download` streams into a unique temporary file and only moves it
+                // into place once the transfer completes, so a failed attempt leaves nothing behind.
+                return try await wrapped.download(
+                    from: url,
+                    to: destination,
+                    purpose: purpose,
+                    progress: progress
+                )
+            } catch {
+                guard attempt < maxAttempts, Self.isTransient(error) else {
+                    throw error
+                }
+                onRetry?(attempt, error)
+                try await Task.sleep(for: delay)
+                delay *= 2
+                attempt += 1
+            }
+        }
+    }
+
+    /// Only errors that a later attempt could plausibly survive. A bad HTTP status or a decode
+    /// failure is deliberately excluded — retrying those just burns the schedule.
+    public static func isTransient(_ error: any Error) -> Bool {
+        guard let urlError = error as? URLError else {
+            return false
+        }
+        switch urlError.code {
+        case .timedOut,
+            .notConnectedToInternet,
+            .networkConnectionLost,
+            .cannotConnectToHost,
+            .cannotFindHost,
+            .dnsLookupFailed,
+            .resourceUnavailable,
+            .internationalRoamingOff,
+            .dataNotAllowed,
+            .secureConnectionFailed:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 public struct BlockingNetworkClient: NetworkClient {
     public init() {}
 

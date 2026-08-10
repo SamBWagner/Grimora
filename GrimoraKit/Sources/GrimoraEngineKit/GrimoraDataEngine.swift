@@ -51,8 +51,11 @@ public struct GrimoraDataEngine {
   public init(
     fileManager: FileManager = .default,
     environment: [String: String] = ProcessInfo.processInfo.environment,
-    network: NetworkClient = URLSessionNetworkClient(
-      userAgent: "GrimoraDataEngine/1.0"
+    network: NetworkClient = RetryingNetworkClient(
+      wrapping: URLSessionNetworkClient(
+        session: URLSessionNetworkClient.engineSession(),
+        userAgent: "GrimoraDataEngine/1.0"
+      )
     )
   ) throws {
     configuration = try EngineConfiguration(fileManager: fileManager, environment: environment)
@@ -206,6 +209,24 @@ public struct GrimoraDataEngine {
   /// Acquires the process lock, writes live progress to `current-run.json`, and appends a record to
   /// `runs.json` on completion (success or failure) so every execution path stays observable.
   private func recordRun(
+    operation: EngineRunRecord.Operation,
+    trigger: EngineRunTrigger,
+    userProgress: EngineProgressHandler?,
+    body: (_ report: @escaping EngineProgressHandler) async throws -> RunResultInfo
+  ) async throws -> RunResultInfo {
+    // Held for the whole operation: a scheduled run usually starts on a dark wake, and without this
+    // the system suspends mid-download and the request dies. See `PowerManagement`.
+    try await PowerManagement.withRunAssertions(reason: "Grimora \(operation.rawValue)") {
+      try await recordRunHoldingPower(
+        operation: operation,
+        trigger: trigger,
+        userProgress: userProgress,
+        body: body
+      )
+    }
+  }
+
+  private func recordRunHoldingPower(
     operation: EngineRunRecord.Operation,
     trigger: EngineRunTrigger,
     userProgress: EngineProgressHandler?,
@@ -547,7 +568,16 @@ public struct GrimoraDataEngine {
         )
       if try Self.isGzipped(stagedURL) {
         await report(EngineRunProgress(phase: .downloading, detail: "Expanding Scryfall card data"))
-        try GzipArchive.decompressFile(at: stagedURL, to: scryfallURL)
+        // Expand to a side file and only then move into place. `downloadInputs` treats the mere
+        // existence of `scryfallURL` as "already fetched", so a decompress interrupted partway —
+        // which is routine when the machine sleeps mid-run — must never leave a truncated file for
+        // a later run to silently ingest.
+        let expandedURL = sourceDirectory.appendingPathComponent("scryfall-default-cards.expanding")
+        if fileManager.fileExists(atPath: expandedURL.path) {
+          try fileManager.removeItem(at: expandedURL)
+        }
+        try GzipArchive.decompressFile(at: stagedURL, to: expandedURL)
+        try fileManager.moveItem(at: expandedURL, to: scryfallURL)
         try fileManager.removeItem(at: stagedURL)
       } else {
         try fileManager.moveItem(at: stagedURL, to: scryfallURL)
