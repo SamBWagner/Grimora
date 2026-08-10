@@ -22,6 +22,7 @@ public enum EngineError: Error, CustomStringConvertible {
         grimora-data-engine build [--force]
         grimora-data-engine publish <artifact>
         grimora-data-engine run [--force]
+        grimora-data-engine prune [--dry-run]
         grimora-data-engine status
       """
     case .missingArtifact(let url):
@@ -257,6 +258,9 @@ public struct GrimoraDataEngine {
 
     do {
       let info = try await body(report)
+      // Housekeeping runs while the lock is still held, after `state.json` names the build this run
+      // produced — so the fresh build is pinned and cannot be pruned by its own sweep.
+      pruneRetainedArtifacts()
       history.append(
         EngineRunRecord(
           id: runID,
@@ -436,7 +440,7 @@ public struct GrimoraDataEngine {
       let fileName = "delta-from-\(previousBuild.manifest.version).sqlite.gz"
       let deltaGz = workingDirectory.appendingPathComponent(fileName)
       try GzipArchive.compressFile(at: deltaWork, to: deltaGz)
-      try? fileManager.removeItem(at: deltaWork)
+      removeScratchDatabase(deltaWork)
 
       let sidecar = CatalogDeltaSidecar(
         baseVersion: previousBuild.manifest.version,
@@ -450,7 +454,15 @@ public struct GrimoraDataEngine {
       try encoder.encode(sidecar)
         .write(to: workingDirectory.appendingPathComponent("delta.json"), options: .atomic)
     } catch {
-      try? fileManager.removeItem(at: workingDirectory.appendingPathComponent("delta.sqlite"))
+      removeScratchDatabase(workingDirectory.appendingPathComponent("delta.sqlite"))
+    }
+  }
+
+  /// Removes a build-intermediate SQLite file together with its WAL sidecars, which otherwise
+  /// outlive the database they belong to and ride along in the published build directory forever.
+  private func removeScratchDatabase(_ url: URL) {
+    for file in [url] + CatalogPipeline.sidecarURLs(for: url) {
+      try? fileManager.removeItem(at: file)
     }
   }
 
@@ -611,6 +623,175 @@ public struct GrimoraDataEngine {
     ) where url.lastPathComponent.hasPrefix(".building-") {
       try fileManager.removeItem(at: url)
     }
+  }
+
+  // MARK: - Retention
+
+  /// What one retention sweep deleted (or, for a dry run, would delete).
+  public struct RetentionSummary: Codable, Equatable, Sendable {
+    public var prunedBuilds: [String] = []
+    public var keptBuilds: [String] = []
+    public var prunedSourceCaches: [String] = []
+    public var keptSourceCaches: [String] = []
+    public var freedBytes: Int64 = 0
+    public var wasDryRun = false
+
+    public var isEmpty: Bool { prunedBuilds.isEmpty && prunedSourceCaches.isEmpty }
+  }
+
+  /// Applies the retention policy on demand — the same sweep every successful run performs. Pass
+  /// `dryRun: true` to report what would go without touching the disk. Takes the engine lock so it
+  /// cannot delete a directory a scheduled build is reading.
+  public func pruneArtifacts(dryRun: Bool = false) throws -> RetentionSummary {
+    let lock = try ProcessLock(url: configuration.lockFile)
+    defer { withExtendedLifetime(lock) {} }
+    return pruneRetainedArtifacts(dryRun: dryRun)
+  }
+
+  /// Deletes build directories and source caches beyond the configured retention window, oldest
+  /// first. Best-effort: a failure here must never fail an otherwise good build.
+  ///
+  /// Only the newest build is strictly required — it is the delta base for the next build, and
+  /// published artifacts are served from object storage, not from this Mac — so the extra
+  /// generations are pure insurance. The versions `state.json` pins (last published, and the
+  /// manifest the next delta builds from) are always kept, however old they sort.
+  ///
+  /// Caller must already hold the engine lock.
+  @discardableResult
+  private func pruneRetainedArtifacts(dryRun: Bool = false) -> RetentionSummary {
+    var summary = RetentionSummary()
+    summary.wasDryRun = dryRun
+    let state = EngineState.load(from: configuration.stateFile)
+
+    var pinnedBuilds: Set<String> = []
+    if let version = state.lastPublishedVersion {
+      pinnedBuilds.insert(version)
+    }
+    if let manifestPath = state.lastBuiltManifestPath {
+      pinnedBuilds.insert(
+        URL(fileURLWithPath: manifestPath).deletingLastPathComponent().lastPathComponent
+      )
+    }
+    let builds = partition(
+      directoriesIn: configuration.buildsDirectory,
+      prefix: "",
+      keeping: configuration.buildRetentionCount,
+      pinned: pinnedBuilds
+    )
+    summary.keptBuilds = builds.kept.map(\.name)
+    summary.prunedBuilds = builds.pruned.map(\.name)
+
+    var pinnedCaches: Set<String> = []
+    if let sources = state.lastSuccessfulSources,
+      let name = try? sourceCacheVersion(sources: sources)
+    {
+      pinnedCaches.insert(name)
+    }
+    let caches = partition(
+      directoriesIn: configuration.cacheDirectory,
+      prefix: "sources-",
+      keeping: configuration.sourceCacheRetentionCount,
+      pinned: pinnedCaches
+    )
+    summary.keptSourceCaches = caches.kept.map(\.name)
+    summary.prunedSourceCaches = caches.pruned.map(\.name)
+
+    for candidate in builds.pruned + caches.pruned {
+      let size = directorySize(candidate.url)
+      if !dryRun {
+        do {
+          try fileManager.removeItem(at: candidate.url)
+        } catch {
+          log("retention: could not remove \(candidate.name): \(error)")
+          continue
+        }
+      }
+      summary.freedBytes += size
+    }
+
+    if !summary.isEmpty {
+      let freed = ByteCountFormatter.string(fromByteCount: summary.freedBytes, countStyle: .file)
+      let verb = dryRun ? "would prune" : "pruned"
+      log(
+        """
+        retention: \(verb) \(summary.prunedBuilds.count) build(s) and \
+        \(summary.prunedSourceCaches.count) source cache(s), freeing \(freed) — \
+        keeping builds [\(summary.keptBuilds.joined(separator: ", "))], \
+        caches [\(summary.keptSourceCaches.joined(separator: ", "))]
+        """
+      )
+    }
+    return summary
+  }
+
+  private struct RetentionCandidate {
+    var url: URL
+    var name: String
+  }
+
+  /// Splits the directories in `directory` into those retention keeps and those it drops. Sorted
+  /// newest first, pinned entries claim their slots before the newest fill the remainder, and a
+  /// pinned entry is never dropped even when the limit is already spent.
+  private func partition(
+    directoriesIn directory: URL,
+    prefix: String,
+    keeping limit: Int,
+    pinned: Set<String>
+  ) -> (kept: [RetentionCandidate], pruned: [RetentionCandidate]) {
+    let keys: [URLResourceKey] = [.isDirectoryKey, .creationDateKey, .contentModificationDateKey]
+    // `.skipsHiddenFiles` also skips the `.building-` scratch directories, which are
+    // `cleanupInterruptedBuilds()`'s job, not retention's.
+    guard let contents = try? fileManager.contentsOfDirectory(
+      at: directory,
+      includingPropertiesForKeys: keys,
+      options: [.skipsHiddenFiles]
+    ) else {
+      return ([], [])
+    }
+    let candidates = contents
+      .filter { $0.lastPathComponent.hasPrefix(prefix) }
+      .compactMap { url -> (candidate: RetentionCandidate, date: Date)? in
+        let values = try? url.resourceValues(forKeys: Set(keys))
+        guard values?.isDirectory == true else { return nil }
+        let date = values?.creationDate ?? values?.contentModificationDate ?? .distantPast
+        return (RetentionCandidate(url: url, name: url.lastPathComponent), date)
+      }
+      .sorted { ($0.date, $0.candidate.name) > ($1.date, $1.candidate.name) }
+      .map(\.candidate)
+
+    var keepNames = Set(candidates.map(\.name).filter(pinned.contains))
+    var remainingSlots = max(0, limit - keepNames.count)
+    for candidate in candidates where !keepNames.contains(candidate.name) {
+      guard remainingSlots > 0 else { break }
+      keepNames.insert(candidate.name)
+      remainingSlots -= 1
+    }
+    return (
+      kept: candidates.filter { keepNames.contains($0.name) },
+      pruned: candidates.filter { !keepNames.contains($0.name) }
+    )
+  }
+
+  private func directorySize(_ url: URL) -> Int64 {
+    let keys: Set<URLResourceKey> = [.totalFileAllocatedSizeKey, .fileSizeKey]
+    guard let enumerator = fileManager.enumerator(
+      at: url,
+      includingPropertiesForKeys: Array(keys)
+    ) else {
+      return 0
+    }
+    var total: Int64 = 0
+    for case let fileURL as URL in enumerator {
+      let values = try? fileURL.resourceValues(forKeys: keys)
+      total += Int64(values?.totalFileAllocatedSize ?? values?.fileSize ?? 0)
+    }
+    return total
+  }
+
+  /// Engine-level line of output. Under launchd this lands in `launch-agent.log`, which is where
+  /// housekeeping needs to be visible — otherwise pruning happens silently.
+  private func log(_ message: String) {
+    FileHandle.standardOutput.write(Data("[engine] \(message)\n".utf8))
   }
 
   private func sourceCacheVersion(sources: CatalogSourceVersions) throws -> String {

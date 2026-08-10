@@ -54,6 +54,9 @@ struct CommandLineRunner {
         progress: progress
       )
       print(outcome.rawValue)
+    case "prune":
+      let summary = try engine.pruneArtifacts(dryRun: arguments.contains("--dry-run"))
+      print(try jsonString(summary))
     case "status":
       print(try jsonString(engine.loadState()))
     default:

@@ -92,14 +92,41 @@ public struct CatalogPipeline: Sendable {
       withIntermediateDirectories: true
     )
     try fileManager.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
-    for url in [
-      databaseURL,
-      URL(fileURLWithPath: databaseURL.path + "-wal"),
-      URL(fileURLWithPath: databaseURL.path + "-shm"),
-    ] where fileManager.fileExists(atPath: url.path) {
+    for url in [databaseURL] + Self.sidecarURLs(for: databaseURL)
+    where fileManager.fileExists(atPath: url.path) {
       try fileManager.removeItem(at: url)
     }
 
+    // `ingest` owns the only connection to the catalog, so returning from it releases and closes
+    // that connection. Only then are the WAL sidecars dead files rather than live state — clearing
+    // them here is what keeps a finished build directory from retaining a ~1 MB `-shm` forever.
+    let result = try await ingest(
+      inputs: inputs,
+      databaseURL: databaseURL,
+      temporaryDirectory: temporaryDirectory,
+      progress: progress
+    )
+    for url in Self.sidecarURLs(for: databaseURL) where fileManager.fileExists(atPath: url.path) {
+      try fileManager.removeItem(at: url)
+    }
+    return result
+  }
+
+  /// The WAL sidecars SQLite writes next to a database file.
+  public static func sidecarURLs(for databaseURL: URL) -> [URL] {
+    [
+      URL(fileURLWithPath: databaseURL.path + "-wal"),
+      URL(fileURLWithPath: databaseURL.path + "-shm"),
+    ]
+  }
+
+  private func ingest(
+    inputs: CatalogBuildInputs,
+    databaseURL: URL,
+    temporaryDirectory: URL,
+    progress: (@Sendable (CatalogPipelineProgress) async -> Void)?
+  ) async throws -> CatalogPipelineResult {
+    let fileManager = FileManager.default
     await progress?(CatalogPipelineProgress(stage: .preparing))
     let database = try CardDatabase(storage: .file(databaseURL))
     try database.resetForStreamingCatalogBuild()

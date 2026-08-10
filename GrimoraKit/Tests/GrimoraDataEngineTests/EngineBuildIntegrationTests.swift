@@ -58,6 +58,24 @@ struct EngineBuildIntegrationTests {
     #expect(engine.lastLocalBuild()?.manifest.version == result.manifest.version)
   }
 
+  /// A finished build directory should hold the catalog and its published sidecars — not SQLite's
+  /// WAL scratch files. Those used to survive every build, leaking ~1 MB per build directory.
+  @Test
+  func buildLeavesNoSQLiteWALScratchBehind() async throws {
+    let (engine, root, _) = try makeEngine()
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let result = try await engine.build(force: true)
+
+    let leftovers = try FileManager.default.contentsOfDirectory(
+      at: result.directory,
+      includingPropertiesForKeys: nil
+    )
+    .map(\.lastPathComponent)
+    .filter { $0.hasSuffix("-wal") || $0.hasSuffix("-shm") }
+    #expect(leftovers.isEmpty, "build directory retained SQLite scratch files: \(leftovers)")
+  }
+
   @Test
   func runSkipsWhenSourcesUnchanged() async throws {
     let (engine, root, _) = try makeEngine()
