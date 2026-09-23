@@ -57,11 +57,15 @@ enum EngineFixtures {
   static let scryfallDownloadURL = URL(
     string: "https://data.scryfall.io/default-cards/fixture.jsonl.gz"
   )!
+  static let oracleTagsDownloadURL = URL(
+    string: "https://data.scryfall.io/oracle-tags/fixture.jsonl.gz"
+  )!
 
   static func responses() throws -> [URL: Data] {
     [
       BulkDataClient.bulkDataURL: bulkManifestJSON(),
       scryfallDownloadURL: try defaultCardsJSONLinesGzipped(),
+      oracleTagsDownloadURL: try gzip(oracleTagsJSONLines()),
       MTGJSONPriceHistoryClient.metaURL: mtgjsonMetaJSON(),
       MTGJSONPriceHistoryClient.allPrintingsURL: try gzip(mtgjsonPrintingsJSON()),
       MTGJSONPriceHistoryClient.allPricesURL: try gzip(mtgjsonPricesJSON()),
@@ -84,6 +88,17 @@ enum EngineFixtures {
           "description": "Engine fixture",
           "compressed_size": 123,
           "jsonl_download_uri": "\(scryfallDownloadURL.absoluteString)"
+        },
+        {
+          "object": "bulk_data",
+          "id": "bulk-oracle-tags",
+          "type": "oracle_tags",
+          "updated_at": "2026-06-14T21:00:00.000+00:00",
+          "uri": "https://api.scryfall.com/bulk-data/bulk-oracle-tags",
+          "name": "Oracle Tags",
+          "description": "Engine fixture",
+          "compressed_size": 123,
+          "jsonl_download_uri": "\(oracleTagsDownloadURL.absoluteString)"
         }
       ]
     }
@@ -157,6 +172,12 @@ enum EngineFixtures {
         "rarity": "rare"
       }
     ]
+    """.utf8)
+  }
+
+  static func oracleTagsJSONLines() -> Data {
+    Data("""
+    {"object":"tag","id":"tag-draw-engine","label":"draw engine","slug":"draw-engine","type":"oracle","uri":"https://tagger.scryfall.com/tags/card/draw-engine","description":"Repeatable card draw.","parent_ids":[],"child_ids":[],"aliases":["card-draw-engine"],"taggings":[{"oracle_id":"oracle-engine-forest","weight":"median","annotation":"fixture"}]}
     """.utf8)
   }
 

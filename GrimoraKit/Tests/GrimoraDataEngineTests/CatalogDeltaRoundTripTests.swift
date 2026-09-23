@@ -576,6 +576,7 @@ private enum DeltaTestFixture {
     [
       BulkDataClient.bulkDataURL: bulkManifestJSON(),
       EngineFixtures.scryfallDownloadURL: defaultCardsJSON(),
+      EngineFixtures.oracleTagsDownloadURL: try EngineFixtures.gzip(EngineFixtures.oracleTagsJSONLines()),
       MTGJSONPriceHistoryClient.metaURL: metaJSON(),
       MTGJSONPriceHistoryClient.allPrintingsURL: try EngineFixtures.gzip(printingsJSON()),
       MTGJSONPriceHistoryClient.allPricesURL: try EngineFixtures.gzip(pricesJSON()),
@@ -593,6 +594,12 @@ private enum DeltaTestFixture {
           "name": "Default Cards", "description": "fixture", "size": 123,
           "download_uri": "\(EngineFixtures.scryfallDownloadURL.absoluteString)",
           "content_type": "application/json", "content_encoding": "gzip"
+        }, {
+          "object": "bulk_data", "id": "bulk-oracle-tags", "type": "oracle_tags",
+          "updated_at": "2026-06-14T21:00:00.000+00:00",
+          "uri": "https://api.scryfall.com/bulk-data/bulk-oracle-tags",
+          "name": "Oracle Tags", "description": "fixture", "compressed_size": 123,
+          "jsonl_download_uri": "\(EngineFixtures.oracleTagsDownloadURL.absoluteString)"
         }]
       }
       """.utf8)

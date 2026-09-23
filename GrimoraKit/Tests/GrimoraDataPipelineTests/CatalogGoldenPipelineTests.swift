@@ -171,10 +171,12 @@ struct FixtureWorkspace {
 
   func makeBuildInputs() throws -> CatalogBuildInputs {
     let scryfallURL = try copyFixture("scryfall-default-cards", extension: "json")
+    let oracleTagsURL = try copyFixture("oracle-tags-sample", extension: "jsonl")
     let identifiersGzip = try gzippedFixture("mtgjson-allprintings", to: "mtgjson-allprintings.json.gz")
     let pricesGzip = try gzippedFixture("mtgjson-allprices", to: "mtgjson-allprices.json.gz")
     return CatalogBuildInputs(
       scryfallJSONURL: scryfallURL,
+      oracleTagsJSONLURL: oracleTagsURL,
       mtgjsonIdentifiersGzipURL: identifiersGzip,
       mtgjsonPricesGzipURL: pricesGzip,
       sources: CatalogSourceVersions(

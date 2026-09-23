@@ -121,7 +121,7 @@ let package = Package(
         ),
         .testTarget(
             name: "GrimoraDataEngineTests",
-            dependencies: ["GrimoraCore", "GrimoraEngineKit"]
+            dependencies: ["GrimoraCore", "GrimoraDataPipeline", "GrimoraEngineKit"]
         ),
         .testTarget(
             name: "GrimoraUITests",

@@ -30,5 +30,12 @@ public struct CatalogUpdateCheck: Sendable, Equatable {
       || lastBuilt.mtgjsonVersion != current.mtgjsonVersion
   }
 
-  public var updateAvailable: Bool { scryfallChanged || mtgjsonChanged }
+  /// Scryfall Oracle Tags changed since the last build (or there is no prior build).
+  public var oracleTagsChanged: Bool {
+    guard let lastBuilt else { return true }
+    return lastBuilt.oracleTagsUpdatedAt != current.oracleTagsUpdatedAt
+      || lastBuilt.oracleTagsDownloadURI != current.oracleTagsDownloadURI
+  }
+
+  public var updateAvailable: Bool { scryfallChanged || mtgjsonChanged || oracleTagsChanged }
 }

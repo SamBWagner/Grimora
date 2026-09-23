@@ -1,5 +1,6 @@
 import Foundation
 import GrimoraCore
+import GrimoraDataPipeline
 import GrimoraEngineKit
 import Testing
 
@@ -98,6 +99,129 @@ struct EngineBuildIntegrationTests {
     let check = try await engine.checkForUpdate()
     #expect(check.current.mtgjsonVersion == "5.3.0")
     #expect(check.current.mtgjsonDate == "2026-06-14")
+    #expect(check.current.oracleTagsUpdatedAt == "2026-06-14T21:00:00.000+00:00")
+    #expect(check.current.oracleTagsDownloadURI == EngineFixtures.oracleTagsDownloadURL)
     #expect(check.lastBuilt == nil)
+  }
+
+  @Test
+  func buildCachesExpandedOracleTagsAndReportsDistinctProgress() async throws {
+    let (engine, root, network) = try makeEngine()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let progressRecorder = EngineProgressRecorder()
+
+    let result = try await engine.build(force: true) { progress in
+      await progressRecorder.record(progress)
+    }
+
+    let cacheRoot = root.appendingPathComponent("cache", isDirectory: true)
+    let sourceDirectory = try #require(
+      FileManager.default.contentsOfDirectory(
+        at: cacheRoot,
+        includingPropertiesForKeys: [.isDirectoryKey]
+      ).first
+    )
+    let oracleTagsURL = sourceDirectory.appendingPathComponent("scryfall-oracle-tags.jsonl")
+    #expect(FileManager.default.fileExists(atPath: oracleTagsURL.path))
+    #expect(!FileManager.default.fileExists(
+      atPath: sourceDirectory.appendingPathComponent("scryfall-oracle-tags.download").path
+    ))
+    #expect(!FileManager.default.fileExists(
+      atPath: sourceDirectory.appendingPathComponent("scryfall-oracle-tags.expanding").path
+    ))
+
+    var tags: [ScryfallOracleTagDTO] = []
+    try await ScryfallOracleTagStreamScanner.scan(url: oracleTagsURL) { tags.append($0) }
+    #expect(tags.map(\.slug) == ["draw-engine"])
+
+    let progressDetails = await progressRecorder.values().compactMap(\.detail)
+    #expect(progressDetails.contains("Scryfall Oracle Tags"))
+    #expect(progressDetails.contains("Expanding Scryfall Oracle Tags"))
+    let recordedURLs = await network.recordedURLs()
+    #expect(recordedURLs.contains(EngineFixtures.oracleTagsDownloadURL))
+    // `currentSources` resolves both Scryfall manifests. The build may refresh the default-card
+    // manifest, but Oracle Tags must use the exact timestamped URI captured in source identity.
+    #expect(recordedURLs.filter { $0 == BulkDataClient.bulkDataURL }.count == 3)
+
+    let database = try SQLiteDatabase(
+      storage: .readOnlyFile(result.directory.appendingPathComponent("catalog.sqlite"))
+    )
+    let statement = try database.prepare(
+      "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name LIKE 'semantic_%'"
+    )
+    _ = try statement.step()
+    #expect(statement.int(at: 0) == 0)
+  }
+
+  @Test
+  func buildRecoversFromStaleOracleTagsDownloadAndExpansionFiles() async throws {
+    let (engine, root, _) = try makeEngine()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try await engine.build(force: true)
+
+    let sourceDirectory = try #require(
+      FileManager.default.contentsOfDirectory(
+        at: root.appendingPathComponent("cache", isDirectory: true),
+        includingPropertiesForKeys: [.isDirectoryKey]
+      ).first
+    )
+    let finalURL = sourceDirectory.appendingPathComponent("scryfall-oracle-tags.jsonl")
+    let downloadURL = sourceDirectory.appendingPathComponent("scryfall-oracle-tags.download")
+    let expandingURL = sourceDirectory.appendingPathComponent("scryfall-oracle-tags.expanding")
+    try FileManager.default.removeItem(at: finalURL)
+    try Data("partial download".utf8).write(to: downloadURL)
+    try Data("partial expansion".utf8).write(to: expandingURL)
+
+    _ = try await engine.build(force: true)
+
+    var tags: [ScryfallOracleTagDTO] = []
+    try await ScryfallOracleTagStreamScanner.scan(url: finalURL) { tags.append($0) }
+    #expect(tags.map(\.slug) == ["draw-engine"])
+    #expect(!FileManager.default.fileExists(atPath: downloadURL.path))
+    #expect(!FileManager.default.fileExists(atPath: expandingURL.path))
+  }
+
+  @Test
+  func buildRemovesStaleOracleTagsStagingFilesBesideValidCacheWithoutRedownloading() async throws {
+    let (engine, root, network) = try makeEngine()
+    defer { try? FileManager.default.removeItem(at: root) }
+    _ = try await engine.build(force: true)
+
+    let sourceDirectory = try #require(
+      FileManager.default.contentsOfDirectory(
+        at: root.appendingPathComponent("cache", isDirectory: true),
+        includingPropertiesForKeys: [.isDirectoryKey]
+      ).first
+    )
+    let finalURL = sourceDirectory.appendingPathComponent("scryfall-oracle-tags.jsonl")
+    let downloadURL = sourceDirectory.appendingPathComponent("scryfall-oracle-tags.download")
+    let expandingURL = sourceDirectory.appendingPathComponent("scryfall-oracle-tags.expanding")
+    try Data("stale download".utf8).write(to: downloadURL)
+    try Data("stale expansion".utf8).write(to: expandingURL)
+    let downloadCountBefore = await network.recordedURLs()
+      .filter { $0 == EngineFixtures.oracleTagsDownloadURL }.count
+
+    _ = try await engine.build(force: true)
+
+    var tags: [ScryfallOracleTagDTO] = []
+    try await ScryfallOracleTagStreamScanner.scan(url: finalURL) { tags.append($0) }
+    #expect(tags.map(\.slug) == ["draw-engine"])
+    #expect(!FileManager.default.fileExists(atPath: downloadURL.path))
+    #expect(!FileManager.default.fileExists(atPath: expandingURL.path))
+    let downloadCountAfter = await network.recordedURLs()
+      .filter { $0 == EngineFixtures.oracleTagsDownloadURL }.count
+    #expect(downloadCountAfter == downloadCountBefore)
+  }
+}
+
+private actor EngineProgressRecorder {
+  private var progress: [EngineRunProgress] = []
+
+  func record(_ value: EngineRunProgress) {
+    progress.append(value)
+  }
+
+  func values() -> [EngineRunProgress] {
+    progress
   }
 }

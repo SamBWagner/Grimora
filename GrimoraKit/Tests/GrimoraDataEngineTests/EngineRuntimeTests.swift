@@ -120,3 +120,45 @@ func catalogVersionIncludesArtifactPipelineAndEnrichmentIdentity() throws {
   #expect(baseline != changedPipeline)
   #expect(baseline != changedEnrichment)
 }
+
+@Test
+func updateCheckDetectsOracleTagsOnlySourceChange() {
+  let lastBuilt = CatalogSourceVersions(
+    scryfallUpdatedAt: "2026-09-22T09:00:00.000+00:00",
+    mtgjsonDate: "2026-09-22",
+    mtgjsonVersion: "5.3.0",
+    oracleTagsUpdatedAt: "2026-09-21T21:00:00.000+00:00",
+    oracleTagsDownloadURI: URL(string: "https://data.scryfall.io/oracle-tags/oracle-tags.jsonl.gz")
+  )
+  let current = CatalogSourceVersions(
+    scryfallUpdatedAt: lastBuilt.scryfallUpdatedAt,
+    mtgjsonDate: lastBuilt.mtgjsonDate,
+    mtgjsonVersion: lastBuilt.mtgjsonVersion,
+    oracleTagsUpdatedAt: "2026-09-22T21:00:31.331+00:00",
+    oracleTagsDownloadURI: lastBuilt.oracleTagsDownloadURI
+  )
+
+  let check = CatalogUpdateCheck(current: current, lastBuilt: lastBuilt)
+
+  #expect(check.scryfallChanged == false)
+  #expect(check.mtgjsonChanged == false)
+  #expect(check.oracleTagsChanged)
+  #expect(check.updateAvailable)
+}
+
+@Test
+func legacyCatalogSourceVersionsDecodeWithoutOracleTagsIdentity() throws {
+  let data = Data("""
+    {
+      "scryfallUpdatedAt": "2026-06-14",
+      "mtgjsonDate": "2026-06-14",
+      "mtgjsonVersion": "5.3.0"
+    }
+    """.utf8)
+
+  let sources = try JSONDecoder().decode(CatalogSourceVersions.self, from: data)
+
+  #expect(sources.scryfallUpdatedAt == "2026-06-14")
+  #expect(sources.oracleTagsUpdatedAt == nil)
+  #expect(sources.oracleTagsDownloadURI == nil)
+}

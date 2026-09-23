@@ -9,17 +9,20 @@ public protocol CatalogEnrichmentStage: Sendable {
 
 public struct CatalogBuildInputs: Sendable {
   public var scryfallJSONURL: URL
+  public var oracleTagsJSONLURL: URL
   public var mtgjsonIdentifiersGzipURL: URL
   public var mtgjsonPricesGzipURL: URL
   public var sources: CatalogSourceVersions
 
   public init(
     scryfallJSONURL: URL,
+    oracleTagsJSONLURL: URL,
     mtgjsonIdentifiersGzipURL: URL,
     mtgjsonPricesGzipURL: URL,
     sources: CatalogSourceVersions
   ) {
     self.scryfallJSONURL = scryfallJSONURL
+    self.oracleTagsJSONLURL = oracleTagsJSONLURL
     self.mtgjsonIdentifiersGzipURL = mtgjsonIdentifiersGzipURL
     self.mtgjsonPricesGzipURL = mtgjsonPricesGzipURL
     self.sources = sources

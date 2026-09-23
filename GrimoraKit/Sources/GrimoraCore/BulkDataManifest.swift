@@ -89,10 +89,27 @@ public final class BulkDataClient: Sendable {
                 .decode(CatalogManifest.self, from: data)
                 .bulkDataManifest
         }
+        return try await fetchScryfallManifest(
+            type: "default_cards",
+            missingError: .defaultCardsMissing
+        )
+    }
+
+    public func fetchOracleTagsManifest() async throws -> BulkDataManifest {
+        try await fetchScryfallManifest(
+            type: "oracle_tags",
+            missingError: .oracleTagsMissing
+        )
+    }
+
+    private func fetchScryfallManifest(
+        type: String,
+        missingError: BulkDataClientError
+    ) async throws -> BulkDataManifest {
         let data = try await network.data(from: Self.bulkDataURL, purpose: .manifestCheck)
         let response = try decoder.decode(BulkDataListResponse.self, from: data)
-        guard let manifest = response.data.first(where: { $0.type == "default_cards" }) else {
-            throw BulkDataClientError.defaultCardsMissing
+        guard let manifest = response.data.first(where: { $0.type == type }) else {
+            throw missingError
         }
         return manifest
     }
@@ -102,6 +119,34 @@ public final class BulkDataClient: Sendable {
         to destination: URL,
         purpose: NetworkPurpose = .bulkDownload,
         progress: (@Sendable (NetworkDownloadProgress) async -> Void)? = nil
+    ) async throws {
+        try await download(
+            manifest: manifest,
+            to: destination,
+            purpose: purpose,
+            progress: progress
+        )
+    }
+
+    public func downloadOracleTags(
+        manifest: BulkDataManifest,
+        to destination: URL,
+        purpose: NetworkPurpose = .bulkDownload,
+        progress: (@Sendable (NetworkDownloadProgress) async -> Void)? = nil
+    ) async throws {
+        try await download(
+            manifest: manifest,
+            to: destination,
+            purpose: purpose,
+            progress: progress
+        )
+    }
+
+    private func download(
+        manifest: BulkDataManifest,
+        to destination: URL,
+        purpose: NetworkPurpose,
+        progress: (@Sendable (NetworkDownloadProgress) async -> Void)?
     ) async throws {
         try await network.download(
             from: manifest.downloadURI,
@@ -142,5 +187,6 @@ public final class BulkDataClient: Sendable {
 
 public enum BulkDataClientError: Error, Equatable, Sendable {
     case defaultCardsMissing
+    case oracleTagsMissing
     case chainUnavailable
 }

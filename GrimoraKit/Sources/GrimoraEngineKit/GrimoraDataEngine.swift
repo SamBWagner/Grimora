@@ -8,6 +8,7 @@ public enum EngineError: Error, CustomStringConvertible {
   case missingArtifact(URL)
   case missingManifest(URL)
   case missingConfiguration(String)
+  case missingOracleTagsSourceIdentity
   case missingTigrisCredentials
   case noLocalBuild
 
@@ -31,6 +32,8 @@ public enum EngineError: Error, CustomStringConvertible {
       "catalog manifest does not exist at \(url.path)"
     case .missingConfiguration(let name):
       "missing required configuration \(name)"
+    case .missingOracleTagsSourceIdentity:
+      "Oracle Tags source identity is missing from the current build sources"
     case .missingTigrisCredentials:
       "Tigris credentials are missing from the environment and macOS Keychain"
     }
@@ -531,12 +534,16 @@ public struct GrimoraDataEngine {
   }
 
   private func currentSources() async throws -> CatalogSourceVersions {
-    let scryfall = try await BulkDataClient(network: network).fetchDefaultCardsManifest()
+    let bulkDataClient = BulkDataClient(network: network)
+    let scryfall = try await bulkDataClient.fetchDefaultCardsManifest()
+    let oracleTags = try await bulkDataClient.fetchOracleTagsManifest()
     let mtgjson = try await MTGJSONPriceHistoryClient(network: network).fetchMeta()
     return CatalogSourceVersions(
       scryfallUpdatedAt: scryfall.updatedAt,
       mtgjsonDate: mtgjson.date,
-      mtgjsonVersion: mtgjson.version
+      mtgjsonVersion: mtgjson.version,
+      oracleTagsUpdatedAt: oracleTags.updatedAt,
+      oracleTagsDownloadURI: oracleTags.downloadURI
     )
   }
 
@@ -561,38 +568,81 @@ public struct GrimoraDataEngine {
       }
     }
 
-    let scryfallManifest = try await BulkDataClient(network: network).fetchDefaultCardsManifest()
+    let bulkDataClient = BulkDataClient(network: network)
+    let scryfallManifest = try await bulkDataClient.fetchDefaultCardsManifest()
+    guard let oracleTagsUpdatedAt = sources.oracleTagsUpdatedAt,
+      let oracleTagsDownloadURI = sources.oracleTagsDownloadURI
+    else {
+      throw EngineError.missingOracleTagsSourceIdentity
+    }
+    let oracleTagsManifest = BulkDataManifest(
+      id: "oracle-tags-\(oracleTagsUpdatedAt)",
+      type: "oracle_tags",
+      updatedAt: oracleTagsUpdatedAt,
+      name: "Oracle Tags",
+      size: 0,
+      downloadURI: oracleTagsDownloadURI
+    )
     let scryfallURL = sourceDirectory.appendingPathComponent("scryfall-default-cards.json")
+    let oracleTagsURL = sourceDirectory.appendingPathComponent("scryfall-oracle-tags.jsonl")
     let identifiersURL = sourceDirectory.appendingPathComponent("mtgjson-identifiers.json.gz")
     let pricesURL = sourceDirectory.appendingPathComponent("mtgjson-prices.json.gz")
+    let scryfallStagedURL = sourceDirectory.appendingPathComponent("scryfall-default-cards.download")
+    let scryfallExpandedURL = sourceDirectory.appendingPathComponent("scryfall-default-cards.expanding")
+    let oracleTagsStagedURL = sourceDirectory.appendingPathComponent("scryfall-oracle-tags.download")
+    let oracleTagsExpandedURL = sourceDirectory.appendingPathComponent("scryfall-oracle-tags.expanding")
+    func removeIfPresent(_ url: URL) throws {
+      if fileManager.fileExists(atPath: url.path) {
+        try fileManager.removeItem(at: url)
+      }
+    }
+
+    if fileManager.fileExists(atPath: scryfallURL.path) {
+      try removeIfPresent(scryfallStagedURL)
+      try removeIfPresent(scryfallExpandedURL)
+    }
     if !fileManager.fileExists(atPath: scryfallURL.path) {
       // Scryfall now serves the bulk artifact gzipped, so stage the download and expand it before
       // handing the plain stream to the pipeline scanner.
-      let stagedURL = sourceDirectory.appendingPathComponent("scryfall-default-cards.download")
-      if fileManager.fileExists(atPath: stagedURL.path) {
-        try fileManager.removeItem(at: stagedURL)
-      }
-      try await BulkDataClient(network: network)
-        .downloadDefaultCards(
-          manifest: scryfallManifest,
-          to: stagedURL,
-          progress: downloadReporter("Scryfall card data")
-        )
-      if try Self.isGzipped(stagedURL) {
+      try removeIfPresent(scryfallStagedURL)
+      try removeIfPresent(scryfallExpandedURL)
+      try await bulkDataClient.downloadDefaultCards(
+        manifest: scryfallManifest,
+        to: scryfallStagedURL,
+        progress: downloadReporter("Scryfall card data")
+      )
+      if try Self.isGzipped(scryfallStagedURL) {
         await report(EngineRunProgress(phase: .downloading, detail: "Expanding Scryfall card data"))
         // Expand to a side file and only then move into place. `downloadInputs` treats the mere
         // existence of `scryfallURL` as "already fetched", so a decompress interrupted partway —
         // which is routine when the machine sleeps mid-run — must never leave a truncated file for
         // a later run to silently ingest.
-        let expandedURL = sourceDirectory.appendingPathComponent("scryfall-default-cards.expanding")
-        if fileManager.fileExists(atPath: expandedURL.path) {
-          try fileManager.removeItem(at: expandedURL)
-        }
-        try GzipArchive.decompressFile(at: stagedURL, to: expandedURL)
-        try fileManager.moveItem(at: expandedURL, to: scryfallURL)
-        try fileManager.removeItem(at: stagedURL)
+        try GzipArchive.decompressFile(at: scryfallStagedURL, to: scryfallExpandedURL)
+        try fileManager.moveItem(at: scryfallExpandedURL, to: scryfallURL)
+        try fileManager.removeItem(at: scryfallStagedURL)
       } else {
-        try fileManager.moveItem(at: stagedURL, to: scryfallURL)
+        try fileManager.moveItem(at: scryfallStagedURL, to: scryfallURL)
+      }
+    }
+    if fileManager.fileExists(atPath: oracleTagsURL.path) {
+      try removeIfPresent(oracleTagsStagedURL)
+      try removeIfPresent(oracleTagsExpandedURL)
+    }
+    if !fileManager.fileExists(atPath: oracleTagsURL.path) {
+      try removeIfPresent(oracleTagsStagedURL)
+      try removeIfPresent(oracleTagsExpandedURL)
+      try await bulkDataClient.downloadOracleTags(
+        manifest: oracleTagsManifest,
+        to: oracleTagsStagedURL,
+        progress: downloadReporter("Scryfall Oracle Tags")
+      )
+      if try Self.isGzipped(oracleTagsStagedURL) {
+        await report(EngineRunProgress(phase: .downloading, detail: "Expanding Scryfall Oracle Tags"))
+        try GzipArchive.decompressFile(at: oracleTagsStagedURL, to: oracleTagsExpandedURL)
+        try fileManager.moveItem(at: oracleTagsExpandedURL, to: oracleTagsURL)
+        try fileManager.removeItem(at: oracleTagsStagedURL)
+      } else {
+        try fileManager.moveItem(at: oracleTagsStagedURL, to: oracleTagsURL)
       }
     }
     let mtgjsonClient = MTGJSONPriceHistoryClient(network: network)
@@ -610,6 +660,7 @@ public struct GrimoraDataEngine {
     }
     return CatalogBuildInputs(
       scryfallJSONURL: scryfallURL,
+      oracleTagsJSONLURL: oracleTagsURL,
       mtgjsonIdentifiersGzipURL: identifiersURL,
       mtgjsonPricesGzipURL: pricesURL,
       sources: sources

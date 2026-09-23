@@ -40,6 +40,27 @@ final class BulkDataAndUpdateTests: XCTestCase {
         XCTAssertEqual(manifest.updatedAt, "2026-07-31T21:10:28.315+00:00")
     }
 
+    func testBulkDataClientSelectsOracleTagsWithoutChangingDefaultCardsSelection() async throws {
+        let defaultCardsURL = URL(string: "https://data.scryfall.io/default-cards/default-cards.jsonl.gz")!
+        let oracleTagsURL = URL(string: "https://data.scryfall.io/oracle-tags/oracle-tags.jsonl.gz")!
+        let network = RecordingNetworkClient(dataResponses: [
+            BulkDataClient.bulkDataURL: manifestListJSON(entries: [
+                (type: "oracle_tags", updatedAt: "2026-09-22T21:00:31.331+00:00", downloadURL: oracleTagsURL),
+                (type: "default_cards", updatedAt: "2026-09-22T09:00:00.000+00:00", downloadURL: defaultCardsURL),
+            ])
+        ])
+        let client = BulkDataClient(network: network)
+
+        let defaultCards = try await client.fetchDefaultCardsManifest()
+        let oracleTags = try await client.fetchOracleTagsManifest()
+
+        XCTAssertEqual(defaultCards.type, "default_cards")
+        XCTAssertEqual(defaultCards.downloadURI, defaultCardsURL)
+        XCTAssertEqual(oracleTags.type, "oracle_tags")
+        XCTAssertEqual(oracleTags.updatedAt, "2026-09-22T21:00:31.331+00:00")
+        XCTAssertEqual(oracleTags.downloadURI, oracleTagsURL)
+    }
+
     func testBulkDataClientFailsWhenDefaultCardsManifestIsMissing() async throws {
         let network = RecordingNetworkClient(dataResponses: [
             BulkDataClient.bulkDataURL: manifestListJSON(type: "oracle_cards", downloadURL: URL(string: "https://example.test/oracle.json")!)
@@ -50,6 +71,22 @@ final class BulkDataAndUpdateTests: XCTestCase {
             _ = try await client.fetchDefaultCardsManifest()
             XCTFail("Expected missing default cards error")
         } catch BulkDataClientError.defaultCardsMissing {
+        }
+    }
+
+    func testBulkDataClientFailsWhenOracleTagsManifestIsMissing() async throws {
+        let network = RecordingNetworkClient(dataResponses: [
+            BulkDataClient.bulkDataURL: manifestListJSON(
+                type: "default_cards",
+                downloadURL: URL(string: "https://example.test/default.json")!
+            )
+        ])
+        let client = BulkDataClient(network: network)
+
+        do {
+            _ = try await client.fetchOracleTagsManifest()
+            XCTFail("Expected missing Oracle Tags error")
+        } catch BulkDataClientError.oracleTagsMissing {
         }
     }
 
@@ -874,6 +911,33 @@ final class BulkDataAndUpdateTests: XCTestCase {
               "content_encoding": "gzip"
             }
           ]
+        }
+        """.utf8)
+    }
+
+    private func manifestListJSON(
+        entries: [(type: String, updatedAt: String, downloadURL: URL)]
+    ) -> Data {
+        let objects = entries.map { entry in
+            """
+            {
+              "object": "bulk_data",
+              "id": "bulk-\(entry.type)",
+              "type": "\(entry.type)",
+              "updated_at": "\(entry.updatedAt)",
+              "uri": "https://api.scryfall.com/bulk-data/bulk-\(entry.type)",
+              "name": "\(entry.type)",
+              "description": "Fixture",
+              "jsonl_download_uri": "\(entry.downloadURL.absoluteString)",
+              "compressed_size": 123
+            }
+            """
+        }
+        return Data("""
+        {
+          "object": "list",
+          "has_more": false,
+          "data": [\(objects.joined(separator: ","))]
         }
         """.utf8)
     }

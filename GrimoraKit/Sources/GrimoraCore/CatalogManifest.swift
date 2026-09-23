@@ -4,15 +4,21 @@ public struct CatalogSourceVersions: Codable, Equatable, Sendable {
   public var scryfallUpdatedAt: String
   public var mtgjsonDate: String
   public var mtgjsonVersion: String
+  public var oracleTagsUpdatedAt: String?
+  public var oracleTagsDownloadURI: URL?
 
   public init(
     scryfallUpdatedAt: String,
     mtgjsonDate: String,
-    mtgjsonVersion: String
+    mtgjsonVersion: String,
+    oracleTagsUpdatedAt: String? = nil,
+    oracleTagsDownloadURI: URL? = nil
   ) {
     self.scryfallUpdatedAt = scryfallUpdatedAt
     self.mtgjsonDate = mtgjsonDate
     self.mtgjsonVersion = mtgjsonVersion
+    self.oracleTagsUpdatedAt = oracleTagsUpdatedAt
+    self.oracleTagsDownloadURI = oracleTagsDownloadURI
   }
 }
 
