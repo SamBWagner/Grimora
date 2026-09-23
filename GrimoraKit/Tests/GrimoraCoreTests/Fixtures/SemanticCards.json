@@ -1,0 +1,70 @@
+{
+  "source": {
+    "provider": "Scryfall",
+    "capturedAt": "2026-09-23",
+    "oracleTagsUpdatedAt": "2026-09-22T21:00:31.331+00:00",
+    "oracleTagsDownloadURI": "https://data.scryfall.io/oracle-tags/oracle-tags-20260922210031.jsonl.gz"
+  },
+  "cards": [
+    {
+      "printingID": "0babfe00-9bad-48fc-b3b1-df8280242fd2",
+      "oracleID": "0fc64fd6-f057-4056-9dca-47accb7ff036",
+      "name": "Sythis, Harvest's Hand",
+      "benchmarkRole": "query"
+    },
+    {
+      "printingID": "89511ab5-8ea6-4f07-a80b-c1ec7e89924e",
+      "oracleID": "0fc64fd6-f057-4056-9dca-47accb7ff036",
+      "name": "Sythis, Harvest's Hand",
+      "benchmarkRole": "query-reprint"
+    },
+    {
+      "printingID": "df83d28d-bb0b-4f3d-a16f-8ee8bf452e10",
+      "oracleID": "aa321138-b1a7-4b8e-a2ca-b9ce65704e92",
+      "name": "Satyr Enchanter",
+      "benchmarkRole": "true-enchantress-analogue"
+    },
+    {
+      "printingID": "e31c544f-a748-4180-8366-9bb1622bb99d",
+      "oracleID": "aa321138-b1a7-4b8e-a2ca-b9ce65704e92",
+      "name": "Satyr Enchanter",
+      "benchmarkRole": "true-enchantress-analogue-reprint"
+    },
+    {
+      "printingID": "3f50538b-f866-4e75-8856-2ad8af635011",
+      "oracleID": "795b096a-2bce-4588-a2c9-abc5ea40dc0c",
+      "name": "Enchantress's Presence",
+      "benchmarkRole": "true-enchantress-analogue"
+    },
+    {
+      "printingID": "c4f9e9fc-8b89-40ee-9b20-10e4a23e6333",
+      "oracleID": "8f4b8a19-72f4-48ed-ac05-62a7c7525797",
+      "name": "Mesa Enchantress",
+      "benchmarkRole": "true-enchantress-analogue"
+    },
+    {
+      "printingID": "f882aa63-d43c-4359-9de6-77231500a08e",
+      "oracleID": "77ccbea1-70af-4194-adad-39a904221c75",
+      "name": "Eidolon of Blossoms",
+      "benchmarkRole": "near-enchantress-analogue"
+    },
+    {
+      "printingID": "daf4bcd2-3ae4-4803-9ea1-3bcc3de5ca59",
+      "oracleID": "5da7eea8-bb9e-47ce-a554-8a1ee058bd7a",
+      "name": "Beast Whisperer",
+      "benchmarkRole": "broad-cast-trigger-draw-engine"
+    },
+    {
+      "printingID": "d96266b3-a7cb-40ce-a328-ac13719fe5f0",
+      "oracleID": "f3fad295-1af2-4ecc-8546-b121ad6be27b",
+      "name": "Soul Warden",
+      "benchmarkRole": "lifegain-only"
+    },
+    {
+      "printingID": "7673784e-db4b-43a1-8d55-1bb9fc1e284f",
+      "oracleID": "4457ed35-7c10-48c8-9776-456485fdf070",
+      "name": "Lightning Bolt",
+      "benchmarkRole": "unrelated"
+    }
+  ]
+}

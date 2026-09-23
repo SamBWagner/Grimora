@@ -1,0 +1,285 @@
+{
+  "source": {
+    "provider": "Scryfall",
+    "capturedAt": "2026-09-23",
+    "oracleTagsUpdatedAt": "2026-09-22T21:00:31.331+00:00",
+    "oracleTagsDownloadURI": "https://data.scryfall.io/oracle-tags/oracle-tags-20260922210031.jsonl.gz"
+  },
+  "similarityDisabledRootSlugs": [
+    "card-names",
+    "cycle"
+  ],
+  "tags": [
+    {
+      "id": "a9b682a7-47ed-4d0d-8a2f-30e9d075525f",
+      "slug": "card-advantage",
+      "label": "card advantage",
+      "description": "Things that give you access to more cards.",
+      "aliases": [],
+      "parentIDs": [],
+      "taggings": []
+    },
+    {
+      "id": "5a0a0531-5462-477d-add9-886148c4413f",
+      "slug": "card-names",
+      "label": "card names",
+      "description": "A collection of tags identifying properties and naming schemes in cards.",
+      "aliases": ["naming scheme"],
+      "parentIDs": [],
+      "taggings": []
+    },
+    {
+      "id": "a3909e64-69d4-442e-8da1-fffa309492b8",
+      "slug": "alliteration",
+      "label": "alliteration",
+      "description": "Cards that alliterate, either properly or per Treacherous Trapezist.",
+      "aliases": [],
+      "parentIDs": ["5a0a0531-5462-477d-add9-886148c4413f"],
+      "taggings": [
+        {
+          "oracleID": "0fc64fd6-f057-4056-9dca-47accb7ff036",
+          "weight": "median",
+          "annotation": null
+        }
+      ]
+    },
+    {
+      "id": "1adda1a4-e23d-4212-a4da-58303a20e00c",
+      "slug": "cycle",
+      "label": "cycle",
+      "description": "All the cycles from Magic history.",
+      "aliases": [],
+      "parentIDs": [],
+      "taggings": []
+    },
+    {
+      "id": "ab4b1438-8ef6-49a8-965b-81599dfd5549",
+      "slug": "cycle-mh2-r-two-color-new",
+      "label": "cycle-mh2-r-two-color-new",
+      "description": null,
+      "aliases": [],
+      "parentIDs": ["1adda1a4-e23d-4212-a4da-58303a20e00c"],
+      "taggings": [
+        {
+          "oracleID": "0fc64fd6-f057-4056-9dca-47accb7ff036",
+          "weight": "median",
+          "annotation": null
+        }
+      ]
+    },
+    {
+      "id": "b6448c45-ce65-4848-aa98-2151e4e07437",
+      "slug": "draw",
+      "label": "draw",
+      "description": "Spells and abilities that textually draw you cards.",
+      "aliases": [],
+      "parentIDs": ["a9b682a7-47ed-4d0d-8a2f-30e9d075525f"],
+      "taggings": []
+    },
+    {
+      "id": "45ae9f00-85ba-47ee-b07f-fa5f2e838124",
+      "slug": "pure-draw",
+      "label": "pure draw",
+      "description": "Spells and abilities that let you draw cards without discarding cards or sacrificing permanents.",
+      "aliases": ["draw card"],
+      "parentIDs": ["b6448c45-ce65-4848-aa98-2151e4e07437"],
+      "taggings": []
+    },
+    {
+      "id": "8cb1bab7-38db-4f6b-bee4-15d5c26a879d",
+      "slug": "repeatable-card-advantage",
+      "label": "repeatable card advantage",
+      "description": "Things that give you access to more cards repeatedly.",
+      "aliases": [],
+      "parentIDs": ["a9b682a7-47ed-4d0d-8a2f-30e9d075525f"],
+      "taggings": []
+    },
+    {
+      "id": "544b4fd6-abf7-4ae3-846f-d8d1e134054c",
+      "slug": "repeatable-draw",
+      "label": "repeatable draw",
+      "description": "Draw cards repeatedly, whether or not the effect nets cards.",
+      "aliases": [],
+      "parentIDs": [
+        "b6448c45-ce65-4848-aa98-2151e4e07437",
+        "8cb1bab7-38db-4f6b-bee4-15d5c26a879d"
+      ],
+      "taggings": []
+    },
+    {
+      "id": "0e87cf9c-591e-4f2a-b4fd-675021f120ae",
+      "slug": "draw-engine",
+      "label": "draw engine",
+      "description": "Card draw effects that can net additional cards repeatedly over time.",
+      "aliases": [],
+      "parentIDs": ["544b4fd6-abf7-4ae3-846f-d8d1e134054c"],
+      "taggings": [
+        {"oracleID": "0fc64fd6-f057-4056-9dca-47accb7ff036", "weight": "median", "annotation": null},
+        {"oracleID": "aa321138-b1a7-4b8e-a2ca-b9ce65704e92", "weight": "median", "annotation": null},
+        {"oracleID": "795b096a-2bce-4588-a2c9-abc5ea40dc0c", "weight": "median", "annotation": null},
+        {"oracleID": "8f4b8a19-72f4-48ed-ac05-62a7c7525797", "weight": "median", "annotation": null},
+        {"oracleID": "77ccbea1-70af-4194-adad-39a904221c75", "weight": "median", "annotation": null},
+        {"oracleID": "5da7eea8-bb9e-47ce-a554-8a1ee058bd7a", "weight": "median", "annotation": null}
+      ]
+    },
+    {
+      "id": "524845ed-ea82-4a60-8b54-8a38ab06a503",
+      "slug": "repeatable-pure-draw",
+      "label": "repeatable pure draw",
+      "description": "Repeatable ways to draw a card with no additional cost or sacrifice.",
+      "aliases": [],
+      "parentIDs": [
+        "45ae9f00-85ba-47ee-b07f-fa5f2e838124",
+        "544b4fd6-abf7-4ae3-846f-d8d1e134054c"
+      ],
+      "taggings": [
+        {"oracleID": "0fc64fd6-f057-4056-9dca-47accb7ff036", "weight": "median", "annotation": null},
+        {"oracleID": "aa321138-b1a7-4b8e-a2ca-b9ce65704e92", "weight": "median", "annotation": null},
+        {"oracleID": "795b096a-2bce-4588-a2c9-abc5ea40dc0c", "weight": "median", "annotation": null},
+        {"oracleID": "8f4b8a19-72f4-48ed-ac05-62a7c7525797", "weight": "median", "annotation": null},
+        {"oracleID": "77ccbea1-70af-4194-adad-39a904221c75", "weight": "median", "annotation": null},
+        {"oracleID": "5da7eea8-bb9e-47ce-a554-8a1ee058bd7a", "weight": "median", "annotation": null}
+      ]
+    },
+    {
+      "id": "fe836fff-ab69-4e46-9ada-0733717862c4",
+      "slug": "synergy-enchantment",
+      "label": "synergy-enchantment",
+      "description": null,
+      "aliases": [],
+      "parentIDs": [],
+      "taggings": []
+    },
+    {
+      "id": "729b31fd-d563-4985-b40b-f1b0941d9156",
+      "slug": "enchantment-engine",
+      "label": "enchantment engine",
+      "description": "Whenever you cast an enchantment spell, draw a card.",
+      "aliases": ["enchantress"],
+      "parentIDs": [
+        "b6448c45-ce65-4848-aa98-2151e4e07437",
+        "fe836fff-ab69-4e46-9ada-0733717862c4"
+      ],
+      "taggings": [
+        {"oracleID": "0fc64fd6-f057-4056-9dca-47accb7ff036", "weight": "median", "annotation": null},
+        {"oracleID": "aa321138-b1a7-4b8e-a2ca-b9ce65704e92", "weight": "median", "annotation": null},
+        {"oracleID": "795b096a-2bce-4588-a2c9-abc5ea40dc0c", "weight": "median", "annotation": null},
+        {"oracleID": "8f4b8a19-72f4-48ed-ac05-62a7c7525797", "weight": "median", "annotation": null},
+        {"oracleID": "77ccbea1-70af-4194-adad-39a904221c75", "weight": "median", "annotation": null}
+      ]
+    },
+    {
+      "id": "4d7fc833-e0af-4022-b298-6a9c99a56ac1",
+      "slug": "triggered-ability",
+      "label": "triggered ability",
+      "description": null,
+      "aliases": [],
+      "parentIDs": [],
+      "taggings": [
+        {"oracleID": "77ccbea1-70af-4194-adad-39a904221c75", "weight": "median", "annotation": null},
+        {"oracleID": "f3fad295-1af2-4ecc-8546-b121ad6be27b", "weight": "median", "annotation": null}
+      ]
+    },
+    {
+      "id": "4539431a-4109-4fee-91fc-caea0fcccb88",
+      "slug": "cast-trigger",
+      "label": "cast trigger",
+      "description": null,
+      "aliases": [],
+      "parentIDs": ["4d7fc833-e0af-4022-b298-6a9c99a56ac1"],
+      "taggings": []
+    },
+    {
+      "id": "93c7dfa5-b55a-47fb-a73c-c056c649e198",
+      "slug": "cast-trigger-you",
+      "label": "cast trigger-you",
+      "description": "Whenever you cast a matching spell, do something.",
+      "aliases": [],
+      "parentIDs": ["4539431a-4109-4fee-91fc-caea0fcccb88"],
+      "taggings": [
+        {"oracleID": "0fc64fd6-f057-4056-9dca-47accb7ff036", "weight": "median", "annotation": null},
+        {"oracleID": "aa321138-b1a7-4b8e-a2ca-b9ce65704e92", "weight": "median", "annotation": null},
+        {"oracleID": "795b096a-2bce-4588-a2c9-abc5ea40dc0c", "weight": "median", "annotation": null},
+        {"oracleID": "8f4b8a19-72f4-48ed-ac05-62a7c7525797", "weight": "median", "annotation": null},
+        {"oracleID": "5da7eea8-bb9e-47ce-a554-8a1ee058bd7a", "weight": "median", "annotation": null}
+      ]
+    },
+    {
+      "id": "4caab3cc-1d60-44fb-a26a-cc833bc67c97",
+      "slug": "lifegain",
+      "label": "lifegain",
+      "description": "Cards that cause you to gain life.",
+      "aliases": ["life gain"],
+      "parentIDs": [],
+      "taggings": []
+    },
+    {
+      "id": "2dabdf83-e041-48a4-b0e5-08e1842f008c",
+      "slug": "repeatable-lifegain",
+      "label": "repeatable lifegain",
+      "description": null,
+      "aliases": [],
+      "parentIDs": ["4caab3cc-1d60-44fb-a26a-cc833bc67c97"],
+      "taggings": [
+        {"oracleID": "0fc64fd6-f057-4056-9dca-47accb7ff036", "weight": "median", "annotation": null}
+      ]
+    },
+    {
+      "id": "f85a2d76-cc7a-414b-9151-1288bfdaacd1",
+      "slug": "thingfall",
+      "label": "thingfall",
+      "description": "Abilities that trigger when another object enters the battlefield.",
+      "aliases": [],
+      "parentIDs": [],
+      "taggings": []
+    },
+    {
+      "id": "3dadc330-1d86-409a-8ce6-d93d1df90f15",
+      "slug": "creaturefall",
+      "label": "creaturefall",
+      "description": "Cards that care about a creature entering the battlefield.",
+      "aliases": ["alliance", "etb-other-creature"],
+      "parentIDs": ["f85a2d76-cc7a-414b-9151-1288bfdaacd1"],
+      "taggings": []
+    },
+    {
+      "id": "d1c4fd97-82a2-4f18-bf98-1e4fd3df602b",
+      "slug": "soul-warden-ability",
+      "label": "soul warden ability",
+      "description": "Creatures entering the battlefield causes you to gain life.",
+      "aliases": ["soul sister"],
+      "parentIDs": [
+        "3dadc330-1d86-409a-8ce6-d93d1df90f15",
+        "2dabdf83-e041-48a4-b0e5-08e1842f008c"
+      ],
+      "taggings": [
+        {"oracleID": "f3fad295-1af2-4ecc-8546-b121ad6be27b", "weight": "very_strong", "annotation": null}
+      ]
+    },
+    {
+      "id": "9a712e2c-4b23-405b-892b-86cc6ac4e5f4",
+      "slug": "enchantmentfall",
+      "label": "enchantmentfall",
+      "description": "Cards that care about enchantments entering the battlefield.",
+      "aliases": ["constellation"],
+      "parentIDs": [
+        "fe836fff-ab69-4e46-9ada-0733717862c4",
+        "f85a2d76-cc7a-414b-9151-1288bfdaacd1"
+      ],
+      "taggings": [
+        {"oracleID": "77ccbea1-70af-4194-adad-39a904221c75", "weight": "median", "annotation": null}
+      ]
+    },
+    {
+      "id": "42313c19-8be2-47d9-9d3a-99c39725b87d",
+      "slug": "cantrip",
+      "label": "cantrip",
+      "description": "Cards that let you draw a card as they resolve or enter the battlefield.",
+      "aliases": [],
+      "parentIDs": ["45ae9f00-85ba-47ee-b07f-fa5f2e838124"],
+      "taggings": [
+        {"oracleID": "77ccbea1-70af-4194-adad-39a904221c75", "weight": "median", "annotation": null}
+      ]
+    }
+  ]
+}

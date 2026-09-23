@@ -100,6 +100,7 @@ let package = Package(
             name: "GrimoraCoreTests",
             dependencies: ["GrimoraCore"],
             resources: [
+                .copy("Fixtures"),
                 .copy("ScryCorpus")
             ]
         ),
