@@ -146,11 +146,28 @@ struct EngineBuildIntegrationTests {
     let database = try SQLiteDatabase(
       storage: .readOnlyFile(result.directory.appendingPathComponent("catalog.sqlite"))
     )
+    let expectedSemanticTables = [
+      "semantic_card_tags",
+      "semantic_tag_aliases",
+      "semantic_tag_edges",
+      "semantic_tag_stats",
+      "semantic_tags",
+    ]
     let statement = try database.prepare(
-      "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name LIKE 'semantic_%'"
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'semantic_%' ORDER BY name"
     )
-    _ = try statement.step()
-    #expect(statement.int(at: 0) == 0)
+    var semanticTables: [String] = []
+    while try statement.step() {
+      if let name = statement.string(at: 0) {
+        semanticTables.append(name)
+      }
+    }
+    #expect(semanticTables == expectedSemanticTables)
+    for table in expectedSemanticTables {
+      let count = try database.prepare("SELECT COUNT(*) FROM \(table)")
+      _ = try count.step()
+      #expect(count.int(at: 0) == 0)
+    }
   }
 
   @Test

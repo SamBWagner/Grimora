@@ -195,6 +195,8 @@ extension CardDatabase {
       )
       """)
 
+    try migrateSemanticCatalogSchema()
+
     try database.execute(
       """
       CREATE TABLE IF NOT EXISTS value_history_background_jobs (

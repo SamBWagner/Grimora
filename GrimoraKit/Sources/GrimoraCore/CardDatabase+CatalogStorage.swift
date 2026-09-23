@@ -391,6 +391,11 @@ extension CardDatabase {
   private static let catalogTablesToDropFromMain =
     transientCatalogTables
     + [
+      "semantic_tag_stats",
+      "semantic_card_tags",
+      "semantic_tag_edges",
+      "semantic_tag_aliases",
+      "semantic_tags",
       "card_value_series",
       "card_value_summaries",
       "card_price_points",

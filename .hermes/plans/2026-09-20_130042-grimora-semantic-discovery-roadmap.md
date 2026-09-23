@@ -133,6 +133,18 @@ Benchmark these three hierarchy strategies with the current Scryfall snapshot an
 
 Choose the smallest representation that meets the measured on-device budgets. Do not add both a closure table and flattened features pre-emptively.
 
+#### Measured decision — 2026-09-23
+
+`SemanticStorageBenchmarkTests` expands the checked, source-dated semantic fixture into a deterministic 100-card Oracle-profile deck and proves recursive, closure, and flattened layouts return identical feature vectors, functional-tag matches, related-card ordering, deck profiles, and induced graphs. Fifty-query averages from a macOS arm64 debug run were:
+
+| Layout | SQLite bytes | Import | Related | Function search | Deck profile | Induced graph |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Recursive edges | 241,664 | 9.9817 ms | 2.9327 ms | 2.0916 ms | 2.3182 ms | 29.6221 ms |
+| Materialized closure | 278,528 | 9.1185 ms | 1.4198 ms | 0.8830 ms | 1.1181 ms | 28.4853 ms |
+| Flattened features | 589,824 | 12.5621 ms | 0.4220 ms | 0.0351 ms | 0.3681 ms | 25.4137 ms |
+
+Select **recursive CTE traversal over direct `semantic_tag_edges` and `semantic_card_tags`**. It is the smallest representation, all measured operations remain comfortably inside the Phase 0 latency budgets, and it avoids publishing redundant closure or effective-feature rows before profiling real device catalogs. Keep full card-to-card materialisation deferred.
+
 ### Weighting policy
 
 - Preserve Scryfall's raw tagging weight, normalized to deterministic fixed-point integers.
