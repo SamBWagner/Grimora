@@ -28,7 +28,12 @@ public struct CatalogContentDigests: Codable, Equatable, Sendable {
   public var summaries: String
   /// Hex SHA-256 over `card_value_mappings` (`ORDER BY mtgjson_uuid`).
   public var mappings: String
-  /// Hex SHA-256 over the five per-table digests, in the fixed order above.
+  public var semanticTags: String?
+  public var semanticTagAliases: String?
+  public var semanticTagEdges: String?
+  public var semanticCardTags: String?
+  public var semanticTagStats: String?
+  /// Hex SHA-256 over every available per-table digest, in a fixed order.
   public var overall: String
 
   public init(
@@ -37,6 +42,11 @@ public struct CatalogContentDigests: Codable, Equatable, Sendable {
     series: String,
     summaries: String,
     mappings: String,
+    semanticTags: String? = nil,
+    semanticTagAliases: String? = nil,
+    semanticTagEdges: String? = nil,
+    semanticCardTags: String? = nil,
+    semanticTagStats: String? = nil,
     overall: String
   ) {
     self.cards = cards
@@ -44,6 +54,11 @@ public struct CatalogContentDigests: Codable, Equatable, Sendable {
     self.series = series
     self.summaries = summaries
     self.mappings = mappings
+    self.semanticTags = semanticTags
+    self.semanticTagAliases = semanticTagAliases
+    self.semanticTagEdges = semanticTagEdges
+    self.semanticCardTags = semanticCardTags
+    self.semanticTagStats = semanticTagStats
     self.overall = overall
   }
 }
@@ -64,6 +79,11 @@ public enum CatalogContentDigest {
     case series
     case summaries
     case mappings
+    case semanticTags
+    case semanticTagAliases
+    case semanticTagEdges
+    case semanticCardTags
+    case semanticTagStats
 
     var name: String {
       switch self {
@@ -72,6 +92,11 @@ public enum CatalogContentDigest {
       case .series: "card_value_series"
       case .summaries: "card_value_summaries"
       case .mappings: "card_value_mappings"
+      case .semanticTags: "semantic_tags"
+      case .semanticTagAliases: "semantic_tag_aliases"
+      case .semanticTagEdges: "semantic_tag_edges"
+      case .semanticCardTags: "semantic_card_tags"
+      case .semanticTagStats: "semantic_tag_stats"
       }
     }
 
@@ -81,6 +106,11 @@ public enum CatalogContentDigest {
       case .cardFaces: ["card_id", "face_index"]
       case .series, .summaries: ["card_id", "provider", "finish"]
       case .mappings: ["mtgjson_uuid"]
+      case .semanticTags: ["id"]
+      case .semanticTagAliases: ["tag_id", "alias_key"]
+      case .semanticTagEdges: ["parent_tag_id", "child_tag_id"]
+      case .semanticCardTags: ["card_key", "tag_id", "source"]
+      case .semanticTagStats: ["tag_id"]
       }
     }
 
@@ -88,6 +118,16 @@ public enum CatalogContentDigest {
       switch self {
       case .cardFaces: ["id"]
       default: []
+      }
+    }
+
+    var isOptionalForLegacyCatalogs: Bool {
+      switch self {
+      case .semanticTags, .semanticTagAliases, .semanticTagEdges, .semanticCardTags,
+        .semanticTagStats:
+        true
+      default:
+        false
       }
     }
   }
@@ -107,6 +147,9 @@ public enum CatalogContentDigest {
     #if canImport(CryptoKit) || canImport(Crypto)
       var perTable: [Table: Data] = [:]
       for table in Table.allCases {
+        if table.isOptionalForLegacyCatalogs, !(try tableExists(database, table.name)) {
+          continue
+        }
         perTable[table] = try tableDigest(database, table: table)
       }
       var overall = SHA256()
@@ -119,6 +162,11 @@ public enum CatalogContentDigest {
         series: perTable[.series]?.hexString ?? "",
         summaries: perTable[.summaries]?.hexString ?? "",
         mappings: perTable[.mappings]?.hexString ?? "",
+        semanticTags: perTable[.semanticTags]?.hexString,
+        semanticTagAliases: perTable[.semanticTagAliases]?.hexString,
+        semanticTagEdges: perTable[.semanticTagEdges]?.hexString,
+        semanticCardTags: perTable[.semanticCardTags]?.hexString,
+        semanticTagStats: perTable[.semanticTagStats]?.hexString,
         overall: Data(overall.finalize()).hexString
       )
     #else
@@ -217,6 +265,14 @@ public enum CatalogContentDigest {
 
   private static func quoted(_ identifier: String) -> String {
     "\"\(identifier.replacingOccurrences(of: "\"", with: "\"\""))\""
+  }
+
+  private static func tableExists(_ database: SQLiteDatabase, _ name: String) throws -> Bool {
+    let statement = try database.prepare(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? COLLATE NOCASE LIMIT 1"
+    )
+    try statement.bind(name, at: 1)
+    return try statement.step()
   }
 }
 

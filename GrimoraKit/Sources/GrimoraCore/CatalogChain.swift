@@ -4,7 +4,7 @@ import Foundation
 public enum CatalogDelta {
   /// Bumped only when the patch-database schema changes in a way an older client can't apply. A
   /// client that encounters a `formatVersion` it doesn't recognize falls back to a full download.
-  public static let currentFormatVersion = 1
+  public static let currentFormatVersion = 2
 
   /// Upper bound on how many consecutive deltas a client will walk before preferring a full
   /// download. A safety net above the `chain.json` window; the summed-bytes guard is the real limit.

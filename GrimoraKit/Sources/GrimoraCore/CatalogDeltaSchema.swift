@@ -30,6 +30,18 @@ public enum CatalogDeltaSchema {
   public static let mappingsUpsert = "mappings_upsert"
   public static let mappingsDelete = "mappings_delete"
   public static let metadataSet = "metadata_set"
+  public static let semanticReplace = "semantic_replace"
+  public static let semanticCatalogTables = [
+    "semantic_tags",
+    "semantic_tag_aliases",
+    "semantic_tag_edges",
+    "semantic_card_tags",
+    "semantic_tag_stats",
+  ]
+
+  public static func semanticReplacementTable(for catalogTable: String) -> String {
+    "\(catalogTable)_replace"
+  }
 
   /// The extra column carried in ``cardsUpsert`` beyond the `cards` columns: the FTS search string,
   /// which is a normalized derivation (`CardRecord.searchText`) the client can't recompute cheaply,
@@ -107,6 +119,9 @@ public enum CatalogDeltaSchema {
     CREATE TABLE \(metadataSet) (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+    );
+    CREATE TABLE \(semanticReplace) (
+        replace_all INTEGER PRIMARY KEY CHECK (replace_all = 1)
     );
     """
 }

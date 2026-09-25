@@ -105,6 +105,24 @@ struct SemanticCatalogStorageTests {
   }
 
   @Test
+  func semanticReadsSupportCaseVariantTableNames() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let snapshot = semanticSnapshot()
+    try database.replaceSemanticCatalog(with: snapshot)
+    try renameSemanticTablesToUppercase(database.database)
+
+    #expect(try database.semanticCatalogSnapshot() == snapshot)
+    #expect(
+      try database.semanticTagIDs(for: snapshot.cardTags[0].cardKey)
+        == ["tag-card-draw"]
+    )
+    #expect(
+      try database.semanticCardKeys(tagID: "tag-card-draw")
+        == [snapshot.cardTags[0].cardKey]
+    )
+  }
+
+  @Test
   func attachedCatalogReadsSemanticTablesInsteadOfEmptyMainShadowCopies() throws {
     let directory = semanticTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -232,6 +250,19 @@ private func semanticIndexNames(database: CardDatabase) throws -> Set<String> {
     }
   }
   return result
+}
+
+private func renameSemanticTablesToUppercase(_ database: SQLiteDatabase) throws {
+  for table in [
+    "semantic_tags",
+    "semantic_tag_aliases",
+    "semantic_tag_edges",
+    "semantic_card_tags",
+    "semantic_tag_stats",
+  ] {
+    try database.execute("ALTER TABLE \(table) RENAME TO \(table)_case_variant")
+    try database.execute("ALTER TABLE \(table)_case_variant RENAME TO \(table.uppercased())")
+  }
 }
 
 private func expectRejectedSemanticReplacement(

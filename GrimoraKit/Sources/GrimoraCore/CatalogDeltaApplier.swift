@@ -38,6 +38,7 @@ public struct CatalogDeltaApplier {
       try applySeriesSlides(database)
       try applySeriesDeletes(database)
       try applyMappings(database)
+      try applySemanticReplacement(database)
       try applyMetadata(database)
     }
 
@@ -292,6 +293,27 @@ public struct CatalogDeltaApplier {
       )
       """
     )
+  }
+
+  private func applySemanticReplacement(_ database: SQLiteDatabase) throws {
+    let marker = try database.prepare(
+      "SELECT 1 FROM delta.\(CatalogDeltaSchema.semanticReplace) LIMIT 1"
+    )
+    guard try marker.step() else { return }
+
+    for table in [
+      "semantic_tag_stats",
+      "semantic_card_tags",
+      "semantic_tag_edges",
+      "semantic_tag_aliases",
+      "semantic_tags",
+    ] {
+      try database.execute("DELETE FROM \(table)")
+    }
+    for table in CatalogDeltaSchema.semanticCatalogTables {
+      let replacement = CatalogDeltaSchema.semanticReplacementTable(for: table)
+      try database.execute("INSERT INTO \(table) SELECT * FROM delta.\(replacement)")
+    }
   }
 
   private func applyMetadata(_ database: SQLiteDatabase) throws {

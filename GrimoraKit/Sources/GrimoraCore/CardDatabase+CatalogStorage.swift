@@ -148,13 +148,69 @@ extension CardDatabase {
       throw CatalogStorageError.invalidCatalog("SQLite quick_check failed")
     }
 
-    for table in ["cards", "card_faces", "cards_fts", "cards_name_fts", "card_value_summaries", "card_value_series"] {
+    var requiredTables = [
+      "cards",
+      "card_faces",
+      "cards_fts",
+      "cards_name_fts",
+      "card_value_summaries",
+      "card_value_series",
+    ]
+    let semanticTables = [
+      "semantic_tags",
+      "semantic_tag_aliases",
+      "semantic_tag_edges",
+      "semantic_card_tags",
+      "semantic_tag_stats",
+    ]
+    let semanticRequiredColumns: [String: Set<String>] = [
+      "semantic_tags": [
+        "id", "namespace", "slug", "label", "description", "similarity_enabled", "source",
+      ],
+      "semantic_tag_aliases": ["tag_id", "alias", "alias_key"],
+      "semantic_tag_edges": ["parent_tag_id", "child_tag_id"],
+      "semantic_card_tags": ["card_key", "tag_id", "weight_millis", "annotation", "source"],
+      "semantic_tag_stats": [
+        "tag_id", "direct_card_count", "effective_card_count", "idf_millis",
+      ],
+    ]
+    let semanticObjectCount = try semanticTables.reduce(into: 0) { count, table in
       let statement = try database.prepare(
-        "SELECT 1 FROM sqlite_master WHERE name = ? LIMIT 1"
+        "SELECT 1 FROM sqlite_master WHERE name = ? COLLATE NOCASE LIMIT 1"
+      )
+      try statement.bind(table, at: 1)
+      if try statement.step() {
+        count += 1
+      }
+    }
+    if semanticObjectCount > 0 {
+      requiredTables.append(contentsOf: semanticTables)
+    }
+
+    for table in requiredTables {
+      let statement = try database.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? COLLATE NOCASE LIMIT 1"
       )
       try statement.bind(table, at: 1)
       guard try statement.step() else {
         throw CatalogStorageError.invalidCatalog("Missing table \(table)")
+      }
+      if let requiredColumns = semanticRequiredColumns[table] {
+        let columnsStatement = try database.prepare(
+          "PRAGMA table_info(\(quotedIdentifier(table)))"
+        )
+        var columns: Set<String> = []
+        while try columnsStatement.step() {
+          if let name = columnsStatement.string(at: 1) {
+            columns.insert(name.lowercased())
+          }
+        }
+        guard columns.isSuperset(of: requiredColumns) else {
+          let missing = requiredColumns.subtracting(columns).sorted().joined(separator: ", ")
+          throw CatalogStorageError.invalidCatalog(
+            "Table \(table) is missing required columns: \(missing)"
+          )
+        }
       }
     }
 

@@ -70,7 +70,7 @@ public struct CatalogPipelineResult: Equatable, Sendable {
 }
 
 public struct CatalogPipeline: Sendable {
-  public static let currentVersion = 1
+  public static let currentVersion = 2
 
   private let enrichmentStages: [any CatalogEnrichmentStage]
   private let cardBatchSize: Int
@@ -191,12 +191,24 @@ public struct CatalogPipeline: Sendable {
         }
       )
 
-    for (index, stage) in enrichmentStages.enumerated() {
+    guard let oracleTagsUpdatedAt = inputs.sources.oracleTagsUpdatedAt,
+      let oracleTagsDownloadURI = inputs.sources.oracleTagsDownloadURI
+    else {
+      throw ScryfallOracleTagsSemanticEnrichmentError.missingSourceIdentity
+    }
+    let stages: [any CatalogEnrichmentStage] = [
+      ScryfallOracleTagsSemanticEnrichmentStage(
+        oracleTagsJSONLURL: inputs.oracleTagsJSONLURL,
+        sourceUpdatedAt: oracleTagsUpdatedAt,
+        sourceDownloadURI: oracleTagsDownloadURI
+      ),
+    ] + enrichmentStages
+    for (index, stage) in stages.enumerated() {
       await progress?(
         CatalogPipelineProgress(
           stage: .enriching,
           completed: index,
-          total: enrichmentStages.count
+          total: stages.count
         )
       )
       try await stage.enrich(database: database)
@@ -211,7 +223,7 @@ public struct CatalogPipeline: Sendable {
       databaseURL: databaseURL,
       counts: counts,
       importedPricePoints: priceSummary.importedPricePoints,
-      enrichments: enrichmentStages.map {
+      enrichments: stages.map {
         CatalogEnrichmentVersion(identifier: $0.identifier, version: $0.version)
       }
     )

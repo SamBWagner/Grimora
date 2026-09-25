@@ -14,11 +14,14 @@ public struct CatalogDeltaStats: Equatable, Sendable {
   public var mappingsUpserted: Int
   public var mappingsDeleted: Int
   public var metadataSet: Int
+  public var semanticCatalogReplaced: Bool
+  public var semanticRowsReplaced: Int
 
   public var isEmpty: Bool {
     cardFieldChanges == 0 && cardsUpserted == 0 && cardsDeleted == 0
       && cardFacesReplacedCards == 0 && seriesSlid == 0 && seriesReplaced == 0
       && seriesDeleted == 0 && mappingsUpserted == 0 && mappingsDeleted == 0 && metadataSet == 0
+      && !semanticCatalogReplaced && semanticRowsReplaced == 0
   }
 }
 
@@ -139,6 +142,12 @@ public struct CatalogDeltaBuilder {
       SELECT \(faceList) FROM target.card_faces WHERE 0
       """
     )
+    for table in CatalogDeltaSchema.semanticCatalogTables {
+      let replacement = CatalogDeltaSchema.semanticReplacementTable(for: table)
+      try patch.execute(
+        "CREATE TABLE \(replacement) AS SELECT * FROM target.\(table) WHERE 0"
+      )
+    }
   }
 
   // MARK: - Population
@@ -241,6 +250,14 @@ public struct CatalogDeltaBuilder {
       """
     )
 
+    if try semanticCatalogChanged(patch) {
+      try patch.execute("INSERT INTO \(CatalogDeltaSchema.semanticReplace) VALUES (1)")
+      for table in CatalogDeltaSchema.semanticCatalogTables {
+        let replacement = CatalogDeltaSchema.semanticReplacementTable(for: table)
+        try patch.execute("INSERT INTO \(replacement) SELECT * FROM target.\(table)")
+      }
+    }
+
     // Catalog metadata rows that changed (value summaries are recomputed on device, not shipped).
     try patch.execute(
       """
@@ -249,6 +266,34 @@ public struct CatalogDeltaBuilder {
       WHERE (key, value) NOT IN (SELECT key, value FROM base.metadata)
       """
     )
+  }
+
+  private func semanticCatalogChanged(_ patch: SQLiteDatabase) throws -> Bool {
+    for table in CatalogDeltaSchema.semanticCatalogTables {
+      let statement = try patch.prepare(
+        """
+        SELECT
+          EXISTS(
+            SELECT 1 FROM (
+              SELECT * FROM base.\(table)
+              EXCEPT
+              SELECT * FROM target.\(table)
+            ) LIMIT 1
+          )
+          OR EXISTS(
+            SELECT 1 FROM (
+              SELECT * FROM target.\(table)
+              EXCEPT
+              SELECT * FROM base.\(table)
+            ) LIMIT 1
+          )
+        """
+      )
+      if try statement.step(), statement.bool(at: 0) {
+        return true
+      }
+    }
+    return false
   }
 
   /// Classifies every value series as slide / replace / delete. All series in a build share the
@@ -413,7 +458,12 @@ public struct CatalogDeltaBuilder {
       seriesDeleted: try count(patch, CatalogDeltaSchema.seriesDelete),
       mappingsUpserted: try count(patch, CatalogDeltaSchema.mappingsUpsert),
       mappingsDeleted: try count(patch, CatalogDeltaSchema.mappingsDelete),
-      metadataSet: try count(patch, CatalogDeltaSchema.metadataSet)
+      metadataSet: try count(patch, CatalogDeltaSchema.metadataSet),
+      semanticCatalogReplaced: try count(patch, CatalogDeltaSchema.semanticReplace) > 0,
+      semanticRowsReplaced: try CatalogDeltaSchema.semanticCatalogTables.reduce(into: 0) {
+        result, table in
+        result += try count(patch, CatalogDeltaSchema.semanticReplacementTable(for: table))
+      }
     )
   }
 

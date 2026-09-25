@@ -42,10 +42,49 @@ struct CatalogContentDigestTests {
     #expect(baseline.overall != mutated.overall)
   }
 
+  @Test
+  func digestChangesWhenSemanticCatalogChanges() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("DigestTests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let baseline = try makeDigestFixture(at: root.appendingPathComponent("a.sqlite"), reversed: false)
+    let mutated = try makeDigestFixture(
+      at: root.appendingPathComponent("semantic.sqlite"),
+      reversed: false,
+      semanticLabel: "Changed Draw Engine"
+    )
+
+    #expect(baseline.overall != mutated.overall)
+  }
+
+  @Test
+  func digestIsStableAcrossCaseVariantSemanticTableNames() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("DigestTests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let canonical = try makeDigestFixture(
+      at: root.appendingPathComponent("canonical.sqlite"),
+      reversed: false
+    )
+    let caseVariant = try makeDigestFixture(
+      at: root.appendingPathComponent("case-variant.sqlite"),
+      reversed: false,
+      caseVariantSemanticTables: true
+    )
+
+    #expect(caseVariant == canonical)
+  }
+
   private func makeDigestFixture(
     at url: URL,
     reversed: Bool,
-    bumpFirstPrice: Bool = false
+    bumpFirstPrice: Bool = false,
+    semanticLabel: String = "Draw Engine",
+    caseVariantSemanticTables: Bool = false
   ) throws -> CatalogContentDigests {
     let database = try SQLiteDatabase(storage: .file(url))
     try database.execute(
@@ -55,6 +94,11 @@ struct CatalogContentDigestTests {
       CREATE TABLE card_value_series (card_id TEXT NOT NULL, provider TEXT NOT NULL, finish TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, day_count INTEGER NOT NULL, prices_cents BLOB NOT NULL, PRIMARY KEY (card_id, provider, finish));
       CREATE TABLE card_value_summaries (card_id TEXT NOT NULL, provider TEXT NOT NULL, finish TEXT NOT NULL, current_price REAL NOT NULL, PRIMARY KEY (card_id, provider, finish));
       CREATE TABLE card_value_mappings (card_id TEXT NOT NULL, mtgjson_uuid TEXT PRIMARY KEY);
+      CREATE TABLE semantic_tags (id TEXT PRIMARY KEY, namespace TEXT NOT NULL, slug TEXT NOT NULL, label TEXT NOT NULL, description TEXT, similarity_enabled INTEGER NOT NULL, source TEXT NOT NULL);
+      CREATE TABLE semantic_tag_aliases (tag_id TEXT NOT NULL, alias TEXT NOT NULL, alias_key TEXT NOT NULL, PRIMARY KEY (tag_id, alias_key));
+      CREATE TABLE semantic_tag_edges (parent_tag_id TEXT NOT NULL, child_tag_id TEXT NOT NULL, PRIMARY KEY (parent_tag_id, child_tag_id));
+      CREATE TABLE semantic_card_tags (card_key TEXT NOT NULL, tag_id TEXT NOT NULL, weight_millis INTEGER NOT NULL, annotation TEXT, source TEXT NOT NULL, PRIMARY KEY (card_key, tag_id, source));
+      CREATE TABLE semantic_tag_stats (tag_id TEXT PRIMARY KEY, direct_card_count INTEGER NOT NULL, effective_card_count INTEGER NOT NULL, idf_millis INTEGER NOT NULL);
       """
     )
 
@@ -123,10 +167,48 @@ struct CatalogContentDigestTests {
       try mappingInsert.reset()
     }
 
+    let semanticTag = try database.prepare(
+      "INSERT INTO semantic_tags (id, namespace, slug, label, description, similarity_enabled, source) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+    try semanticTag.bind("tag-draw-engine", at: 1)
+    try semanticTag.bind("oracle", at: 2)
+    try semanticTag.bind("draw-engine", at: 3)
+    try semanticTag.bind(semanticLabel, at: 4)
+    try semanticTag.bind("Repeatable card draw.", at: 5)
+    try semanticTag.bind(true, at: 6)
+    try semanticTag.bind("scryfall-oracle-tags@fixture", at: 7)
+    try semanticTag.step()
+    try database.execute(
+      """
+      INSERT INTO semantic_tag_aliases VALUES ('tag-draw-engine', 'Card Draw Engine', 'card draw engine');
+      INSERT INTO semantic_card_tags VALUES ('o:oracle-aaa', 'tag-draw-engine', 1000, 'fixture', 'scryfall-oracle-tags@fixture');
+      INSERT INTO semantic_tag_stats VALUES ('tag-draw-engine', 1, 1, 1000);
+      """
+    )
+
+    if caseVariantSemanticTables {
+      try renameSemanticTablesToUppercase(database)
+    }
+
     // Only the reversed fixture gets VACUUMed, to prove page layout doesn't affect the digest.
     if reversed {
       try database.execute("VACUUM")
     }
     return try CatalogContentDigest.compute(database)
+  }
+
+  private func renameSemanticTablesToUppercase(_ database: SQLiteDatabase) throws {
+    for table in [
+      "semantic_tags",
+      "semantic_tag_aliases",
+      "semantic_tag_edges",
+      "semantic_card_tags",
+      "semantic_tag_stats",
+    ] {
+      try database.execute("ALTER TABLE \(table) RENAME TO \(table)_case_variant")
+      try database.execute(
+        "ALTER TABLE \(table)_case_variant RENAME TO \(table.uppercased())"
+      )
+    }
   }
 }

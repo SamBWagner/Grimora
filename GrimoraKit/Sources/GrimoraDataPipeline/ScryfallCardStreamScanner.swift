@@ -25,6 +25,9 @@ public enum ScryfallCardStreamScanner {
     var object = Data()
     var scannedBytes: Int64 = 0
     var lastProgress: Int64 = 0
+    var shape: ScryfallCardStreamShape?
+    var arrayState = ScryfallArrayState.expectingValueOrEnd
+    var jsonLinesCanStartObject = true
 
     while true {
       let chunk = try handle.read(upToCount: 256 * 1024) ?? Data()
@@ -41,16 +44,21 @@ public enum ScryfallCardStreamScanner {
           case UInt8(ascii: "["):
             // Legacy shape: every card object sits inside one top-level array.
             started = true
+            shape = .array
             continue
           case UInt8(ascii: "{"):
             // JSON Lines: this byte already opens the first card, so fall through and collect it.
             started = true
+            shape = .jsonLines
           default:
             throw ScryfallCardStreamScannerError.unrecognizedStream
           }
         }
 
         if collecting {
+          if shape == .jsonLines, !isInsideString, byte.isJSONLineBreak {
+            throw ScryfallCardStreamScannerError.unrecognizedStream
+          }
           object.append(byte)
           if isInsideString {
             if isEscaping {
@@ -72,17 +80,76 @@ public enum ScryfallCardStreamScanner {
               try body(object)
               object.removeAll(keepingCapacity: true)
               collecting = false
+              switch shape {
+              case .array:
+                arrayState = .expectingSeparatorOrEnd
+              case .jsonLines:
+                jsonLinesCanStartObject = false
+              case nil:
+                throw ScryfallCardStreamScannerError.unrecognizedStream
+              }
             }
           }
           continue
         }
 
-        if byte == UInt8(ascii: "{") {
+        switch shape {
+        case .array:
+          if byte.isJSONWhitespace {
+            continue
+          }
+          switch arrayState {
+          case .expectingValueOrEnd:
+            if byte == UInt8(ascii: "]") {
+              arrayState = .closed
+            } else if byte == UInt8(ascii: "{") {
+              arrayState = .expectingSeparatorOrEnd
+              collecting = true
+              objectDepth = 1
+              isInsideString = false
+              isEscaping = false
+              object.append(byte)
+            } else {
+              throw ScryfallCardStreamScannerError.unrecognizedStream
+            }
+          case .expectingValue:
+            guard byte == UInt8(ascii: "{") else {
+              throw ScryfallCardStreamScannerError.unrecognizedStream
+            }
+            collecting = true
+            objectDepth = 1
+            isInsideString = false
+            isEscaping = false
+            object.append(byte)
+          case .expectingSeparatorOrEnd:
+            if byte == UInt8(ascii: ",") {
+              arrayState = .expectingValue
+            } else if byte == UInt8(ascii: "]") {
+              arrayState = .closed
+            } else {
+              throw ScryfallCardStreamScannerError.unrecognizedStream
+            }
+          case .closed:
+            throw ScryfallCardStreamScannerError.unrecognizedStream
+          }
+        case .jsonLines:
+          if byte.isJSONLineBreak {
+            jsonLinesCanStartObject = true
+            continue
+          }
+          if byte.isJSONHorizontalWhitespace {
+            continue
+          }
+          guard jsonLinesCanStartObject, byte == UInt8(ascii: "{") else {
+            throw ScryfallCardStreamScannerError.unrecognizedStream
+          }
           collecting = true
           objectDepth = 1
           isInsideString = false
           isEscaping = false
           object.append(byte)
+        case nil:
+          throw ScryfallCardStreamScannerError.unrecognizedStream
         }
       }
 
@@ -98,15 +165,35 @@ public enum ScryfallCardStreamScanner {
     guard !collecting else {
       throw ScryfallCardStreamScannerError.unterminatedObject
     }
+    if shape == .array, arrayState != .closed {
+      throw ScryfallCardStreamScannerError.unrecognizedStream
+    }
     await progress?(scannedBytes)
   }
 }
 
+private enum ScryfallCardStreamShape {
+  case array
+  case jsonLines
+}
+
+private enum ScryfallArrayState {
+  case expectingValueOrEnd
+  case expectingValue
+  case expectingSeparatorOrEnd
+  case closed
+}
+
 private extension UInt8 {
   var isJSONWhitespace: Bool {
-    self == UInt8(ascii: " ")
-      || self == UInt8(ascii: "\n")
-      || self == UInt8(ascii: "\r")
-      || self == UInt8(ascii: "\t")
+    isJSONHorizontalWhitespace || isJSONLineBreak
+  }
+
+  var isJSONHorizontalWhitespace: Bool {
+    self == UInt8(ascii: " ") || self == UInt8(ascii: "\t")
+  }
+
+  var isJSONLineBreak: Bool {
+    self == UInt8(ascii: "\n") || self == UInt8(ascii: "\r")
   }
 }

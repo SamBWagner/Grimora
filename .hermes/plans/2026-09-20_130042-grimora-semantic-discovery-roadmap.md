@@ -355,6 +355,8 @@ public struct CardSemanticMembership: Equatable, Sendable {
 
 ### Task 6: Implement deterministic Scryfall semantic enrichment
 
+**Status (2026-09-25): completed.** The production pipeline streams Oracle Tags into deterministic Oracle-first semantic snapshots, preserves source/update provenance, rejects malformed framing before replacement, and is covered by reviewed golden and rollback tests.
+
 **Objective:** Populate the semantic graph through the existing enrichment protocol.
 
 **Files:**
@@ -388,6 +390,8 @@ public struct CardSemanticMembership: Equatable, Sendable {
 
 ### Task 7: Extend catalog validation, counts, and logical digests
 
+**Status (2026-09-25): implementation complete within the enrichment milestone.** All five semantic tables participate in canonical logical digests; current enriched catalogs require the complete semantic schema with SQLite-compatible identifier handling. Broader publication measurements remain in the semantic-integrity task.
+
 **Objective:** Make missing, stale, or corrupt semantic data detectable before publish and after client installation.
 
 **Files:**
@@ -419,6 +423,8 @@ public struct CardSemanticMembership: Equatable, Sendable {
    ```
 
 ### Task 8: Add semantic delta generation and transactional apply
+
+**Status (2026-09-25): implementation complete within the enrichment milestone.** Delta format 2 transfers semantic snapshots transactionally, exact A→B fixture round trips pass, and clear-to-empty replacement is represented as a real delta. Private real-data chain measurements remain in Task 9.
 
 **Objective:** Preserve normal incremental updates after semantic activation.
 
@@ -455,6 +461,8 @@ public struct CardSemanticMembership: Equatable, Sendable {
    ```
 
 ### Task 9: Expand the engine regression gate and perform a private full build
+
+**Status (2026-09-25): partially complete.** A final private full build and semantic integrity inspection passed, but measured private A→B/A→B→C delta size, artifact-growth/query-time evidence, failure injection, and engine-gate documentation remain before the Phase 1 publication gate closes.
 
 **Objective:** Prove the production artifact is internally consistent before any user-facing semantic feature or catalog publish.
 

@@ -65,6 +65,54 @@ struct CatalogDeltaRoundTripTests {
     #expect(try db.card(id: "engine-isle")?.name == "Engine Isle")
     #expect(try db.card(id: "engine-relic")?.oracleText == "{T}: Add {C} or {W}.")
     #expect(try db.valueGuide(forCardID: "engine-forest").entries.first?.currentPrice == 0.55)
+    let targetReader = try CardDatabase(
+      userDatabaseURL: root.appendingPathComponent("target-reader-user.sqlite"),
+      catalogURL: targetCatalog
+    )
+    #expect(try db.semanticCatalogSnapshot() == targetReader.semanticCatalogSnapshot())
+  }
+
+  @Test
+  func clearToEmptySemanticReplacementIsNotReportedAsAnEmptyDelta() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SemanticClearDelta-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let build = try await buildCatalog(fixture: .versionA, root: root, tag: "semantic-clear")
+    let baseCatalog = build.directory.appendingPathComponent("catalog.sqlite")
+    let targetCatalog = root.appendingPathComponent("target.sqlite")
+    try FileManager.default.copyItem(at: baseCatalog, to: targetCatalog)
+    do {
+      let target = try SQLiteDatabase(storage: .file(targetCatalog))
+      try target.execute(
+        """
+        DELETE FROM semantic_tag_aliases;
+        DELETE FROM semantic_tag_edges;
+        DELETE FROM semantic_card_tags;
+        DELETE FROM semantic_tag_stats;
+        DELETE FROM semantic_tags;
+        """
+      )
+    }
+
+    let deltaURL = root.appendingPathComponent("delta.sqlite")
+    let stats = try CatalogDeltaBuilder().buildDelta(
+      baseCatalogURL: baseCatalog,
+      targetCatalogURL: targetCatalog,
+      baseVersion: "base",
+      targetVersion: "target",
+      into: deltaURL
+    )
+
+    #expect(stats.semanticRowsReplaced == 0)
+    #expect(stats.semanticCatalogReplaced)
+    #expect(!stats.isEmpty)
+
+    let delta = try SQLiteDatabase(storage: .readOnlyFile(deltaURL))
+    let marker = try delta.prepare("SELECT COUNT(*) FROM semantic_replace")
+    _ = try marker.step()
+    #expect(marker.int(at: 0) == 1)
   }
 
   /// End-to-end check of the engine's build hook: a second build (sharing state with the first) must
@@ -572,11 +620,18 @@ private enum DeltaTestFixture {
     }
   }
 
+  var oracleTagsUpdatedAt: String {
+    switch self {
+    case .versionA: "2026-06-14T21:00:00.000+00:00"
+    case .versionB, .versionC: "2026-06-15T21:00:00.000+00:00"
+    }
+  }
+
   func responses() throws -> [URL: Data] {
     [
       BulkDataClient.bulkDataURL: bulkManifestJSON(),
       EngineFixtures.scryfallDownloadURL: defaultCardsJSON(),
-      EngineFixtures.oracleTagsDownloadURL: try EngineFixtures.gzip(EngineFixtures.oracleTagsJSONLines()),
+      EngineFixtures.oracleTagsDownloadURL: try EngineFixtures.gzip(oracleTagsJSONLines()),
       MTGJSONPriceHistoryClient.metaURL: metaJSON(),
       MTGJSONPriceHistoryClient.allPrintingsURL: try EngineFixtures.gzip(printingsJSON()),
       MTGJSONPriceHistoryClient.allPricesURL: try EngineFixtures.gzip(pricesJSON()),
@@ -596,7 +651,7 @@ private enum DeltaTestFixture {
           "content_type": "application/json", "content_encoding": "gzip"
         }, {
           "object": "bulk_data", "id": "bulk-oracle-tags", "type": "oracle_tags",
-          "updated_at": "2026-06-14T21:00:00.000+00:00",
+          "updated_at": "\(oracleTagsUpdatedAt)",
           "uri": "https://api.scryfall.com/bulk-data/bulk-oracle-tags",
           "name": "Oracle Tags", "description": "fixture", "compressed_size": 123,
           "jsonl_download_uri": "\(EngineFixtures.oracleTagsDownloadURL.absoluteString)"
@@ -651,6 +706,19 @@ private enum DeltaTestFixture {
         """)
     }
     return Data("[\(cards.joined(separator: ","))]".utf8)
+  }
+
+  private func oracleTagsJSONLines() -> Data {
+    switch self {
+    case .versionA:
+      Data("""
+        {"object":"tag","id":"tag-engine-role","label":"draw engine","slug":"draw-engine","type":"oracle","uri":"https://tagger.scryfall.com/tags/card/draw-engine","description":"Repeatable card draw.","parent_ids":[],"child_ids":[],"aliases":["card draw engine"],"taggings":[{"oracle_id":"oracle-engine-forest","weight":"median","annotation":"version A"}]}
+        """.utf8)
+    case .versionB, .versionC:
+      Data("""
+        {"object":"tag","id":"tag-engine-role","label":"resource engine","slug":"resource-engine","type":"oracle","uri":"https://tagger.scryfall.com/tags/card/resource-engine","description":"Repeatable resource generation.","parent_ids":[],"child_ids":[],"aliases":["value engine"],"taggings":[{"oracle_id":"oracle-engine-forest","weight":"strong","annotation":"version B"},{"oracle_id":"oracle-engine-relic","weight":"median","annotation":null}]}
+        """.utf8)
+    }
   }
 
   private func metaJSON() -> Data {

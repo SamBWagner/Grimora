@@ -171,7 +171,7 @@ struct FixtureWorkspace {
 
   func makeBuildInputs() throws -> CatalogBuildInputs {
     let scryfallURL = try copyFixture("scryfall-default-cards", extension: "json")
-    let oracleTagsURL = try copyFixture("oracle-tags-sample", extension: "jsonl")
+    let oracleTagsURL = try copyFixture("oracle-tags-semantic", extension: "jsonl")
     let identifiersGzip = try gzippedFixture("mtgjson-allprintings", to: "mtgjson-allprintings.json.gz")
     let pricesGzip = try gzippedFixture("mtgjson-allprices", to: "mtgjson-allprices.json.gz")
     return CatalogBuildInputs(
@@ -182,7 +182,11 @@ struct FixtureWorkspace {
       sources: CatalogSourceVersions(
         scryfallUpdatedAt: "2026-06-14T09:00:00.000+00:00",
         mtgjsonDate: "2026-06-14",
-        mtgjsonVersion: "5.3.0"
+        mtgjsonVersion: "5.3.0",
+        oracleTagsUpdatedAt: "2026-06-14T21:00:00.000+00:00",
+        oracleTagsDownloadURI: URL(
+          string: "https://data.scryfall.io/oracle-tags/oracle-tags-20260614210000.jsonl.gz"
+        )
       )
     )
   }

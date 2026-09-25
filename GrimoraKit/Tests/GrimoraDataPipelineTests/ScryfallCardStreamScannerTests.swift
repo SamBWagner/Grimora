@@ -61,3 +61,51 @@ func rejectsInterruptedTopLevelObject() async throws {
     try await ScryfallCardStreamScanner.scan(url: url) { _ in }
   }
 }
+
+@Test
+func rejectsTruncatedTopLevelArrayAfterCompleteObject() async throws {
+  let url = FileManager.default.temporaryDirectory
+    .appendingPathComponent("scryfall-truncated-array-\(UUID().uuidString).json")
+  defer { try? FileManager.default.removeItem(at: url) }
+  try Data(#"[{"id":"one"}"#.utf8).write(to: url)
+
+  await #expect(throws: ScryfallCardStreamScannerError.unrecognizedStream) {
+    try await ScryfallCardStreamScanner.scan(url: url) { _ in }
+  }
+}
+
+@Test
+func rejectsTrailingGarbageAfterJSONLinesObject() async throws {
+  let url = FileManager.default.temporaryDirectory
+    .appendingPathComponent("scryfall-trailing-garbage-\(UUID().uuidString).jsonl")
+  defer { try? FileManager.default.removeItem(at: url) }
+  try Data("{\"id\":\"one\"}\ngarbage".utf8).write(to: url)
+
+  await #expect(throws: ScryfallCardStreamScannerError.unrecognizedStream) {
+    try await ScryfallCardStreamScanner.scan(url: url) { _ in }
+  }
+}
+
+@Test
+func rejectsJSONLinesObjectsSeparatedOnlyByHorizontalWhitespace() async throws {
+  let url = FileManager.default.temporaryDirectory
+    .appendingPathComponent("scryfall-jsonl-same-line-\(UUID().uuidString).jsonl")
+  defer { try? FileManager.default.removeItem(at: url) }
+  try Data("{\"id\":\"one\"} {\"id\":\"two\"}".utf8).write(to: url)
+
+  await #expect(throws: ScryfallCardStreamScannerError.unrecognizedStream) {
+    try await ScryfallCardStreamScanner.scan(url: url) { _ in }
+  }
+}
+
+@Test
+func rejectsJSONLinesObjectSplitAcrossMultipleLines() async throws {
+  let url = FileManager.default.temporaryDirectory
+    .appendingPathComponent("scryfall-jsonl-multiline-object-\(UUID().uuidString).jsonl")
+  defer { try? FileManager.default.removeItem(at: url) }
+  try Data("{\"id\":\"one\",\n\"nested\":{}}".utf8).write(to: url)
+
+  await #expect(throws: ScryfallCardStreamScannerError.unrecognizedStream) {
+    try await ScryfallCardStreamScanner.scan(url: url) { _ in }
+  }
+}

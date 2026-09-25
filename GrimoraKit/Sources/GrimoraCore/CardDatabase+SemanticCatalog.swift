@@ -233,7 +233,7 @@ extension CardDatabase {
   private func semanticCatalogAvailableUnlocked() throws -> Bool {
     let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
     let statement = try database.prepare(
-      "SELECT 1 FROM \(schema).sqlite_master WHERE type = 'table' AND name = 'semantic_tags' LIMIT 1"
+      "SELECT 1 FROM \(schema).sqlite_master WHERE type = 'table' AND name = 'semantic_tags' COLLATE NOCASE LIMIT 1"
     )
     return try statement.step()
   }

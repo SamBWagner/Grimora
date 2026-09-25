@@ -36,6 +36,9 @@ struct EngineBuildIntegrationTests {
     #expect(result.manifest.version.hasPrefix("v"))
     #expect(result.manifest.sources.mtgjsonDate == "2026-06-14")
     #expect(result.manifest.sources.mtgjsonVersion == "5.3.0")
+    #expect(result.manifest.enrichments == [
+      CatalogEnrichmentVersion(identifier: "scryfall-oracle-tags", version: 1),
+    ])
 
     // The built artifact validates and its counts match the manifest the engine wrote.
     let catalogURL = result.directory.appendingPathComponent("catalog.sqlite")
@@ -163,11 +166,28 @@ struct EngineBuildIntegrationTests {
       }
     }
     #expect(semanticTables == expectedSemanticTables)
+    let expectedCounts = [
+      "semantic_card_tags": 1,
+      "semantic_tag_aliases": 1,
+      "semantic_tag_edges": 0,
+      "semantic_tag_stats": 1,
+      "semantic_tags": 1,
+    ]
     for table in expectedSemanticTables {
       let count = try database.prepare("SELECT COUNT(*) FROM \(table)")
       _ = try count.step()
-      #expect(count.int(at: 0) == 0)
+      #expect(count.int(at: 0) == expectedCounts[table])
     }
+
+    let semanticDatabase = try CardDatabase(
+      userDatabaseURL: root.appendingPathComponent("semantic-user.sqlite"),
+      catalogURL: result.directory.appendingPathComponent("catalog.sqlite")
+    )
+    let snapshot = try semanticDatabase.semanticCatalogSnapshot()
+    #expect(snapshot.tags.first?.slug == "draw-engine")
+    #expect(snapshot.tags.first?.source == "scryfall-oracle-tags@2026-06-14T21:00:00.000+00:00")
+    #expect(snapshot.cardTags.first?.cardKey == SemanticCardKey(rawValue: "o:oracle-engine-forest"))
+    #expect(snapshot.cardTags.first?.annotation == "fixture")
   }
 
   @Test
