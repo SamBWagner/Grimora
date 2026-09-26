@@ -4,7 +4,10 @@ public struct CatalogSourceVersions: Codable, Equatable, Sendable {
   public var scryfallUpdatedAt: String
   public var mtgjsonDate: String
   public var mtgjsonVersion: String
+  /// The source identity embedded in semantic rows as `scryfall-oracle-tags@<updatedAt>`.
   public var oracleTagsUpdatedAt: String?
+  /// Remote-source provenance for the build. Semantic rows keep the compact timestamp identity;
+  /// the manifest is the authority for the exact downloaded URI.
   public var oracleTagsDownloadURI: URL?
 
   public init(
@@ -44,13 +47,35 @@ public struct CatalogArtifact: Codable, Equatable, Sendable {
   }
 }
 
+public struct CatalogSemanticCounts: Codable, Equatable, Sendable {
+  public var tags: Int
+  public var aliases: Int
+  public var edges: Int
+  public var cardTags: Int
+  public var tagStats: Int
+
+  public init(tags: Int, aliases: Int, edges: Int, cardTags: Int, tagStats: Int) {
+    self.tags = tags
+    self.aliases = aliases
+    self.edges = edges
+    self.cardTags = cardTags
+    self.tagStats = tagStats
+  }
+}
+
 public struct CatalogCounts: Codable, Equatable, Sendable {
   public var cards: Int
   public var priceSeries: Int
+  public var semantic: CatalogSemanticCounts?
 
-  public init(cards: Int, priceSeries: Int) {
+  public init(
+    cards: Int,
+    priceSeries: Int,
+    semantic: CatalogSemanticCounts? = nil
+  ) {
     self.cards = cards
     self.priceSeries = priceSeries
+    self.semantic = semantic
   }
 }
 

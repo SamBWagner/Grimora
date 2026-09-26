@@ -73,6 +73,103 @@ struct CatalogDeltaRoundTripTests {
   }
 
   @Test
+  func semanticDeltaRoundTripAcceptsCaseVariantTableAndColumnNames() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("CaseVariantSemanticDelta-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let buildA = try await buildCatalog(fixture: .versionA, root: root, tag: "case-a")
+    let buildB = try await buildCatalog(fixture: .versionB, root: root, tag: "case-b")
+    let baseCatalog = buildA.directory.appendingPathComponent("catalog.sqlite")
+    let targetCatalog = root.appendingPathComponent("case-variant-target.sqlite")
+    try FileManager.default.copyItem(
+      at: buildB.directory.appendingPathComponent("catalog.sqlite"),
+      to: targetCatalog
+    )
+    try recreateSemanticTablesWithCaseVariantIdentifiers(at: targetCatalog)
+
+    _ = try CardDatabase.validateCatalog(at: targetCatalog, expectedManifest: buildB.manifest)
+
+    let deltaURL = root.appendingPathComponent("case-variant-delta.sqlite")
+    let stats = try CatalogDeltaBuilder().buildDelta(
+      baseCatalogURL: baseCatalog,
+      targetCatalogURL: targetCatalog,
+      baseVersion: buildA.manifest.version,
+      targetVersion: buildB.manifest.version,
+      into: deltaURL
+    )
+    #expect(stats.semanticCatalogReplaced)
+
+    let working = root.appendingPathComponent("working.sqlite")
+    try FileManager.default.copyItem(at: baseCatalog, to: working)
+    try CatalogDeltaApplier().apply(deltaURL: deltaURL, toWorkingCatalog: working)
+
+    #expect(try digests(of: working) == digests(of: targetCatalog))
+    _ = try CardDatabase.validateCatalog(at: working, expectedManifest: buildB.manifest)
+  }
+
+  @Test
+  func semanticReplacementFailureRollsBackEveryEarlierDeltaMutation() async throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("SemanticDeltaRollback-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let buildA = try await buildCatalog(fixture: .versionA, root: root, tag: "rollback-a")
+    let buildB = try await buildCatalog(fixture: .versionB, root: root, tag: "rollback-b")
+    let baseCatalog = buildA.directory.appendingPathComponent("catalog.sqlite")
+    let targetCatalog = buildB.directory.appendingPathComponent("catalog.sqlite")
+    let deltaURL = root.appendingPathComponent("rollback-delta.sqlite")
+    let stats = try CatalogDeltaBuilder().buildDelta(
+      baseCatalogURL: baseCatalog,
+      targetCatalogURL: targetCatalog,
+      baseVersion: buildA.manifest.version,
+      targetVersion: buildB.manifest.version,
+      into: deltaURL
+    )
+    #expect(stats.cardFieldChanges > 0)
+    #expect(stats.cardsUpserted > 0)
+    #expect(stats.cardsDeleted > 0)
+    #expect(stats.semanticCatalogReplaced)
+
+    do {
+      let delta = try SQLiteDatabase(storage: .file(deltaURL))
+      try delta.execute(
+        """
+        INSERT INTO semantic_card_tags_replace
+            (card_key, tag_id, weight_millis, annotation, source)
+        VALUES ('o:failure-injection', 'tag-engine-role', -1, 'must fail', 'failure-injection')
+        """
+      )
+    }
+
+    let working = root.appendingPathComponent("working.sqlite")
+    try FileManager.default.copyItem(at: baseCatalog, to: working)
+    let before = try digests(of: working)
+    let beforeSearchIndexes = try searchIndexRows(of: working)
+
+    #expect(throws: (any Error).self) {
+      try CatalogDeltaApplier().apply(deltaURL: deltaURL, toWorkingCatalog: working)
+    }
+
+    #expect(try digests(of: working) == before)
+    #expect(try digests(of: working) == digests(of: baseCatalog))
+    #expect(try searchIndexRows(of: working) == beforeSearchIndexes)
+    #expect(try searchIndexRows(of: working) == searchIndexRows(of: baseCatalog))
+    _ = try CardDatabase.validateCatalog(at: working, expectedManifest: buildA.manifest)
+    try assertConsistent(working)
+
+    let database = try CardDatabase(
+      userDatabaseURL: root.appendingPathComponent("rollback-reader-user.sqlite"),
+      catalogURL: working
+    )
+    #expect(try database.card(id: "engine-ghost") != nil)
+    #expect(try database.card(id: "engine-isle") == nil)
+    #expect(try database.valueGuide(forCardID: "engine-forest").entries.first?.currentPrice == 0.50)
+  }
+
+  @Test
   func clearToEmptySemanticReplacementIsNotReportedAsAnEmptyDelta() async throws {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("SemanticClearDelta-\(UUID().uuidString)", isDirectory: true)
@@ -562,6 +659,100 @@ struct CatalogDeltaRoundTripTests {
   private func digests(of catalogURL: URL) throws -> CatalogContentDigests {
     let database = try SQLiteDatabase(storage: .readOnlyFile(catalogURL))
     return try CatalogContentDigest.compute(database)
+  }
+
+  private func recreateSemanticTablesWithCaseVariantIdentifiers(at catalogURL: URL) throws {
+    let database = try SQLiteDatabase(storage: .file(catalogURL))
+    try database.execute(
+      """
+      PRAGMA foreign_keys = OFF;
+      ALTER TABLE semantic_tags RENAME TO old_semantic_tags;
+      ALTER TABLE semantic_tag_aliases RENAME TO old_semantic_tag_aliases;
+      ALTER TABLE semantic_tag_edges RENAME TO old_semantic_tag_edges;
+      ALTER TABLE semantic_card_tags RENAME TO old_semantic_card_tags;
+      ALTER TABLE semantic_tag_stats RENAME TO old_semantic_tag_stats;
+
+      CREATE TABLE SeMaNtIc_TaGs (
+          ID TEXT PRIMARY KEY,
+          NameSpace TEXT NOT NULL,
+          Slug TEXT NOT NULL,
+          Label TEXT NOT NULL,
+          Description TEXT,
+          Similarity_Enabled INTEGER NOT NULL,
+          Source TEXT NOT NULL
+      );
+      CREATE TABLE SeMaNtIc_TaG_AlIaSeS (
+          Tag_ID TEXT NOT NULL,
+          Alias TEXT NOT NULL,
+          Alias_Key TEXT NOT NULL,
+          PRIMARY KEY (Tag_ID, Alias_Key)
+      );
+      CREATE TABLE SeMaNtIc_TaG_EdGeS (
+          Parent_Tag_ID TEXT NOT NULL,
+          Child_Tag_ID TEXT NOT NULL,
+          PRIMARY KEY (Parent_Tag_ID, Child_Tag_ID)
+      );
+      CREATE TABLE SeMaNtIc_CaRd_TaGs (
+          Card_Key TEXT NOT NULL,
+          Tag_ID TEXT NOT NULL,
+          Weight_Millis INTEGER NOT NULL,
+          Annotation TEXT,
+          Source TEXT NOT NULL,
+          PRIMARY KEY (Card_Key, Tag_ID, Source)
+      );
+      CREATE TABLE SeMaNtIc_TaG_StAtS (
+          Tag_ID TEXT PRIMARY KEY,
+          Direct_Card_Count INTEGER NOT NULL,
+          Effective_Card_Count INTEGER NOT NULL,
+          IDF_Millis INTEGER NOT NULL
+      );
+
+      INSERT INTO SeMaNtIc_TaGs SELECT * FROM old_semantic_tags;
+      INSERT INTO SeMaNtIc_TaG_AlIaSeS SELECT * FROM old_semantic_tag_aliases;
+      INSERT INTO SeMaNtIc_TaG_EdGeS SELECT * FROM old_semantic_tag_edges;
+      INSERT INTO SeMaNtIc_CaRd_TaGs SELECT * FROM old_semantic_card_tags;
+      INSERT INTO SeMaNtIc_TaG_StAtS SELECT * FROM old_semantic_tag_stats;
+
+      DROP TABLE old_semantic_tag_stats;
+      DROP TABLE old_semantic_card_tags;
+      DROP TABLE old_semantic_tag_edges;
+      DROP TABLE old_semantic_tag_aliases;
+      DROP TABLE old_semantic_tags;
+      """
+    )
+  }
+
+  private struct SearchIndexSnapshot: Equatable {
+    var cards: [SearchIndexRow]
+    var names: [SearchIndexRow]
+  }
+
+  private struct SearchIndexRow: Equatable {
+    var cardID: String
+    var text: String
+  }
+
+  private func searchIndexRows(of catalogURL: URL) throws -> SearchIndexSnapshot {
+    let database = try SQLiteDatabase(storage: .readOnlyFile(catalogURL))
+    func rows(table: String, textColumn: String) throws -> [SearchIndexRow] {
+      let statement = try database.prepare(
+        "SELECT card_id, \(textColumn) FROM \(table) ORDER BY card_id, rowid"
+      )
+      var result: [SearchIndexRow] = []
+      while try statement.step() {
+        guard let cardID = statement.string(at: 0),
+          let text = statement.string(at: 1)
+        else {
+          continue
+        }
+        result.append(SearchIndexRow(cardID: cardID, text: text))
+      }
+      return result
+    }
+    return SearchIndexSnapshot(
+      cards: try rows(table: "cards_fts", textColumn: "search_text"),
+      names: try rows(table: "cards_name_fts", textColumn: "name_text")
+    )
   }
 
   private func assertConsistent(_ catalogURL: URL) throws {

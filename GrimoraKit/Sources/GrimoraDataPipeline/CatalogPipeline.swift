@@ -191,16 +191,13 @@ public struct CatalogPipeline: Sendable {
         }
       )
 
-    guard let oracleTagsUpdatedAt = inputs.sources.oracleTagsUpdatedAt,
-      let oracleTagsDownloadURI = inputs.sources.oracleTagsDownloadURI
-    else {
+    guard let oracleTagsUpdatedAt = inputs.sources.oracleTagsUpdatedAt else {
       throw ScryfallOracleTagsSemanticEnrichmentError.missingSourceIdentity
     }
     let stages: [any CatalogEnrichmentStage] = [
       ScryfallOracleTagsSemanticEnrichmentStage(
         oracleTagsJSONLURL: inputs.oracleTagsJSONLURL,
-        sourceUpdatedAt: oracleTagsUpdatedAt,
-        sourceDownloadURI: oracleTagsDownloadURI
+        sourceUpdatedAt: oracleTagsUpdatedAt
       ),
     ] + enrichmentStages
     for (index, stage) in stages.enumerated() {

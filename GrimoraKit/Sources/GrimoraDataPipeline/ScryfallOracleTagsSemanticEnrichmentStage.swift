@@ -12,23 +12,20 @@ public enum ScryfallOracleTagsSemanticEnrichmentError: Error, Equatable, Sendabl
 
 public struct ScryfallOracleTagsSemanticEnrichmentStage: CatalogEnrichmentStage {
   public static let identifier = "scryfall-oracle-tags"
-  public static let version = 1
+  public static let version = 2
 
   public let oracleTagsJSONLURL: URL
   public let sourceUpdatedAt: String
-  public let sourceDownloadURI: URL
 
   public var identifier: String { Self.identifier }
   public var version: Int { Self.version }
 
   public init(
     oracleTagsJSONLURL: URL,
-    sourceUpdatedAt: String,
-    sourceDownloadURI: URL
+    sourceUpdatedAt: String
   ) {
     self.oracleTagsJSONLURL = oracleTagsJSONLURL
     self.sourceUpdatedAt = sourceUpdatedAt
-    self.sourceDownloadURI = sourceDownloadURI
   }
 
   public func enrich(database: CardDatabase) async throws {
@@ -45,7 +42,10 @@ public struct ScryfallOracleTagsSemanticEnrichmentStage: CatalogEnrichmentStage 
     try await ScryfallOracleTagStreamScanner.scan(url: oracleTagsJSONLURL) { tag in
       try accumulator.consume(tag)
     }
-    try database.replaceSemanticCatalog(with: accumulator.snapshot())
+    let validCardKeys = try database.semanticCardIdentityKeys()
+    try database.replaceSemanticCatalog(
+      with: accumulator.snapshot(validCardKeys: validCardKeys)
+    )
   }
 }
 
@@ -140,7 +140,7 @@ private struct OracleTagsSemanticAccumulator {
     }
   }
 
-  func snapshot() throws -> SemanticCatalogSnapshot {
+  func snapshot(validCardKeys: Set<SemanticCardKey>) throws -> SemanticCatalogSnapshot {
     guard !tagsByID.isEmpty else {
       throw ScryfallOracleTagsSemanticEnrichmentError.emptySource
     }
@@ -157,10 +157,13 @@ private struct OracleTagsSemanticAccumulator {
     }
     try validateAcyclic(tagIDs: tagIDs, childrenByParent: childrenByParent)
 
+    let memberships = membershipsByIdentity.values.filter {
+      validCardKeys.contains($0.cardKey)
+    }
     let disabledTagIDs = similarityDisabledTagIDs(childrenByParent: childrenByParent)
-    let directCardsByTag = Dictionary(grouping: membershipsByIdentity.values, by: \.tagID)
+    let directCardsByTag = Dictionary(grouping: memberships, by: \.tagID)
       .mapValues { Set($0.map(\.cardKey)) }
-    let allCards = Set(membershipsByIdentity.values.map(\.cardKey))
+    let allCards = Set(memberships.map(\.cardKey))
     var effectiveMemo: [String: Set<SemanticCardKey>] = [:]
 
     func effectiveCards(for tagID: String) -> Set<SemanticCardKey> {
@@ -216,7 +219,7 @@ private struct OracleTagsSemanticAccumulator {
       }.sorted {
         ($0.parentTagID, $0.childTagID) < ($1.parentTagID, $1.childTagID)
       },
-      cardTags: membershipsByIdentity.values.sorted {
+      cardTags: memberships.sorted {
         ($0.cardKey.rawValue, $0.tagID, $0.source)
           < ($1.cardKey.rawValue, $1.tagID, $1.source)
       },

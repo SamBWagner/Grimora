@@ -436,7 +436,10 @@ public final class ManagedCatalogMigrationService: @unchecked Sendable {
   }
 
   private func openValidatedManagedDatabase() throws -> CardDatabase {
-    _ = try CardDatabase.validateCatalog(at: layout.activeCatalog)
+    _ = try CardDatabase.validateCatalog(
+      at: layout.activeCatalog,
+      expectedManifest: try activeManifest()
+    )
     let database = try CardDatabase(
       userDatabaseURL: layout.activeUserDatabase,
       catalogURL: layout.activeCatalog

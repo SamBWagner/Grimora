@@ -7,6 +7,7 @@ struct OracleTagsSemanticEnrichmentTests {
   @Test
   func semanticEnrichmentBumpsThePipelineIdentity() {
     #expect(CatalogPipeline.currentVersion == 2)
+    #expect(ScryfallOracleTagsSemanticEnrichmentStage.version == 2)
   }
 
   @Test
@@ -22,7 +23,7 @@ struct OracleTagsSemanticEnrichmentTests {
     )
 
     #expect(result.enrichments == [
-      CatalogEnrichmentVersion(identifier: "scryfall-oracle-tags", version: 1),
+      CatalogEnrichmentVersion(identifier: "scryfall-oracle-tags", version: 2),
     ])
 
     let database = try CardDatabase(
@@ -80,6 +81,9 @@ struct OracleTagsSemanticEnrichmentTests {
         source: source
       ),
     ])
+    #expect(!snapshot.cardTags.contains {
+      $0.cardKey.rawValue == "o:oracle-not-in-catalog"
+    })
     #expect(snapshot.stats == [
       SemanticTagStatsRecord(
         tagID: "tag-alliteration",
@@ -261,10 +265,7 @@ struct OracleTagsSemanticEnrichmentTests {
     try database.replaceSemanticCatalog(with: original)
     let stage = ScryfallOracleTagsSemanticEnrichmentStage(
       oracleTagsJSONLURL: sourceURL,
-      sourceUpdatedAt: "2026-06-14T21:00:00.000+00:00",
-      sourceDownloadURI: URL(
-        string: "https://data.scryfall.io/oracle-tags/oracle-tags-20260614210000.jsonl.gz"
-      )!
+      sourceUpdatedAt: "2026-06-14T21:00:00.000+00:00"
     )
 
     await #expect(throws: ScryfallOracleTagsSemanticEnrichmentError.emptySource) {
@@ -294,10 +295,7 @@ struct OracleTagsSemanticEnrichmentTests {
     try database.replaceSemanticCatalog(with: original)
     let stage = ScryfallOracleTagsSemanticEnrichmentStage(
       oracleTagsJSONLURL: sourceURL,
-      sourceUpdatedAt: "2026-06-14T21:00:00.000+00:00",
-      sourceDownloadURI: URL(
-        string: "https://data.scryfall.io/oracle-tags/oracle-tags-20260614210000.jsonl.gz"
-      )!
+      sourceUpdatedAt: "2026-06-14T21:00:00.000+00:00"
     )
 
     await #expect(throws: (any Error).self) {
@@ -310,10 +308,7 @@ struct OracleTagsSemanticEnrichmentTests {
     let database = try CardDatabase(storage: .inMemory)
     let stage = ScryfallOracleTagsSemanticEnrichmentStage(
       oracleTagsJSONLURL: sourceURL,
-      sourceUpdatedAt: "2026-06-14T21:00:00.000+00:00",
-      sourceDownloadURI: URL(
-        string: "https://data.scryfall.io/oracle-tags/oracle-tags-20260614210000.jsonl.gz"
-      )!
+      sourceUpdatedAt: "2026-06-14T21:00:00.000+00:00"
     )
     try await stage.enrich(database: database)
     return try database.semanticCatalogSnapshot()

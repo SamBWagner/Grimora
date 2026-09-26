@@ -129,6 +129,220 @@ final class CatalogStorageTests: XCTestCase {
     XCTAssertNotNil(try database.card(id: "beta"))
   }
 
+  func testEnrichedCatalogValidationRejectsEmptySemanticContent() throws {
+    let directory = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let catalogURL = directory.appendingPathComponent("empty-semantic.sqlite")
+    try createCatalog(at: catalogURL, cards: [Fixtures.records()[0]])
+    let counts = try CardDatabase.validateCatalog(at: catalogURL)
+    let manifest = catalogManifest(
+      version: "empty-semantic",
+      counts: counts,
+      enrichments: [CatalogEnrichmentVersion(identifier: "scryfall-oracle-tags", version: 1)]
+    )
+
+    XCTAssertThrowsError(
+      try CardDatabase.validateCatalog(at: catalogURL, expectedManifest: manifest)
+    )
+  }
+
+  func testSemanticCardIdentityKeysPreferOracleAndFallbackToPrinting() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var oracleCard = Fixtures.records()[0]
+    var printingOnlyCard = Fixtures.records()[1]
+    oracleCard.oracleID = "oracle-shared"
+    printingOnlyCard.oracleID = nil
+    try database.replaceAllCards([oracleCard, printingOnlyCard])
+
+    XCTAssertEqual(
+      try database.semanticCardIdentityKeys(),
+      [
+        SemanticCardKey(rawValue: "o:oracle-shared"),
+        SemanticCardKey(rawValue: "p:\(printingOnlyCard.id)"),
+      ]
+    )
+  }
+
+  func testVersionOneOracleTagsCatalogAllowsMembershipsOutsideTheCardCatalog() throws {
+    let directory = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let catalogURL = directory.appendingPathComponent("legacy-semantic.sqlite")
+    try createSemanticCatalog(at: catalogURL)
+    let initialCounts = try CardDatabase.validateCatalog(at: catalogURL)
+    let database = try SQLiteDatabase(storage: .file(catalogURL))
+    try database.execute("UPDATE semantic_card_tags SET card_key = 'o:legacy-missing-oracle'")
+    let manifest = catalogManifest(
+      version: "legacy-semantic",
+      counts: CatalogCounts(
+        cards: initialCounts.cards,
+        priceSeries: initialCounts.priceSeries
+      ),
+      enrichments: [CatalogEnrichmentVersion(identifier: "scryfall-oracle-tags", version: 1)]
+    )
+
+    XCTAssertNoThrow(
+      try CardDatabase.validateCatalog(at: catalogURL, expectedManifest: manifest)
+    )
+  }
+
+  func testInvalidOracleTagsVersionsRejectMembershipsOutsideTheCardCatalog() throws {
+    for version in [0, -1] {
+      let directory = temporaryDirectory()
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let catalogURL = directory.appendingPathComponent("invalid-version-semantic.sqlite")
+      try createSemanticCatalog(at: catalogURL)
+      let initialCounts = try CardDatabase.validateCatalog(at: catalogURL)
+      let database = try SQLiteDatabase(storage: .file(catalogURL))
+      try database.execute("UPDATE semantic_card_tags SET card_key = 'o:missing-oracle'")
+      let manifest = catalogManifest(
+        version: "invalid-version-\(version)",
+        counts: CatalogCounts(
+          cards: initialCounts.cards,
+          priceSeries: initialCounts.priceSeries
+        ),
+        enrichments: [CatalogEnrichmentVersion(identifier: "scryfall-oracle-tags", version: version)]
+      )
+
+      XCTAssertThrowsError(
+        try CardDatabase.validateCatalog(at: catalogURL, expectedManifest: manifest),
+        "Expected Oracle Tags version \(version) to require resolvable membership card keys"
+      )
+    }
+  }
+
+  func testManagedBootstrapUsesVersionOneManifestWhenValidatingSemanticCatalog() throws {
+    let directory = temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let activeDirectory = directory.appendingPathComponent("Database-v2", isDirectory: true)
+    try FileManager.default.createDirectory(at: activeDirectory, withIntermediateDirectories: true)
+    let catalogURL = activeDirectory.appendingPathComponent("Catalog.sqlite")
+    let userURL = activeDirectory.appendingPathComponent("User.sqlite")
+    try createSemanticCatalog(at: catalogURL)
+    let initialCounts = try CardDatabase.validateCatalog(at: catalogURL)
+    let raw = try SQLiteDatabase(storage: .file(catalogURL))
+    try raw.execute("UPDATE semantic_card_tags SET card_key = 'o:legacy-missing-oracle'")
+    let manifest = catalogManifest(
+      version: "legacy-semantic",
+      counts: CatalogCounts(
+        cards: initialCounts.cards,
+        priceSeries: initialCounts.priceSeries
+      ),
+      enrichments: [CatalogEnrichmentVersion(identifier: "scryfall-oracle-tags", version: 1)]
+    )
+    try CatalogManifest.encoder().encode(manifest)
+      .write(to: activeDirectory.appendingPathComponent("manifest.json"))
+    do {
+      let database = try CardDatabase(userDatabaseURL: userURL, catalogURL: catalogURL)
+      try database.recordInstalledCatalogManifest(manifest)
+      try database.saveMetadataValue(
+        CardDatabase.currentSearchSchemaVersion,
+        forKey: MetadataKey.searchSchemaVersion.rawValue
+      )
+    }
+
+    let bootstrap = try ManagedCatalogMigrationService.bootstrap(
+      supportDirectory: directory,
+      bulkDataClient: BulkDataClient(network: BlockingNetworkClient())
+    )
+
+    XCTAssertTrue(bootstrap.databaseAlreadyExists)
+    XCTAssertEqual(try bootstrap.database.cardCount(), initialCounts.cards)
+  }
+
+  func testCatalogValidationRejectsMalformedSemanticRows() throws {
+    let corruptions: [(String, (SQLiteDatabase) throws -> Void)] = [
+      ("negative membership weight", { database in
+        try database.execute(
+          "PRAGMA ignore_check_constraints = ON; UPDATE semantic_card_tags SET weight_millis = -1"
+        )
+      }),
+      ("REAL membership weight", { database in
+        try database.execute(
+          "PRAGMA ignore_check_constraints = ON; UPDATE semantic_card_tags SET weight_millis = 1000.5"
+        )
+      }),
+      ("orphan membership", { database in
+        try database.execute(
+          "PRAGMA foreign_keys = OFF; UPDATE semantic_card_tags SET tag_id = 'missing-tag'"
+        )
+      }),
+      ("orphan Oracle card membership", { database in
+        try database.execute(
+          "UPDATE semantic_card_tags SET card_key = 'o:missing-oracle'"
+        )
+      }),
+      ("orphan printing card membership", { database in
+        try database.execute(
+          "UPDATE semantic_card_tags SET card_key = 'p:missing-printing'"
+        )
+      }),
+      ("mismatched alias normalization", { database in
+        try database.execute(
+          "UPDATE semantic_tag_aliases SET alias_key = 'not the normalized alias'"
+        )
+      }),
+      ("whitespace-only tag identity", { database in
+        try database.execute(
+          "UPDATE semantic_tags SET namespace = char(9) || char(10)"
+        )
+      }),
+      ("orphan hierarchy edge", { database in
+        try database.execute(
+          "PRAGMA foreign_keys = OFF; INSERT INTO semantic_tag_edges VALUES ('tag-draw', 'missing-tag')"
+        )
+      }),
+      ("missing statistics", { database in
+        try database.execute("DELETE FROM semantic_tag_stats")
+      }),
+      ("inconsistent statistics", { database in
+        try database.execute(
+          "UPDATE semantic_tag_stats SET direct_card_count = 99, effective_card_count = 99"
+        )
+      }),
+      ("inconsistent inverse frequency", { database in
+        try database.execute(
+          "UPDATE semantic_tag_stats SET idf_millis = 999"
+        )
+      }),
+      ("TEXT inverse frequency", { database in
+        try database.execute(
+          "PRAGMA ignore_check_constraints = ON; UPDATE semantic_tag_stats SET idf_millis = '1000x'"
+        )
+      }),
+      ("duplicate membership", { database in
+        try database.execute(
+          """
+          ALTER TABLE semantic_card_tags RENAME TO semantic_card_tags_original;
+          CREATE TABLE semantic_card_tags (
+              card_key TEXT NOT NULL,
+              tag_id TEXT NOT NULL,
+              weight_millis INTEGER NOT NULL,
+              annotation TEXT,
+              source TEXT NOT NULL
+          );
+          INSERT INTO semantic_card_tags SELECT * FROM semantic_card_tags_original;
+          INSERT INTO semantic_card_tags SELECT * FROM semantic_card_tags_original;
+          DROP TABLE semantic_card_tags_original;
+          """
+        )
+      }),
+    ]
+
+    for (name, corrupt) in corruptions {
+      let directory = temporaryDirectory()
+      defer { try? FileManager.default.removeItem(at: directory) }
+      let catalogURL = directory.appendingPathComponent("malformed-semantic.sqlite")
+      try createSemanticCatalog(at: catalogURL)
+      let database = try SQLiteDatabase(storage: .file(catalogURL))
+      try corrupt(database)
+
+      XCTAssertThrowsError(
+        try CardDatabase.validateCatalog(at: catalogURL),
+        "Expected validation to reject \(name)"
+      )
+    }
+  }
+
   func testFreshManagedBootstrapCanRelaunchBeforeCatalogInstall() throws {
     let directory = temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -474,7 +688,54 @@ final class CatalogStorageTests: XCTestCase {
     try database.database.execute("PRAGMA wal_checkpoint(TRUNCATE)")
   }
 
-  private func catalogManifest(version: String, counts: CatalogCounts) -> CatalogManifest {
+  private func createSemanticCatalog(at url: URL) throws {
+    let database = try CardDatabase(storage: .file(url))
+    try database.replaceAllCards([Fixtures.records()[0]])
+    try database.replaceSemanticCatalog(
+      with: SemanticCatalogSnapshot(
+        tags: [
+          SemanticTagRecord(
+            id: "tag-draw",
+            namespace: "oracle",
+            slug: "draw",
+            label: "Draw",
+            description: nil,
+            similarityEnabled: true,
+            source: "fixture"
+          ),
+        ],
+        aliases: [
+          SemanticTagAliasRecord(tagID: "tag-draw", alias: "Card Draw", aliasKey: "card draw"),
+        ],
+        edges: [],
+        cardTags: [
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: "oracle-alpha", printingID: "alpha"),
+            tagID: "tag-draw",
+            weightMillis: 1_000,
+            annotation: "fixture",
+            source: "fixture"
+          ),
+        ],
+        stats: [
+          SemanticTagStatsRecord(
+            tagID: "tag-draw",
+            directCardCount: 1,
+            effectiveCardCount: 1,
+            inverseFrequencyMillis: 1_000
+          ),
+        ]
+      )
+    )
+    try database.prepareForCatalogDistribution()
+    try database.database.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+  }
+
+  private func catalogManifest(
+    version: String,
+    counts: CatalogCounts,
+    enrichments: [CatalogEnrichmentVersion] = []
+  ) -> CatalogManifest {
     CatalogManifest(
       version: version,
       generatedAt: Date(timeIntervalSince1970: 0),
@@ -483,6 +744,7 @@ final class CatalogStorageTests: XCTestCase {
         mtgjsonDate: "2026-06-14",
         mtgjsonVersion: "5.2.1"
       ),
+      enrichments: enrichments,
       artifact: CatalogArtifact(
         downloadURL: URL(string: "https://example.test/v1/catalog/\(version)")!,
         compressedBytes: 0,

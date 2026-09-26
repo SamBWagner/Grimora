@@ -33,11 +33,20 @@ struct EngineBuildIntegrationTests {
 
     #expect(result.manifest.counts.cards == 2)
     #expect(result.manifest.counts.priceSeries == 1)
+    #expect(result.manifest.counts.semantic == CatalogSemanticCounts(
+      tags: 1,
+      aliases: 1,
+      edges: 0,
+      cardTags: 1,
+      tagStats: 1
+    ))
     #expect(result.manifest.version.hasPrefix("v"))
     #expect(result.manifest.sources.mtgjsonDate == "2026-06-14")
     #expect(result.manifest.sources.mtgjsonVersion == "5.3.0")
+    #expect(result.manifest.sources.oracleTagsUpdatedAt == "2026-06-14T21:00:00.000+00:00")
+    #expect(result.manifest.sources.oracleTagsDownloadURI == EngineFixtures.oracleTagsDownloadURL)
     #expect(result.manifest.enrichments == [
-      CatalogEnrichmentVersion(identifier: "scryfall-oracle-tags", version: 1),
+      CatalogEnrichmentVersion(identifier: "scryfall-oracle-tags", version: 2),
     ])
 
     // The built artifact validates and its counts match the manifest the engine wrote.
@@ -52,6 +61,10 @@ struct EngineBuildIntegrationTests {
     )
     #expect(try database.card(id: "engine-forest")?.name == "Engine Forest")
     #expect(try database.valueGuide(forCardID: "engine-forest").entries.first?.currentPrice == 0.50)
+    let semanticSource = "scryfall-oracle-tags@2026-06-14T21:00:00.000+00:00"
+    let semanticSnapshot = try database.semanticCatalogSnapshot()
+    #expect(semanticSnapshot.tags.allSatisfy { $0.source == semanticSource })
+    #expect(semanticSnapshot.cardTags.allSatisfy { $0.source == semanticSource })
 
     // Run history + persisted state reflect the successful build.
     let history = engine.loadRunHistory()

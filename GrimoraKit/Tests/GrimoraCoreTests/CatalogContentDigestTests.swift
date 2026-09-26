@@ -79,12 +79,34 @@ struct CatalogContentDigestTests {
     #expect(caseVariant == canonical)
   }
 
+  @Test
+  func legacyFiveTableCatalogRetainsByteExactOverallDigest() throws {
+    let root = FileManager.default.temporaryDirectory
+      .appendingPathComponent("DigestTests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+
+    let legacy = try makeDigestFixture(
+      at: root.appendingPathComponent("legacy.sqlite"),
+      reversed: false,
+      includeSemanticTables: false
+    )
+
+    #expect(legacy.semanticTags == nil)
+    #expect(legacy.semanticTagAliases == nil)
+    #expect(legacy.semanticTagEdges == nil)
+    #expect(legacy.semanticCardTags == nil)
+    #expect(legacy.semanticTagStats == nil)
+    #expect(legacy.overall == "b68e58726fef6b6e300b304c71ef82e0280bfdfebdab747bf2e9d11a8815b9b8")
+  }
+
   private func makeDigestFixture(
     at url: URL,
     reversed: Bool,
     bumpFirstPrice: Bool = false,
     semanticLabel: String = "Draw Engine",
-    caseVariantSemanticTables: Bool = false
+    caseVariantSemanticTables: Bool = false,
+    includeSemanticTables: Bool = true
   ) throws -> CatalogContentDigests {
     let database = try SQLiteDatabase(storage: .file(url))
     try database.execute(
@@ -94,13 +116,19 @@ struct CatalogContentDigestTests {
       CREATE TABLE card_value_series (card_id TEXT NOT NULL, provider TEXT NOT NULL, finish TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, day_count INTEGER NOT NULL, prices_cents BLOB NOT NULL, PRIMARY KEY (card_id, provider, finish));
       CREATE TABLE card_value_summaries (card_id TEXT NOT NULL, provider TEXT NOT NULL, finish TEXT NOT NULL, current_price REAL NOT NULL, PRIMARY KEY (card_id, provider, finish));
       CREATE TABLE card_value_mappings (card_id TEXT NOT NULL, mtgjson_uuid TEXT PRIMARY KEY);
-      CREATE TABLE semantic_tags (id TEXT PRIMARY KEY, namespace TEXT NOT NULL, slug TEXT NOT NULL, label TEXT NOT NULL, description TEXT, similarity_enabled INTEGER NOT NULL, source TEXT NOT NULL);
-      CREATE TABLE semantic_tag_aliases (tag_id TEXT NOT NULL, alias TEXT NOT NULL, alias_key TEXT NOT NULL, PRIMARY KEY (tag_id, alias_key));
-      CREATE TABLE semantic_tag_edges (parent_tag_id TEXT NOT NULL, child_tag_id TEXT NOT NULL, PRIMARY KEY (parent_tag_id, child_tag_id));
-      CREATE TABLE semantic_card_tags (card_key TEXT NOT NULL, tag_id TEXT NOT NULL, weight_millis INTEGER NOT NULL, annotation TEXT, source TEXT NOT NULL, PRIMARY KEY (card_key, tag_id, source));
-      CREATE TABLE semantic_tag_stats (tag_id TEXT PRIMARY KEY, direct_card_count INTEGER NOT NULL, effective_card_count INTEGER NOT NULL, idf_millis INTEGER NOT NULL);
       """
     )
+    if includeSemanticTables {
+      try database.execute(
+        """
+        CREATE TABLE semantic_tags (id TEXT PRIMARY KEY, namespace TEXT NOT NULL, slug TEXT NOT NULL, label TEXT NOT NULL, description TEXT, similarity_enabled INTEGER NOT NULL, source TEXT NOT NULL);
+        CREATE TABLE semantic_tag_aliases (tag_id TEXT NOT NULL, alias TEXT NOT NULL, alias_key TEXT NOT NULL, PRIMARY KEY (tag_id, alias_key));
+        CREATE TABLE semantic_tag_edges (parent_tag_id TEXT NOT NULL, child_tag_id TEXT NOT NULL, PRIMARY KEY (parent_tag_id, child_tag_id));
+        CREATE TABLE semantic_card_tags (card_key TEXT NOT NULL, tag_id TEXT NOT NULL, weight_millis INTEGER NOT NULL, annotation TEXT, source TEXT NOT NULL, PRIMARY KEY (card_key, tag_id, source));
+        CREATE TABLE semantic_tag_stats (tag_id TEXT PRIMARY KEY, direct_card_count INTEGER NOT NULL, effective_card_count INTEGER NOT NULL, idf_millis INTEGER NOT NULL);
+        """
+      )
+    }
 
     var cardRows: [(String, String, Double?, String?)] = [
       ("aaa", "Alpha", bumpFirstPrice ? 9.99 : 0.50, "flavor"),
@@ -167,26 +195,28 @@ struct CatalogContentDigestTests {
       try mappingInsert.reset()
     }
 
-    let semanticTag = try database.prepare(
-      "INSERT INTO semantic_tags (id, namespace, slug, label, description, similarity_enabled, source) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    )
-    try semanticTag.bind("tag-draw-engine", at: 1)
-    try semanticTag.bind("oracle", at: 2)
-    try semanticTag.bind("draw-engine", at: 3)
-    try semanticTag.bind(semanticLabel, at: 4)
-    try semanticTag.bind("Repeatable card draw.", at: 5)
-    try semanticTag.bind(true, at: 6)
-    try semanticTag.bind("scryfall-oracle-tags@fixture", at: 7)
-    try semanticTag.step()
-    try database.execute(
-      """
-      INSERT INTO semantic_tag_aliases VALUES ('tag-draw-engine', 'Card Draw Engine', 'card draw engine');
-      INSERT INTO semantic_card_tags VALUES ('o:oracle-aaa', 'tag-draw-engine', 1000, 'fixture', 'scryfall-oracle-tags@fixture');
-      INSERT INTO semantic_tag_stats VALUES ('tag-draw-engine', 1, 1, 1000);
-      """
-    )
+    if includeSemanticTables {
+      let semanticTag = try database.prepare(
+        "INSERT INTO semantic_tags (id, namespace, slug, label, description, similarity_enabled, source) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      )
+      try semanticTag.bind("tag-draw-engine", at: 1)
+      try semanticTag.bind("oracle", at: 2)
+      try semanticTag.bind("draw-engine", at: 3)
+      try semanticTag.bind(semanticLabel, at: 4)
+      try semanticTag.bind("Repeatable card draw.", at: 5)
+      try semanticTag.bind(true, at: 6)
+      try semanticTag.bind("scryfall-oracle-tags@fixture", at: 7)
+      try semanticTag.step()
+      try database.execute(
+        """
+        INSERT INTO semantic_tag_aliases VALUES ('tag-draw-engine', 'Card Draw Engine', 'card draw engine');
+        INSERT INTO semantic_card_tags VALUES ('o:oracle-aaa', 'tag-draw-engine', 1000, 'fixture', 'scryfall-oracle-tags@fixture');
+        INSERT INTO semantic_tag_stats VALUES ('tag-draw-engine', 1, 1, 1000);
+        """
+      )
+    }
 
-    if caseVariantSemanticTables {
+    if caseVariantSemanticTables, includeSemanticTables {
       try renameSemanticTablesToUppercase(database)
     }
 

@@ -390,7 +390,7 @@ public struct CardSemanticMembership: Equatable, Sendable {
 
 ### Task 7: Extend catalog validation, counts, and logical digests
 
-**Status (2026-09-25): implementation complete within the enrichment milestone.** All five semantic tables participate in canonical logical digests; current enriched catalogs require the complete semantic schema with SQLite-compatible identifier handling. Broader publication measurements remain in the semantic-integrity task.
+**Status (2026-09-26): integrity hardening complete.** All five semantic tables participate in canonical logical digests; manifests carry optional backward-compatible semantic row counts; current enriched catalogs require non-empty tags and memberships; and distributed validation rejects malformed identities, negative weights, duplicates, orphans, cycles, missing/inconsistent statistics, and manifest count mismatches. Oracle Tags enrichment version 2 filters unresolved source memberships before statistics are computed, while version 1 persisted catalogs remain readable for upgrade compatibility. A byte-exact legacy five-table digest fixture protects pre-semantic identity. No additional catalog-schema bump was required because this gate adds manifest metadata and validation without changing persisted tables.
 
 **Objective:** Make missing, stale, or corrupt semantic data detectable before publish and after client installation.
 
@@ -424,7 +424,7 @@ public struct CardSemanticMembership: Equatable, Sendable {
 
 ### Task 8: Add semantic delta generation and transactional apply
 
-**Status (2026-09-25): implementation complete within the enrichment milestone.** Delta format 2 transfers semantic snapshots transactionally, exact A→B fixture round trips pass, and clear-to-empty replacement is represented as a real delta. Private real-data chain measurements remain in Task 9.
+**Status (2026-09-26): integrity hardening complete.** Delta format 2 transfers semantic snapshots transactionally, exact A→B and A→B→C fixture round trips pass, clear-to-empty replacement is represented as a real delta, and the combined builder/applier path accepts SQLite case variants in semantic table and column identifiers. Failure injection now proves that a rejected semantic membership rolls back semantic replacement, card/value mutations, and both FTS indexes in the same transaction. Private real-data chain measurements remain in Task 9.
 
 **Objective:** Preserve normal incremental updates after semantic activation.
 
@@ -462,7 +462,7 @@ public struct CardSemanticMembership: Equatable, Sendable {
 
 ### Task 9: Expand the engine regression gate and perform a private full build
 
-**Status (2026-09-25): partially complete.** A final private full build and semantic integrity inspection passed, but measured private A→B/A→B→C delta size, artifact-growth/query-time evidence, failure injection, and engine-gate documentation remain before the Phase 1 publication gate closes.
+**Status (2026-09-26): Job A complete; private measurement Job B remains.** A prior private full build and semantic integrity inspection passed. Manifest compatibility, row-level validation, unresolved-membership filtering, legacy version 1 readability, legacy digest identity, case-variant delta coverage, transactional failure injection, and Oracle Tags provenance ownership are now locked by deterministic tests. The remaining publication work is a fresh version 2 private A→B/A→B→C build chain with measured delta size, artifact growth, query-time evidence, and the repeatable engine gate before Phase 1 closes.
 
 **Objective:** Prove the production artifact is internally consistent before any user-facing semantic feature or catalog publish.
 

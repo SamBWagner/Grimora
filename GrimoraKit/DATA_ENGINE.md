@@ -41,6 +41,14 @@ Configure a 90-day lifecycle expiry only on the artifacts bucket. The metadata
 bucket retains `current.json` and `current/catalog.sqlite.gz` without expiry.
 The engine intentionally does not receive list/delete permission.
 
+Oracle Tags provenance is split intentionally: semantic rows record the stable
+`scryfall-oracle-tags@<updatedAt>` source identity, while `manifest.json` records
+both `oracleTagsUpdatedAt` and the exact `oracleTagsDownloadURI`. The enrichment
+stage consumes the local expanded JSONL file and does not retain a duplicate URI.
+Enrichment version 2 filters tag memberships to Oracle-first catalog identities
+before computing counts and IDF statistics. Validation keeps version 1 catalogs
+readable, while version 2 requires every semantic card key to resolve locally.
+
 ## Incremental updates (delta chain)
 
 Each build also publishes a consecutive `previous → this` **delta** so a client on

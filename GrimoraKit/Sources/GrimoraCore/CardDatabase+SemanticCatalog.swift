@@ -182,6 +182,22 @@ extension CardDatabase {
     }
   }
 
+  public func semanticCardIdentityKeys() throws -> Set<SemanticCardKey> {
+    try withDatabaseLock {
+      let statement = try database.prepare("SELECT id, oracle_id FROM cards")
+      var result: Set<SemanticCardKey> = []
+      while try statement.step() {
+        guard let printingID = statement.string(at: 0) else {
+          continue
+        }
+        let oracleID = statement.string(at: 1)
+          .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        result.insert(SemanticCardKey(oracleID: oracleID, printingID: printingID))
+      }
+      return result
+    }
+  }
+
   public func semanticTagIDs(for cardKey: SemanticCardKey) throws -> [String] {
     try withDatabaseLock {
       guard try semanticCatalogAvailableUnlocked() else {
@@ -230,7 +246,7 @@ extension CardDatabase {
     }
   }
 
-  private func semanticCatalogAvailableUnlocked() throws -> Bool {
+  func semanticCatalogAvailableUnlocked() throws -> Bool {
     let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
     let statement = try database.prepare(
       "SELECT 1 FROM \(schema).sqlite_master WHERE type = 'table' AND name = 'semantic_tags' COLLATE NOCASE LIMIT 1"
