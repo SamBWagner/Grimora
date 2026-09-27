@@ -424,7 +424,7 @@ public struct CardSemanticMembership: Equatable, Sendable {
 
 ### Task 8: Add semantic delta generation and transactional apply
 
-**Status (2026-09-26): integrity hardening complete.** Delta format 2 transfers semantic snapshots transactionally, exact A→B and A→B→C fixture round trips pass, clear-to-empty replacement is represented as a real delta, and the combined builder/applier path accepts SQLite case variants in semantic table and column identifiers. Failure injection now proves that a rejected semantic membership rolls back semantic replacement, card/value mutations, and both FTS indexes in the same transaction. Private real-data chain measurements remain in Task 9.
+**Status (2026-09-26): complete.** Delta format 2 transfers semantic snapshots transactionally, exact A→B and A→B→C fixture round trips pass, clear-to-empty replacement is represented as a real delta, and the combined builder/applier path accepts SQLite case variants in semantic table and column identifiers. Failure injection proves that a rejected semantic membership rolls back semantic replacement, card/value mutations, and both FTS indexes in the same transaction. The private version-2 publication gate applied controlled real-catalog A→B, B→C, and A→B→C chains to exact target digests with strict manifest validation. Each compressed whole-semantic-snapshot delta was 3.958% of its target full artifact, so no delta-format redesign is warranted.
 
 **Objective:** Preserve normal incremental updates after semantic activation.
 
@@ -462,7 +462,7 @@ public struct CardSemanticMembership: Equatable, Sendable {
 
 ### Task 9: Expand the engine regression gate and perform a private full build
 
-**Status (2026-09-26): Job A complete; private measurement Job B remains.** A prior private full build and semantic integrity inspection passed. Manifest compatibility, row-level validation, unresolved-membership filtering, legacy version 1 readability, legacy digest identity, case-variant delta coverage, transactional failure injection, and Oracle Tags provenance ownership are now locked by deterministic tests. The remaining publication work is a fresh version 2 private A→B/A→B→C build chain with measured delta size, artifact growth, query-time evidence, and the repeatable engine gate before Phase 1 closes.
+**Status (2026-09-26): complete; no publication performed.** The repeatable offline engine gate now covers golden builds, engine integration, manifests, semantic storage and enrichment, logical digests, chain selection, delta round trips, publication-evidence fixtures, and the catalog API route. Private build `v1-b7526ec0b3a60bba764e` produced a strict version-2 semantic catalog with 118,389 cards, 4,557 tags, 834 aliases, 4,542 hierarchy edges, 234,718 memberships, and 4,557 statistics rows. Controlled B/C generation and A→B, B→C, and A→B→C application all reproduced exact target digests, passed manifest validation and SQLite integrity, and reported zero duplicate or orphan semantic relationships. The compressed deltas were 6,001,398 and 6,000,981 bytes—3.958% of their target full artifacts—and the full chain applied in 3.383 seconds. Against a non-semantic build from the same Scryfall and MTGJSON snapshots, semantic enrichment added 17.689% compressed and 21.831% uncompressed. Representative indexed semantic reads measured 0.031–0.311 ms. Evidence remains private under `.hermes/artifacts/`; no catalog was published.
 
 **Objective:** Prove the production artifact is internally consistent before any user-facing semantic feature or catalog publish.
 
@@ -500,7 +500,7 @@ public struct CardSemanticMembership: Equatable, Sendable {
    git commit -m "test: gate semantic catalog publishing"
    ```
 
-**Phase 1 exit gate:** The catalog graph is deterministic, fully validated, digest-covered, delta-covered, and measurable. Only now may a semantic catalog be published.
+**Phase 1 exit gate (met 2026-09-26):** The catalog graph is deterministic, fully validated, digest-covered, delta-covered, and measurable. The technical publication gate is satisfied, but no semantic catalog has been published; Grimora 2.0 remains blocked on the complete functional and polished semantic feature set in later phases.
 
 ---
 
