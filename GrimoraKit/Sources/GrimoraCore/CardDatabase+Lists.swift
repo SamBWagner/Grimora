@@ -36,6 +36,9 @@ extension CardDatabase {
       case .failure(let reason):
         return .unsupported(reason)
       }
+      if let reason = try functionalTagSearchUnsupportedReason(for: plan, query: query) {
+        return .unsupported(reason)
+      }
 
       var entries = try cardCollectionEntriesUnlocked(
         forListID: listID,
@@ -72,6 +75,9 @@ extension CardDatabase {
       case .success(let compiledPlan):
         plan = compiledPlan
       case .failure(let reason):
+        return .unsupported(reason)
+      }
+      if let reason = try functionalTagSearchUnsupportedReason(for: plan, query: query) {
         return .unsupported(reason)
       }
 

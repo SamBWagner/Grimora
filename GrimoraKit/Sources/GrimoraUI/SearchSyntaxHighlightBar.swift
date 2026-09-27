@@ -76,6 +76,8 @@ struct SearchSyntaxHighlightBar: View {
             palette.primaryText.color
         case .valid:
             palette.syntaxValid.color
+        case .unsupported:
+            palette.syntaxIncomplete.color
         case .invalid:
             palette.syntaxInvalid.color
         case .incomplete:

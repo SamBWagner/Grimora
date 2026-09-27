@@ -206,6 +206,8 @@ struct NativeMacSearchField: NSViewRepresentable {
                 .labelColor
             case .valid:
                 themeColor(\.syntaxValid)
+            case .unsupported:
+                themeColor(\.syntaxIncomplete)
             case .invalid:
                 themeColor(\.syntaxInvalid)
             case .incomplete:

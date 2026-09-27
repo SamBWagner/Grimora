@@ -54,6 +54,16 @@ public enum SearchQuery {
         }
     }
 
+    public struct SemanticTagCondition: Equatable, Sendable {
+        public var value: String
+        public var token: String
+
+        public init(value: String, token: String) {
+            self.value = value
+            self.token = token
+        }
+    }
+
     public static func compile(_ text: String) -> Result<SearchQueryPlan, SearchQueryUnsupportedReason> {
         switch ScryfallSyntaxParser.parse(text) {
         case .success(let tree):
@@ -79,7 +89,8 @@ public enum SearchQuery {
                     bindings: clause.bindings,
                     displayOptions: compiler.displayOptions,
                     postFilters: clause.postFilters,
-                    labelConditions: clause.labelConditions
+                    labelConditions: clause.labelConditions,
+                    semanticTagConditions: clause.semanticTagConditions
                 ))
         } catch {
             return .failure((error as! QueryError).reason)

@@ -5,6 +5,7 @@ struct CompiledClause: Equatable {
     var bindings: [SearchQuery.SQLBinding] = []
     var postFilters: [SearchQuery.PostFilter] = []
     var labelConditions: [SearchQuery.LabelCondition] = []
+    var semanticTagConditions: [SearchQuery.SemanticTagCondition] = []
 }
 
 struct Compiler {
@@ -24,7 +25,8 @@ struct Compiler {
                 sql: sql.isEmpty ? nil : sql.map { "(\($0))" }.joined(separator: " AND "),
                 bindings: clauses.flatMap(\.bindings),
                 postFilters: clauses.flatMap(\.postFilters),
-                labelConditions: clauses.flatMap(\.labelConditions)
+                labelConditions: clauses.flatMap(\.labelConditions),
+                semanticTagConditions: clauses.flatMap(\.semanticTagConditions)
             )
         case .or(let nodes):
             let clauses = try nodes.map { try compile($0) }
@@ -37,7 +39,8 @@ struct Compiler {
             let sql = clauses.compactMap(\.sql).filter { !$0.isEmpty }
             return CompiledClause(
                 sql: sql.isEmpty ? nil : sql.map { "(\($0))" }.joined(separator: " OR "),
-                bindings: clauses.flatMap(\.bindings)
+                bindings: clauses.flatMap(\.bindings),
+                semanticTagConditions: clauses.flatMap(\.semanticTagConditions)
             )
         case .not(let node):
             return try negate(compile(node))
@@ -71,7 +74,8 @@ struct Compiler {
             },
             labelConditions: clause.labelConditions.map {
                 SearchQuery.LabelCondition(name: $0.name, negated: !$0.negated)
-            }
+            },
+            semanticTagConditions: clause.semanticTagConditions
         )
     }
 
@@ -88,7 +92,25 @@ struct Compiler {
         let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedValue = value.normalizedQueryKey
 
-        if ["cube", "art", "atag", "arttag", "function", "otag", "oracletag"].contains(field) {
+        if ["function", "otag", "oracletag"].contains(field) {
+            guard !value.isEmpty else {
+                throw QueryError.unsupported(
+                    query: query,
+                    token: original,
+                    message: "“\(original)” needs a value after `\(rawOp)`."
+                )
+            }
+            guard [":", "="].contains(rawOp) else {
+                throw QueryError.unsupported(
+                    query: query,
+                    token: original,
+                    message: "“\(original)” uses an unsupported functional-tag comparison. Use `field:tag` or `-field:tag`."
+                )
+            }
+            return compileSemanticTag(value: value, original: original)
+        }
+
+        if ["cube", "art", "atag", "arttag"].contains(field) {
             throw QueryError.unsupported(query: query, token: original)
         }
 
@@ -226,6 +248,50 @@ struct Compiler {
         default:
             throw QueryError.unsupported(query: query, token: original)
         }
+    }
+
+    private func compileSemanticTag(value: String, original: String) -> CompiledClause {
+        let normalizedKey = SemanticTagAliasRecord.normalizedKey(for: value)
+        return CompiledClause(
+            sql: """
+            CASE
+                WHEN cards.oracle_id IS NOT NULL AND trim(cards.oracle_id) <> ''
+                    THEN 'o:' || cards.oracle_id
+                ELSE 'p:' || cards.id
+            END IN (
+                WITH RECURSIVE matching_tags(tag_id) AS (
+                    SELECT semantic_tags.id
+                    FROM semantic_tags
+                    WHERE semantic_tags.namespace = 'oracle'
+                    AND (
+                        semantic_tags.slug = ? COLLATE NOCASE
+                        OR semantic_tags.label = ? COLLATE NOCASE
+                        OR EXISTS (
+                            SELECT 1
+                            FROM semantic_tag_aliases
+                            WHERE semantic_tag_aliases.tag_id = semantic_tags.id
+                            AND semantic_tag_aliases.alias_key = ?
+                        )
+                    )
+                    UNION
+                    SELECT semantic_tag_edges.child_tag_id
+                    FROM semantic_tag_edges
+                    JOIN matching_tags
+                        ON matching_tags.tag_id = semantic_tag_edges.parent_tag_id
+                    JOIN semantic_tags AS child_tag
+                        ON child_tag.id = semantic_tag_edges.child_tag_id
+                        AND child_tag.namespace = 'oracle'
+                )
+                SELECT semantic_card_tags.card_key
+                FROM semantic_card_tags
+                JOIN matching_tags ON matching_tags.tag_id = semantic_card_tags.tag_id
+            )
+            """,
+            bindings: [.text(normalizedKey), .text(value), .text(normalizedKey)],
+            semanticTagConditions: [
+                SearchQuery.SemanticTagCondition(value: value, token: original)
+            ]
+        )
     }
 
     private mutating func handleDisplay(field: String, value: String, original: String) -> Bool {

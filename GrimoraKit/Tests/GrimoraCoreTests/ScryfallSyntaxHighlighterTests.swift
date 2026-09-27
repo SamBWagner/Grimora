@@ -35,6 +35,12 @@ final class ScryfallSyntaxHighlighterTests: XCTestCase {
         XCTAssertEqual(highlights("type:creature foo:bar "), [.valid, .invalid])
     }
 
+    func testFunctionalAndIllustrationTagsHaveDistinctOfflineHighlights() {
+        XCTAssertEqual(highlights("function:draw "), [.valid])
+        XCTAssertEqual(highlights("atag:dragon "), [.unsupported])
+        XCTAssertEqual(highlights("foo:bar "), [.invalid])
+    }
+
     func testInvalidClauseAheadOfActiveTrailingClause() {
         // The first clause is completed and invalid; the trailing one is still being
         // typed and not yet valid, so it is held white.

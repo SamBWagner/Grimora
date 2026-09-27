@@ -26,6 +26,36 @@ final class SearchQueryTests: XCTestCase {
         XCTAssertNil(SearchQuery.unsupportedReason(for: "legal:pauper"))
     }
 
+    func testFunctionalTagFieldsCompileAndPreserveRuntimeValidationTerms() throws {
+        XCTAssertNil(SearchQuery.unsupportedReason(for: "function:draw"))
+        XCTAssertNil(SearchQuery.unsupportedReason(for: "otag:draw-engine"))
+        XCTAssertNil(SearchQuery.unsupportedReason(for: "oracletag:\"Repeatable Lifegain\""))
+
+        guard case .success(let plan) = SearchQuery.compile("function:draw -otag:draw-engine") else {
+            return XCTFail("Expected functional-tag query plan")
+        }
+        XCTAssertEqual(
+            plan.semanticTagConditions,
+            [
+                SearchQuery.SemanticTagCondition(value: "draw", token: "function:draw"),
+                SearchQuery.SemanticTagCondition(value: "draw-engine", token: "otag:draw-engine"),
+            ]
+        )
+    }
+
+    func testFunctionalTagFieldRequiresAValue() {
+        XCTAssertEqual(
+            SearchQuery.unsupportedReason(for: "function:")?.detail,
+            "“function:” needs a value after `:`."
+        )
+    }
+
+    func testFunctionalTagFieldsRejectComparisonOperators() {
+        for query in ["function!=draw", "otag>draw", "oracletag<=draw"] {
+            XCTAssertNotNil(SearchQuery.unsupportedReason(for: query), query)
+        }
+    }
+
     func testFirstPrintFlagCompilesAndNegatesUsingStoredReprintMetadata() throws {
         guard case .success(let firstPrint) = SearchQuery.compile("is:first-print") else {
             return XCTFail("Expected first-print query to compile")

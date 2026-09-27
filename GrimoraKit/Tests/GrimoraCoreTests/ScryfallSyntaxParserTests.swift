@@ -94,8 +94,7 @@ final class ScryfallSyntaxParserTests: XCTestCase {
             "cube:vintage",
             "art:squirrel",
             "atag:squirrel",
-            "function:removal",
-            "otag:dies"
+            "arttag:squirrel"
         ]
 
         for query in queries {
@@ -103,6 +102,15 @@ final class ScryfallSyntaxParserTests: XCTestCase {
             XCTAssertTrue(validation.isValidScryfall, query)
             XCTAssertFalse(validation.isSupportedOffline, query)
             XCTAssertEqual(validation.unsupportedTerms.first?.token, query)
+        }
+    }
+
+    func testFunctionalTagSyntaxIsSupportedOffline() {
+        for query in ["function:removal", "otag:dies", "oracletag:\"repeatable lifegain\""] {
+            let validation = ScryfallSyntaxValidator.validate(query)
+            XCTAssertTrue(validation.isValidScryfall, query)
+            XCTAssertTrue(validation.isSupportedOffline, query)
+            XCTAssertTrue(validation.unsupportedTerms.isEmpty, query)
         }
     }
 

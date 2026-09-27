@@ -12,6 +12,9 @@ extension CardDatabase {
       case .failure(let reason):
         return .unsupported(reason)
       }
+      if let reason = try functionalTagSearchUnsupportedReason(for: plan, query: request.text) {
+        return .unsupported(reason)
+      }
 
       var whereClauses: [String] = []
       let bindings = plan.bindings
@@ -153,6 +156,69 @@ extension CardDatabase {
 
       return .results(cards, totalCount: totalCount)
     }
+  }
+
+  func functionalTagSearchUnsupportedReason(
+    for plan: SearchQueryPlan,
+    query: String
+  ) throws -> SearchQueryUnsupportedReason? {
+    guard !plan.semanticTagConditions.isEmpty else {
+      return nil
+    }
+
+    let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
+    let firstCondition = plan.semanticTagConditions[0]
+    guard try semanticCatalogAvailableUnlocked() else {
+      return SearchQueryUnsupportedReason(
+        query: query,
+        token: firstCondition.token,
+        detail: "Functional-tag search is unavailable because this catalog does not include Oracle Tags."
+      )
+    }
+    let availabilityStatement = try database.prepare(
+      "SELECT 1 FROM \(schema).semantic_tags WHERE namespace = 'oracle' LIMIT 1"
+    )
+    guard try availabilityStatement.step() else {
+      return SearchQueryUnsupportedReason(
+        query: query,
+        token: firstCondition.token,
+        detail: "Functional-tag search is unavailable because this catalog does not include Oracle Tags."
+      )
+    }
+
+    for condition in plan.semanticTagConditions {
+      let normalizedKey = SemanticTagAliasRecord.normalizedKey(for: condition.value)
+      let statement = try database.prepare(
+        """
+        SELECT 1
+        FROM \(schema).semantic_tags AS tag
+        WHERE tag.namespace = 'oracle'
+        AND (
+            tag.slug = ? COLLATE NOCASE
+            OR tag.label = ? COLLATE NOCASE
+            OR EXISTS (
+                SELECT 1
+                FROM \(schema).semantic_tag_aliases AS alias
+                WHERE alias.tag_id = tag.id
+                AND alias.alias_key = ?
+            )
+        )
+        LIMIT 1
+        """)
+      try statement.bind(normalizedKey, at: 1)
+      try statement.bind(condition.value, at: 2)
+      try statement.bind(normalizedKey, at: 3)
+      if try statement.step() {
+        continue
+      }
+
+      return SearchQueryUnsupportedReason(
+        query: query,
+        token: condition.token,
+        detail: "No offline functional tag matches “\(condition.value)”."
+      )
+    }
+    return nil
   }
 
   public func printings(for card: CardRecord) throws -> [CardRecord] {

@@ -3,13 +3,15 @@ import Foundation
 /// How a single top-level clause of a Scryfall query should be coloured while the
 /// user is typing. Mirrors the teaching behaviour from the "Search field syntax
 /// validation" brief: white while a clause is still being typed, faint green once a
-/// completed clause is valid, red when it is invalid/unsupported, and yellow while a
-/// multi-stage clause (e.g. an unclosed `(...)` group) is still being assembled.
+/// completed clause is executable offline, yellow when valid Scryfall syntax is unavailable
+/// offline or unfinished, and red when the syntax itself is invalid.
 public enum ScryfallClauseHighlight: Equatable, Sendable {
     /// White — the clause is still being typed and has not been evaluated yet.
     case pending
     /// Faint green — the completed clause is valid Scryfall syntax.
     case valid
+    /// Yellow — valid Scryfall syntax that Grimora cannot execute offline.
+    case unsupported
     /// Red — the completed clause is not valid/recognized Scryfall syntax.
     case invalid
     /// Yellow — a multi-stage clause (unclosed group, quote, or regex) is unfinished.
@@ -70,15 +72,21 @@ public enum ScryfallSyntaxHighlighter {
         if hasUnfinishedGrouping(in: text) {
             return .incomplete
         }
-        let isValid = ScryfallSyntaxValidator.validate(text).isValidScryfall
+        let validation = ScryfallSyntaxValidator.validate(text)
         // Confirm correct syntax live: a clause turns green the moment it is valid,
         // even the one still being typed. A trailing clause that is not yet valid is
         // held white (pending) rather than flashing red while it is mid-typed; a
         // completing space then promotes it to red if it is still invalid.
         if isActiveTrailing, !text.contains("(") {
-            return isValid ? .valid : .pending
+            guard validation.isValidScryfall else {
+                return .pending
+            }
+            return validation.isSupportedOffline ? .valid : .unsupported
         }
-        return isValid ? .valid : .invalid
+        guard validation.isValidScryfall else {
+            return .invalid
+        }
+        return validation.isSupportedOffline ? .valid : .unsupported
     }
 
     /// True when a clause holds an unclosed group, quote, or regular expression and so

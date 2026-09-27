@@ -89,7 +89,8 @@ final class SearchAndSyntaxCoverageTests: XCTestCase {
             "unique:cards", "unique:art", "unique:unknown", "order:name", "direction:ascending",
             "prefer:oldest", "prefer:newest", "prefer:promo", "prefer:default", "prefer:usd-low",
             "prefer:usd-high", "prefer:unknown", "cheapest:usd", "cheapest:eur", "display:grid",
-            "restricted:commander", "eur>1", "tix>1", "settype:expansion"
+            "restricted:commander", "eur>1", "tix>1", "settype:expansion",
+            "function:draw", "otag:draw-engine", "oracletag:\"repeatable lifegain\""
         ]
 
         for query in queries {
@@ -108,6 +109,9 @@ final class SearchAndSyntaxCoverageTests: XCTestCase {
             "b:unknown",
             "c:token",
             "produces:token",
+            "art:dragon",
+            "atag:dragon",
+            "arttag:dragon",
             "zz:unknown"
         ]
 

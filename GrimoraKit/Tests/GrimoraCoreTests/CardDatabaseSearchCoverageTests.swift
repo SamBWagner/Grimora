@@ -2,6 +2,354 @@
 import XCTest
 
 final class CardDatabaseSearchCoverageTests: XCTestCase {
+    func testFunctionalTagSearchMatchesExactOracleIdentityBySlug() throws {
+        let database = try functionalTagSearchDatabase()
+
+        guard case .results(let cards, let totalCount) = try database.search(
+            CardSearchRequest(text: "otag:draw-engine", printingDisplayMode: .all)
+        ) else {
+            return XCTFail("Expected functional-tag search results")
+        }
+
+        XCTAssertEqual(cards.map(\.id), ["draw-engine-card"])
+        XCTAssertEqual(totalCount, 1)
+    }
+
+    func testFunctionalTagSearchMatchesQuotedLabel() throws {
+        let database = try functionalTagSearchDatabase()
+
+        guard case .results(let cards, let totalCount) = try database.search(
+            CardSearchRequest(
+                text: "oracletag:\"Repeatable Lifegain\"",
+                printingDisplayMode: .all
+            )
+        ) else {
+            return XCTFail("Expected quoted functional-tag search results")
+        }
+
+        XCTAssertEqual(cards.map(\.id), ["lifegain-card"])
+        XCTAssertEqual(totalCount, 1)
+    }
+
+    func testFunctionalTagSearchMatchesAlias() throws {
+        let database = try functionalTagSearchDatabase()
+
+        guard case .results(let cards, let totalCount) = try database.search(
+            CardSearchRequest(text: "function:\"Life Engine\"", printingDisplayMode: .all)
+        ) else {
+            return XCTFail("Expected aliased functional-tag search results")
+        }
+
+        XCTAssertEqual(cards.map(\.id), ["lifegain-card"])
+        XCTAssertEqual(totalCount, 1)
+    }
+
+    func testFunctionalTagSearchIncludesDescendantTagMemberships() throws {
+        let database = try functionalTagSearchDatabase()
+
+        guard case .results(let cards, let totalCount) = try database.search(
+            CardSearchRequest(text: "function:draw", printingDisplayMode: .all)
+        ) else {
+            return XCTFail("Expected hierarchy-expanded functional-tag search results")
+        }
+
+        XCTAssertEqual(cards.map(\.id), ["draw-card", "draw-engine-card"])
+        XCTAssertEqual(totalCount, 2)
+    }
+
+    func testFunctionalTagSearchReportsUnknownTag() throws {
+        let database = try functionalTagSearchDatabase()
+
+        guard case .unsupported(let reason) = try database.search(
+            CardSearchRequest(text: "otag:not-a-real-tag", printingDisplayMode: .all)
+        ) else {
+            return XCTFail("Expected an unknown functional-tag diagnostic")
+        }
+
+        XCTAssertEqual(reason.token, "otag:not-a-real-tag")
+        XCTAssertEqual(reason.detail, "No offline functional tag matches “not-a-real-tag”.")
+    }
+
+    func testFunctionalTagSearchReportsCatalogWithoutSemanticData() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        try database.replaceAllCards([
+            testCard(id: "plain-card", name: "Plain Card", typeLine: "Creature")
+        ])
+
+        guard case .unsupported(let reason) = try database.search(
+            CardSearchRequest(text: "function:draw", printingDisplayMode: .all)
+        ) else {
+            return XCTFail("Expected a missing semantic-catalog diagnostic")
+        }
+
+        XCTAssertEqual(reason.token, "function:draw")
+        XCTAssertEqual(
+            reason.detail,
+            "Functional-tag search is unavailable because this catalog does not include Oracle Tags."
+        )
+    }
+
+    func testListFunctionalTagSearchReportsCatalogWithoutSemanticData() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        try database.replaceAllCards([
+            testCard(id: "plain-card", name: "Plain Card", typeLine: "Creature")
+        ])
+        let list = try database.createCardCollection(named: "Searchable")
+        try database.appendCard("plain-card", toList: list.id)
+
+        guard case .unsupported(let listReason) = try database.searchCardCollectionEntries(
+            forListID: list.id,
+            text: "function:draw"
+        ) else {
+            return XCTFail("Expected a missing semantic-catalog collection diagnostic")
+        }
+        XCTAssertEqual(
+            listReason.detail,
+            "Functional-tag search is unavailable because this catalog does not include Oracle Tags."
+        )
+
+        guard case .unsupported(let crossListReason) = try database.searchAllCardCollectionEntries(
+            text: "otag:draw"
+        ) else {
+            return XCTFail("Expected a missing semantic-catalog cross-list diagnostic")
+        }
+        XCTAssertEqual(
+            crossListReason.detail,
+            "Functional-tag search is unavailable because this catalog does not include Oracle Tags."
+        )
+    }
+
+    func testAttachedCatalogFunctionalTagSearchUsesCatalogSemantics() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FunctionalTagAttachedCatalog-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let catalogURL = directory.appendingPathComponent("Catalog.sqlite")
+        var catalog: CardDatabase? = try CardDatabase(storage: .file(catalogURL))
+        try catalog?.replaceAllCards([
+            testCard(
+                id: "attached-draw-card",
+                oracleID: "attached-oracle-draw",
+                name: "Attached Draw",
+                typeLine: "Instant"
+            )
+        ])
+        try catalog?.replaceSemanticCatalog(
+            with: SemanticCatalogSnapshot(
+                tags: [
+                    SemanticTagRecord(
+                        id: "attached-tag-draw",
+                        namespace: "oracle",
+                        slug: "draw",
+                        label: "Draw",
+                        description: nil,
+                        similarityEnabled: true,
+                        source: "fixture"
+                    )
+                ],
+                aliases: [],
+                edges: [],
+                cardTags: [
+                    SemanticCardTagRecord(
+                        cardKey: SemanticCardKey(
+                            oracleID: "attached-oracle-draw",
+                            printingID: "attached-draw-card"
+                        ),
+                        tagID: "attached-tag-draw",
+                        weightMillis: 1_000,
+                        annotation: nil,
+                        source: "fixture"
+                    )
+                ],
+                stats: [
+                    SemanticTagStatsRecord(
+                        tagID: "attached-tag-draw",
+                        directCardCount: 1,
+                        effectiveCardCount: 1,
+                        inverseFrequencyMillis: 1_000
+                    )
+                ]
+            )
+        )
+        try catalog?.prepareForCatalogDistribution()
+        catalog = nil
+
+        let database = try CardDatabase(
+            userDatabaseURL: directory.appendingPathComponent("User.sqlite"),
+            catalogURL: catalogURL
+        )
+        XCTAssertTrue(database.usesExternalCatalog)
+
+        guard case .results(let cards, let totalCount) = try database.search(
+            CardSearchRequest(text: "function:draw", printingDisplayMode: .all)
+        ) else {
+            return XCTFail("Expected attached-catalog functional-tag results")
+        }
+        XCTAssertEqual(cards.map(\.id), ["attached-draw-card"])
+        XCTAssertEqual(totalCount, 1)
+    }
+
+    func testCollectionFunctionalTagSearchReportsUnknownTag() throws {
+        let database = try functionalTagSearchDatabase()
+        let list = try database.createCardCollection(named: "Searchable")
+        try database.appendCard("draw-card", toList: list.id)
+
+        guard case .unsupported(let reason) = try database.searchCardCollectionEntries(
+            forListID: list.id,
+            text: "otag:not-a-real-tag"
+        ) else {
+            return XCTFail("Expected an unknown collection functional-tag diagnostic")
+        }
+
+        XCTAssertEqual(reason.token, "otag:not-a-real-tag")
+        XCTAssertEqual(reason.detail, "No offline functional tag matches “not-a-real-tag”.")
+    }
+
+    func testCrossListFunctionalTagSearchReportsUnknownTag() throws {
+        let database = try functionalTagSearchDatabase()
+        let list = try database.createCardCollection(named: "Searchable")
+        try database.appendCard("draw-card", toList: list.id)
+
+        guard case .unsupported(let reason) = try database.searchAllCardCollectionEntries(
+            text: "function:not-a-real-tag"
+        ) else {
+            return XCTFail("Expected an unknown cross-list functional-tag diagnostic")
+        }
+
+        XCTAssertEqual(reason.token, "function:not-a-real-tag")
+        XCTAssertEqual(reason.detail, "No offline functional tag matches “not-a-real-tag”.")
+    }
+
+    func testFunctionalTagSearchComposesWithAndOrAndNegation() throws {
+        let database = try functionalTagSearchDatabase()
+
+        guard case .results(let andCards, _) = try database.search(
+            CardSearchRequest(text: "function:draw t:enchantment", printingDisplayMode: .all)
+        ) else {
+            return XCTFail("Expected functional-tag AND results")
+        }
+        XCTAssertEqual(andCards.map(\.id), ["draw-engine-card"])
+
+        guard case .results(let orCards, _) = try database.search(
+            CardSearchRequest(
+                text: "otag:draw-engine OR function:\"Life Engine\"",
+                printingDisplayMode: .all
+            )
+        ) else {
+            return XCTFail("Expected functional-tag OR results")
+        }
+        XCTAssertEqual(orCards.map(\.id), ["draw-engine-card", "lifegain-card"])
+
+        guard case .results(let negatedCards, _) = try database.search(
+            CardSearchRequest(text: "function:draw -otag:draw-engine", printingDisplayMode: .all)
+        ) else {
+            return XCTFail("Expected negated functional-tag results")
+        }
+        XCTAssertEqual(negatedCards.map(\.id), ["draw-card"])
+    }
+
+    func testCollectionFunctionalTagSearchReturnsExactResults() throws {
+        let database = try functionalTagSearchDatabase()
+        let list = try database.createCardCollection(named: "Searchable")
+        try database.appendCard("draw-card", toList: list.id)
+        try database.appendCard("draw-engine-card", toList: list.id)
+        try database.appendCard("lifegain-card", toList: list.id)
+
+        guard case .results(let entries) = try database.searchCardCollectionEntries(
+            forListID: list.id,
+            text: "function:draw"
+        ) else {
+            return XCTFail("Expected collection functional-tag results")
+        }
+        XCTAssertEqual(entries.map(\.cardID), ["draw-card", "draw-engine-card"])
+
+        guard case .results(let matches) = try database.searchAllCardCollectionEntries(
+            text: "function:\"Life Engine\""
+        ) else {
+            return XCTFail("Expected cross-list functional-tag results")
+        }
+        XCTAssertEqual(matches.map(\.listID), [list.id])
+        XCTAssertEqual(matches.first?.entries.map(\.cardID), ["lifegain-card"])
+    }
+
+    func testFunctionalTagSearchUsesOracleIdentityAndPrintingFallback() throws {
+        let database = try CardDatabase(storage: .inMemory)
+        try database.replaceAllCards([
+            testCard(
+                id: "oracle-printing-a",
+                oracleID: "shared-oracle",
+                name: "Shared Oracle",
+                typeLine: "Creature"
+            ),
+            testCard(
+                id: "oracle-printing-b",
+                oracleID: "shared-oracle",
+                name: "Shared Oracle",
+                typeLine: "Creature"
+            ),
+            testCard(id: "printing-fallback", name: "Printing Fallback", typeLine: "Creature"),
+        ])
+        try database.replaceSemanticCatalog(
+            with: SemanticCatalogSnapshot(
+                tags: [
+                    SemanticTagRecord(
+                        id: "tag-draw",
+                        namespace: "oracle",
+                        slug: "draw",
+                        label: "Draw",
+                        description: nil,
+                        similarityEnabled: true,
+                        source: "fixture"
+                    )
+                ],
+                aliases: [],
+                edges: [],
+                cardTags: [
+                    SemanticCardTagRecord(
+                        cardKey: SemanticCardKey(oracleID: "shared-oracle", printingID: "oracle-printing-a"),
+                        tagID: "tag-draw",
+                        weightMillis: 1_000,
+                        annotation: nil,
+                        source: "fixture"
+                    ),
+                    SemanticCardTagRecord(
+                        cardKey: SemanticCardKey(oracleID: nil, printingID: "printing-fallback"),
+                        tagID: "tag-draw",
+                        weightMillis: 1_000,
+                        annotation: nil,
+                        source: "fixture"
+                    ),
+                ],
+                stats: [
+                    SemanticTagStatsRecord(
+                        tagID: "tag-draw",
+                        directCardCount: 2,
+                        effectiveCardCount: 2,
+                        inverseFrequencyMillis: 1_000
+                    )
+                ]
+            )
+        )
+
+        guard case .results(let cards, let totalCount) = try database.search(
+            CardSearchRequest(text: "function:draw", printingDisplayMode: .all)
+        ) else {
+            return XCTFail("Expected identity-aware functional-tag results")
+        }
+
+        XCTAssertEqual(cards.map(\.id), ["printing-fallback", "oracle-printing-a", "oracle-printing-b"])
+        XCTAssertEqual(totalCount, 3)
+
+        guard case .results(let preferredCards, let preferredTotalCount) = try database.search(
+            CardSearchRequest(text: "function:draw")
+        ) else {
+            return XCTFail("Expected Oracle-deduplicated functional-tag results")
+        }
+        XCTAssertEqual(preferredCards.map(\.name), ["Printing Fallback", "Shared Oracle"])
+        XCTAssertEqual(preferredTotalCount, 2)
+    }
+
     func testDatabaseSearchCoversArtDisplayMode() throws {
         let database = try Fixtures.database()
         let response = try database.search(
@@ -222,6 +570,7 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
 
     private func testCard(
         id: String,
+        oracleID: String? = nil,
         name: String,
         colors: [String] = [],
         colorIdentity: [String] = [],
@@ -230,6 +579,7 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
     ) -> CardRecord {
         CardRecord(
             id: id,
+            oracleID: oracleID,
             name: name,
             setCode: "tst",
             setName: "Test Set",
@@ -243,5 +593,157 @@ final class CardDatabaseSearchCoverageTests: XCTestCase {
             typeLine: typeLine,
             oracleText: oracleText
         )
+    }
+
+    private func functionalTagSearchDatabase() throws -> CardDatabase {
+        let database = try CardDatabase(storage: .inMemory)
+        try database.replaceAllCards([
+            testCard(
+                id: "draw-card",
+                oracleID: "oracle-draw",
+                name: "Direct Draw",
+                typeLine: "Instant"
+            ),
+            testCard(
+                id: "draw-engine-card",
+                oracleID: "oracle-draw-engine",
+                name: "Draw Engine",
+                typeLine: "Enchantment"
+            ),
+            testCard(
+                id: "lifegain-card",
+                oracleID: "oracle-lifegain",
+                name: "Life Engine",
+                typeLine: "Creature"
+            ),
+            testCard(
+                id: "other-card",
+                oracleID: "oracle-other",
+                name: "Other Card",
+                typeLine: "Creature"
+            ),
+        ])
+        try database.replaceSemanticCatalog(
+            with: SemanticCatalogSnapshot(
+                tags: [
+                    SemanticTagRecord(
+                        id: "tag-draw",
+                        namespace: "oracle",
+                        slug: "draw",
+                        label: "Draw",
+                        description: nil,
+                        similarityEnabled: true,
+                        source: "fixture"
+                    ),
+                    SemanticTagRecord(
+                        id: "tag-draw-engine",
+                        namespace: "oracle",
+                        slug: "draw-engine",
+                        label: "Draw Engine",
+                        description: nil,
+                        similarityEnabled: true,
+                        source: "fixture"
+                    ),
+                    SemanticTagRecord(
+                        id: "tag-repeatable-lifegain",
+                        namespace: "oracle",
+                        slug: "repeatable-lifegain",
+                        label: "Repeatable Lifegain",
+                        description: nil,
+                        similarityEnabled: true,
+                        source: "fixture"
+                    ),
+                    SemanticTagRecord(
+                        id: "tag-non-oracle-child",
+                        namespace: "metadata",
+                        slug: "non-oracle-child",
+                        label: "Non-Oracle Child",
+                        description: nil,
+                        similarityEnabled: false,
+                        source: "fixture"
+                    ),
+                ],
+                aliases: [
+                    SemanticTagAliasRecord(
+                        tagID: "tag-repeatable-lifegain",
+                        alias: "Life Engine",
+                        aliasKey: SemanticTagAliasRecord.normalizedKey(for: "Life Engine")
+                    )
+                ],
+                edges: [
+                    SemanticTagEdgeRecord(
+                        parentTagID: "tag-draw",
+                        childTagID: "tag-draw-engine"
+                    ),
+                    SemanticTagEdgeRecord(
+                        parentTagID: "tag-draw",
+                        childTagID: "tag-non-oracle-child"
+                    )
+                ],
+                cardTags: [
+                    SemanticCardTagRecord(
+                        cardKey: SemanticCardKey(oracleID: "oracle-draw", printingID: "draw-card"),
+                        tagID: "tag-draw",
+                        weightMillis: 1_000,
+                        annotation: nil,
+                        source: "fixture"
+                    ),
+                    SemanticCardTagRecord(
+                        cardKey: SemanticCardKey(
+                            oracleID: "oracle-draw-engine",
+                            printingID: "draw-engine-card"
+                        ),
+                        tagID: "tag-draw-engine",
+                        weightMillis: 1_000,
+                        annotation: nil,
+                        source: "fixture"
+                    ),
+                    SemanticCardTagRecord(
+                        cardKey: SemanticCardKey(
+                            oracleID: "oracle-lifegain",
+                            printingID: "lifegain-card"
+                        ),
+                        tagID: "tag-repeatable-lifegain",
+                        weightMillis: 1_000,
+                        annotation: nil,
+                        source: "fixture"
+                    ),
+                    SemanticCardTagRecord(
+                        cardKey: SemanticCardKey(oracleID: "oracle-other", printingID: "other-card"),
+                        tagID: "tag-non-oracle-child",
+                        weightMillis: 1_000,
+                        annotation: nil,
+                        source: "fixture"
+                    ),
+                ],
+                stats: [
+                    SemanticTagStatsRecord(
+                        tagID: "tag-draw",
+                        directCardCount: 1,
+                        effectiveCardCount: 2,
+                        inverseFrequencyMillis: 1_000
+                    ),
+                    SemanticTagStatsRecord(
+                        tagID: "tag-draw-engine",
+                        directCardCount: 1,
+                        effectiveCardCount: 1,
+                        inverseFrequencyMillis: 1_000
+                    ),
+                    SemanticTagStatsRecord(
+                        tagID: "tag-repeatable-lifegain",
+                        directCardCount: 1,
+                        effectiveCardCount: 1,
+                        inverseFrequencyMillis: 1_000
+                    ),
+                    SemanticTagStatsRecord(
+                        tagID: "tag-non-oracle-child",
+                        directCardCount: 1,
+                        effectiveCardCount: 1,
+                        inverseFrequencyMillis: 0
+                    ),
+                ]
+            )
+        )
+        return database
     }
 }

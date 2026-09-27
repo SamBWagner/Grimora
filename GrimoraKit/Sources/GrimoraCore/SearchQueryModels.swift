@@ -139,6 +139,7 @@ public struct SearchQueryPlan: Equatable, Sendable {
     /// Entry-level `label:` filters. Empty for ordinary catalog queries; applied only by the
     /// collection entry-search paths (the global `cards` search ignores them).
     public var labelConditions: [SearchQuery.LabelCondition] = []
+    public var semanticTagConditions: [SearchQuery.SemanticTagCondition] = []
 
     public var hasPostFilters: Bool {
         !postFilters.isEmpty
