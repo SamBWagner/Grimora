@@ -593,8 +593,363 @@ private actor DelayedModelImageResolver: ImageResolving {
   }
 }
 
+private actor ControlledCardFunctionalTagLoader {
+  private var continuations: [
+    SemanticCardKey: CheckedContinuation<SemanticCardFunctionalTagsLookup, any Error>
+  ] = [:]
+  private var requestedKeys: Set<SemanticCardKey> = []
+
+  func load(_ key: SemanticCardKey) async throws -> SemanticCardFunctionalTagsLookup {
+    requestedKeys.insert(key)
+    return try await withCheckedThrowingContinuation { continuation in
+      continuations[key] = continuation
+    }
+  }
+
+  func waitUntilRequested(_ key: SemanticCardKey) async {
+    while !requestedKeys.contains(key) {
+      await Task.yield()
+    }
+  }
+
+  func succeed(_ key: SemanticCardKey, with lookup: SemanticCardFunctionalTagsLookup) {
+    continuations.removeValue(forKey: key)?.resume(returning: lookup)
+  }
+}
+
+private enum CardFunctionalTagLoaderTestError: Error {
+  case failed
+}
+
 @MainActor
 final class GrimoraAppModelTests: XCTestCase {
+  func testSelectedCardFunctionalTagsLoadAsynchronouslyByOracleIdentity() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var card = uiRecords()[0]
+    card.oracleID = "oracle-forest"
+    try database.replaceAllCards([card])
+    try database.replaceSemanticCatalog(
+      with: SemanticCatalogSnapshot(
+        tags: [
+          SemanticTagRecord(
+            id: "tag-draw-engine",
+            namespace: "oracle",
+            slug: "draw-engine",
+            label: "Draw Engine",
+            description: "Provides repeatable card draw.",
+            similarityEnabled: true,
+            source: "scryfall-oracle-tags@2026-06-14"
+          ),
+          SemanticTagRecord(
+            id: "tag-alliteration",
+            namespace: "oracle",
+            slug: "alliteration",
+            label: "Alliteration",
+            description: nil,
+            similarityEnabled: false,
+            source: "scryfall-oracle-tags@2026-06-14"
+          ),
+        ],
+        aliases: [],
+        edges: [],
+        cardTags: [
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: card.oracleID, printingID: card.id),
+            tagID: "tag-draw-engine",
+            weightMillis: 1_500,
+            annotation: "repeatable",
+            source: "scryfall-oracle-tags@2026-06-14"
+          ),
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: card.oracleID, printingID: card.id),
+            tagID: "tag-alliteration",
+            weightMillis: 500,
+            annotation: nil,
+            source: "scryfall-oracle-tags@2026-06-14"
+          ),
+        ],
+        stats: []
+      )
+    )
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    model.selectCard(card)
+
+    XCTAssertEqual(
+      model.cardFunctionalTagsState,
+      .loading(SemanticCardKey(oracleID: "oracle-forest", printingID: card.id))
+    )
+
+    await model.drainCardFunctionalTagsForTesting()
+
+    guard case .loaded(let tags) = model.cardFunctionalTagsState else {
+      return XCTFail("Expected functional tags to load.")
+    }
+    XCTAssertEqual(tags.map(\.slug), ["draw-engine"])
+    XCTAssertEqual(tags.map(\.label), ["Draw Engine"])
+    XCTAssertEqual(tags.map(\.annotation), ["repeatable"])
+    XCTAssertEqual(tags.map(\.sources), [["scryfall-oracle-tags@2026-06-14"]])
+  }
+
+  func testSelectedCardFunctionalTagsIgnoreAStaleCompletedLoad() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var firstCard = uiRecords()[0]
+    firstCard.oracleID = "oracle-first"
+    var secondCard = uiRecords()[1]
+    secondCard.oracleID = "oracle-second"
+    try database.replaceAllCards([firstCard, secondCard])
+    try markLibraryReady(database)
+
+    let loader = ControlledCardFunctionalTagLoader()
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        cardFunctionalTagLoader: { key in
+          try await loader.load(key)
+        }
+      )
+    )
+    await model.drainSearchForTesting()
+
+    let firstKey = SemanticCardKey(oracleID: firstCard.oracleID, printingID: firstCard.id)
+    let secondKey = SemanticCardKey(oracleID: secondCard.oracleID, printingID: secondCard.id)
+    let firstTag = SemanticCardFunctionalTag(
+      tagID: "tag-first",
+      slug: "first",
+      label: "First",
+      description: nil,
+      annotation: nil,
+      sources: ["scryfall-oracle-tags"]
+    )
+    let secondTag = SemanticCardFunctionalTag(
+      tagID: "tag-second",
+      slug: "second",
+      label: "Second",
+      description: nil,
+      annotation: nil,
+      sources: ["scryfall-oracle-tags"]
+    )
+
+    model.selectCard(firstCard)
+    await loader.waitUntilRequested(firstKey)
+    model.selectCard(secondCard)
+    await loader.waitUntilRequested(secondKey)
+
+    await loader.succeed(secondKey, with: .available([secondTag]))
+    await model.drainCardFunctionalTagsForTesting()
+    XCTAssertEqual(model.cardFunctionalTagsState, .loaded([secondTag]))
+
+    await loader.succeed(firstKey, with: .available([firstTag]))
+    for _ in 0..<20 {
+      await Task.yield()
+    }
+
+    XCTAssertEqual(model.cardFunctionalTagsState, .loaded([secondTag]))
+  }
+
+  func testSelectedCardFunctionalTagsReportAnUnavailableSemanticCatalog() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var card = uiRecords()[0]
+    card.oracleID = "oracle-forest"
+    try database.replaceAllCards([card])
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        cardFunctionalTagLoader: { _ in .unavailable }
+      )
+    )
+    await model.drainSearchForTesting()
+
+    model.selectCard(card)
+    await model.drainCardFunctionalTagsForTesting()
+
+    XCTAssertEqual(model.cardFunctionalTagsState, .unavailable)
+  }
+
+  func testSelectedCardFunctionalTagsDistinguishAnAvailableCardWithoutTags() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var card = uiRecords()[0]
+    card.oracleID = "oracle-forest"
+    try database.replaceAllCards([card])
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        cardFunctionalTagLoader: { _ in .available([]) }
+      )
+    )
+    await model.drainSearchForTesting()
+
+    model.selectCard(card)
+    await model.drainCardFunctionalTagsForTesting()
+
+    XCTAssertEqual(model.cardFunctionalTagsState, .empty)
+  }
+
+  func testSelectedCardFunctionalTagsReportLoadingErrorsSeparately() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var card = uiRecords()[0]
+    card.oracleID = "oracle-forest"
+    try database.replaceAllCards([card])
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        cardFunctionalTagLoader: { _ in
+          throw CardFunctionalTagLoaderTestError.failed
+        }
+      )
+    )
+    await model.drainSearchForTesting()
+
+    model.selectCard(card)
+    await model.drainCardFunctionalTagsForTesting()
+
+    XCTAssertEqual(
+      model.cardFunctionalTagsState,
+      .failed("Functional tags could not be loaded.")
+    )
+  }
+
+  func testSearchingAFunctionalTagClosesDetailAndRunsValidatedOracleTagQuery() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var matchingCard = uiRecords()[0]
+    matchingCard.oracleID = "oracle-forest"
+    var otherCard = uiRecords()[1]
+    otherCard.oracleID = "oracle-beta"
+    try database.replaceAllCards([matchingCard, otherCard])
+    try database.replaceSemanticCatalog(
+      with: SemanticCatalogSnapshot(
+        tags: [
+          SemanticTagRecord(
+            id: "tag-draw-engine",
+            namespace: "oracle",
+            slug: "draw-engine",
+            label: "Draw Engine",
+            description: nil,
+            similarityEnabled: true,
+            source: "scryfall-oracle-tags@2026-06-14"
+          )
+        ],
+        aliases: [],
+        edges: [],
+        cardTags: [
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(
+              oracleID: matchingCard.oracleID,
+              printingID: matchingCard.id
+            ),
+            tagID: "tag-draw-engine",
+            weightMillis: 1_500,
+            annotation: nil,
+            source: "scryfall-oracle-tags@2026-06-14"
+          )
+        ],
+        stats: []
+      )
+    )
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+    let tag = SemanticCardFunctionalTag(
+      tagID: "tag-draw-engine",
+      slug: "draw-engine",
+      label: "Draw Engine",
+      description: nil,
+      annotation: nil,
+      sources: ["scryfall-oracle-tags@2026-06-14"]
+    )
+
+    model.selectCard(matchingCard)
+    await model.searchCards(taggedWith: tag)
+    await model.drainSearchForTesting()
+
+    XCTAssertNil(model.selectedCard)
+    XCTAssertEqual(model.submittedSearchText, "otag:draw-engine")
+    XCTAssertEqual(model.cards.map(\.id), [matchingCard.id])
+  }
+
+  func testSearchingAFunctionalTagFromACollectionNavigatesToGlobalSearch() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let matchingCard = uiRecords()[0]
+    try database.replaceAllCards([matchingCard])
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+    let list = try XCTUnwrap(model.createCardCollection(named: "Deck Box", selectAfterCreate: true))
+    model.addCard(matchingCard, toListID: list.id)
+    model.selectCardCollection(id: list.id)
+    await model.drainSelectedListLoadForTesting()
+    model.selectCard(matchingCard)
+    let tag = SemanticCardFunctionalTag(
+      tagID: "tag-draw-engine",
+      slug: "draw-engine",
+      label: "Draw Engine",
+      description: nil,
+      annotation: nil,
+      sources: ["scryfall-oracle-tags@2026-06-14"]
+    )
+
+    await model.searchCards(taggedWith: tag)
+    await model.drainSearchForTesting()
+
+    XCTAssertEqual(model.sidebarSelection, .search)
+    XCTAssertNil(model.selectedCard)
+    XCTAssertEqual(model.submittedSearchText, "otag:draw-engine")
+  }
+
+  func testSelectedCardFunctionalTagsTreatWhitespaceOracleIdentityAsPrintingFallback() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var card = uiRecords()[0]
+    card.oracleID = "   "
+    try database.replaceAllCards([card])
+    try database.replaceSemanticCatalog(
+      with: SemanticCatalogSnapshot(
+        tags: [
+          SemanticTagRecord(
+            id: "tag-draw-engine",
+            namespace: "oracle",
+            slug: "draw-engine",
+            label: "Draw Engine",
+            description: nil,
+            similarityEnabled: true,
+            source: "scryfall-oracle-tags"
+          )
+        ],
+        aliases: [],
+        edges: [],
+        cardTags: [
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: nil, printingID: card.id),
+            tagID: "tag-draw-engine",
+            weightMillis: 1_000,
+            annotation: nil,
+            source: "scryfall-oracle-tags"
+          )
+        ],
+        stats: []
+      )
+    )
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(environment: environment(database: database))
+    await model.drainSearchForTesting()
+
+    model.selectCard(card)
+
+    XCTAssertEqual(
+      model.cardFunctionalTagsState,
+      .loading(SemanticCardKey(oracleID: nil, printingID: card.id))
+    )
+    await model.drainCardFunctionalTagsForTesting()
+    guard case .loaded(let tags) = model.cardFunctionalTagsState else {
+      return XCTFail("Expected printing-key functional tags to load.")
+    }
+    XCTAssertEqual(tags.map(\.slug), ["draw-engine"])
+  }
+
   func testModelLoadsAllCardClassesSearchesAndSorts() async throws {
     let database = try CardDatabase(storage: .inMemory)
     try database.replaceAllCards(uiRecords())
@@ -6228,7 +6583,8 @@ final class GrimoraAppModelTests: XCTestCase {
     searchHistoryStore: GrimoraSearchHistoryStore? = nil,
     priceHistoryEnabled: Bool = false,
     cloudSyncCoordinator: CloudSyncCoordinator? = nil,
-    autoUpdateChecksEnabled: Bool = false
+    autoUpdateChecksEnabled: Bool = false,
+    cardFunctionalTagLoader: CardFunctionalTagLoader? = nil
   ) -> GrimoraEnvironment {
     let bulkClient = BulkDataClient(network: network)
     let importer = importer ?? LibraryImporter(database: database, imageResolver: NoImageResolver())
@@ -6262,7 +6618,8 @@ final class GrimoraAppModelTests: XCTestCase {
       autoUpdateChecksEnabled: autoUpdateChecksEnabled,
       searchHistoryStore: searchHistoryStore ?? isolatedSearchHistoryStore(),
       hiddenSearchTermsStore: HiddenSearchTermsStore(userDefaults: isolatedUserDefaults()),
-      cloudSyncCoordinator: cloudSyncCoordinator
+      cloudSyncCoordinator: cloudSyncCoordinator,
+      cardFunctionalTagLoader: cardFunctionalTagLoader
     )
   }
 

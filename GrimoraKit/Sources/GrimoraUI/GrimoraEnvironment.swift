@@ -4,6 +4,10 @@ import GrimoraCore
   import Security
 #endif
 
+public typealias CardFunctionalTagLoader = @Sendable (
+  SemanticCardKey
+) async throws -> SemanticCardFunctionalTagsLookup
+
 public struct GrimoraEnvironment: Sendable {
   public var database: CardDatabase
   public var updateService: LibraryUpdateService
@@ -23,6 +27,7 @@ public struct GrimoraEnvironment: Sendable {
   public var currencyExchangeRateClient: any CurrencyExchangeRateClient
   public var managedCatalogMigrationService: ManagedCatalogMigrationService?
   public var initialManagedCatalogMigrationStatus: ManagedCatalogMigrationStatus?
+  public var cardFunctionalTagLoader: CardFunctionalTagLoader
 
   public init(
     database: CardDatabase,
@@ -44,7 +49,8 @@ public struct GrimoraEnvironment: Sendable {
     canOfferInitialCloudSync: Bool = true,
     currencyExchangeRateClient: (any CurrencyExchangeRateClient)? = nil,
     managedCatalogMigrationService: ManagedCatalogMigrationService? = nil,
-    initialManagedCatalogMigrationStatus: ManagedCatalogMigrationStatus? = nil
+    initialManagedCatalogMigrationStatus: ManagedCatalogMigrationStatus? = nil,
+    cardFunctionalTagLoader: CardFunctionalTagLoader? = nil
   ) {
     self.database = database
     self.updateService = updateService
@@ -68,6 +74,11 @@ public struct GrimoraEnvironment: Sendable {
       )
     self.managedCatalogMigrationService = managedCatalogMigrationService
     self.initialManagedCatalogMigrationStatus = initialManagedCatalogMigrationStatus
+    self.cardFunctionalTagLoader = cardFunctionalTagLoader ?? { cardKey in
+      try await Task.detached(priority: .userInitiated) {
+        try database.semanticFunctionalTags(for: cardKey)
+      }.value
+    }
   }
 
   public static func live(
@@ -218,6 +229,14 @@ public struct GrimoraEnvironment: Sendable {
       forKey: MetadataKey.searchSchemaVersion.rawValue
     )
     try database.saveMetadataValue("true", forKey: MetadataKey.requiredImagesCached.rawValue)
+
+    if let semanticJSON = processInfo.environment["GRIMORA_TEST_FIXTURE_SEMANTIC_CATALOG_JSON"] {
+      let semanticCatalog = try JSONDecoder().decode(
+        SemanticCatalogSnapshot.self,
+        from: Data(semanticJSON.utf8)
+      )
+      try database.replaceSemanticCatalog(with: semanticCatalog)
+    }
 
     guard let listName = processInfo.environment["GRIMORA_TEST_CATEGORIZED_LIST_NAME"],
       let rawCategoryNames = processInfo.environment["GRIMORA_TEST_CATEGORY_NAMES"]

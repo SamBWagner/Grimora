@@ -105,6 +105,51 @@ struct SemanticCatalogStorageTests {
   }
 
   @Test
+  func functionalTagLookupIsUnavailableWithoutGameplayEnabledOracleTags() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let cardKey = SemanticCardKey(oracleID: "oracle-card", printingID: "print-a")
+
+    #expect(try database.semanticFunctionalTags(for: cardKey) == .unavailable)
+
+    try database.replaceSemanticCatalog(
+      with: SemanticCatalogSnapshot(
+        tags: [
+          SemanticTagRecord(
+            id: "tag-metadata",
+            namespace: "metadata",
+            slug: "alliteration",
+            label: "Alliteration",
+            description: nil,
+            similarityEnabled: true,
+            source: "metadata-fixture"
+          )
+        ],
+        aliases: [],
+        edges: [],
+        cardTags: [],
+        stats: []
+      )
+    )
+
+    #expect(try database.semanticFunctionalTags(for: cardKey) == .unavailable)
+  }
+
+  @Test
+  func functionalTagLookupReturnsAvailableEmptyForAnUntaggedCardInAnOracleCatalog() throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var snapshot = semanticSnapshot()
+    snapshot.cardTags = []
+    snapshot.stats = []
+    try database.replaceSemanticCatalog(with: snapshot)
+
+    #expect(
+      try database.semanticFunctionalTags(
+        for: SemanticCardKey(oracleID: "untagged-card", printingID: "print-z")
+      ) == .available([])
+    )
+  }
+
+  @Test
   func semanticReadsSupportCaseVariantTableNames() throws {
     let database = try CardDatabase(storage: .inMemory)
     let snapshot = semanticSnapshot()

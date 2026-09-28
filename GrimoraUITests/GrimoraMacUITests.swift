@@ -64,6 +64,82 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(app.buttons["open-card-token"].exists)
     }
 
+    func testCardDetailFunctionalTagShowsProvenanceAndRunsOracleTagSearch() throws {
+        var matchingCard = CardRecord(
+            id: "functional-card",
+            oracleID: "oracle-functional",
+            name: "Functional Adept",
+            releasedAt: "2020-01-01",
+            setCode: "tst",
+            setName: "Test Set",
+            setType: "expansion",
+            collectorNumber: "1",
+            collectorNumberNumber: 1,
+            rarity: "common",
+            rarityRank: 0,
+            colorSortKey: 0,
+            layout: "normal",
+            typeLine: "Creature — Wizard",
+            oracleText: "Draw a card.",
+            isRealCard: true
+        )
+        matchingCard.oracleID = "oracle-functional"
+        var otherCard = matchingCard
+        otherCard.id = "other-card"
+        otherCard.oracleID = "oracle-other"
+        otherCard.name = "Ordinary Adept"
+        otherCard.collectorNumber = "2"
+        otherCard.collectorNumberNumber = 2
+        let semanticCatalog = SemanticCatalogSnapshot(
+            tags: [
+                SemanticTagRecord(
+                    id: "tag-draw-engine",
+                    namespace: "oracle",
+                    slug: "draw-engine",
+                    label: "Draw Engine",
+                    description: "Provides repeatable card draw.",
+                    similarityEnabled: true,
+                    source: "scryfall-oracle-tags@2026-06-14"
+                )
+            ],
+            aliases: [],
+            edges: [],
+            cardTags: [
+                SemanticCardTagRecord(
+                    cardKey: SemanticCardKey(oracleID: matchingCard.oracleID, printingID: matchingCard.id),
+                    tagID: "tag-draw-engine",
+                    weightMillis: 1_500,
+                    annotation: "repeatable",
+                    source: "scryfall-oracle-tags@2026-06-14"
+                )
+            ],
+            stats: []
+        )
+        let databaseURL = try seedDatabase(
+            cards: [matchingCard, otherCard],
+            semanticCatalog: semanticCatalog
+        )
+        let app = launchApp(databaseURL: databaseURL)
+
+        let cardButton = app.buttons["open-card-functional-card"]
+        XCTAssertTrue(cardButton.waitForExistence(timeout: 5))
+        cardButton.click()
+        let detail = firstElement(app, identifier: "card-detail")
+        XCTAssertTrue(detail.waitForExistence(timeout: 5))
+        let tagButton = app.buttons["card-function-tag-draw-engine"]
+        XCTAssertTrue(tagButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(firstElement(app, identifier: "card-functions-provenance").exists)
+
+        tagButton.click()
+
+        XCTAssertTrue(waitForNonExistence(of: detail, timeout: 5))
+        let searchField = app.searchFields.firstMatch
+        XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(of: searchField, toEqual: "otag:draw-engine"))
+        XCTAssertTrue(waitForValue(of: app.staticTexts["search-results-total"], toEqual: "1 card"))
+        XCTAssertTrue(app.buttons["open-card-functional-card"].exists)
+    }
+
     func testAdvancedSearchFieldButtonOpensFormAndAppliesQuery() throws {
         let databaseURL = try seedDatabase(cards: allCardClassFixtureCards())
         let app = launchApp(databaseURL: databaseURL)
@@ -1335,10 +1411,16 @@ final class GrimoraMacUITests: XCTestCase {
         ]
     }
 
-    private func seedDatabase(cards: [CardRecord]) throws -> URL {
+    private func seedDatabase(
+        cards: [CardRecord],
+        semanticCatalog: SemanticCatalogSnapshot? = nil
+    ) throws -> URL {
         let databaseURL = temporaryDirectory.appendingPathComponent("fixture.sqlite")
         let database = try CardDatabase(storage: .file(databaseURL))
         try database.replaceAllCards(cards)
+        if let semanticCatalog {
+            try database.replaceSemanticCatalog(with: semanticCatalog)
+        }
         try database.saveMetadataValue("2026-04-25T09:09:59.477+00:00", forKey: MetadataKey.defaultCardsUpdatedAt.rawValue)
         try database.saveMetadataValue(CardDatabase.currentSearchSchemaVersion, forKey: MetadataKey.searchSchemaVersion.rawValue)
         try database.saveMetadataValue("true", forKey: MetadataKey.requiredImagesCached.rawValue)

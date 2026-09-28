@@ -85,6 +85,11 @@ struct TouchRootView: View {
             }
             // `.scry` drives its own camera lifecycle from the tab view.
         }
+        .onChange(of: model.sidebarSelection) { _, sidebarSelection in
+            if sidebarSelection == .search {
+                selectedTab = .search
+            }
+        }
         .onChange(of: model.selectedCollectionID) { _, selectedCollectionID in
             guard selectedTab == .lists, let selectedCollectionID else {
                 return

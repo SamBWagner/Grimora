@@ -222,6 +222,88 @@ extension CardDatabase {
     }
   }
 
+  public func semanticFunctionalTags(
+    for cardKey: SemanticCardKey
+  ) throws -> SemanticCardFunctionalTagsLookup {
+    try withDatabaseLock {
+      guard try functionalOracleTagsAvailableUnlocked() else {
+        return .unavailable
+      }
+
+      let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
+      let statement = try database.prepare(
+        """
+        SELECT t.id, t.slug, t.label, t.description, ct.annotation, t.source, ct.source
+        FROM \(schema).semantic_card_tags AS ct
+        JOIN \(schema).semantic_tags AS t ON t.id = ct.tag_id
+        WHERE ct.card_key = ?
+          AND t.namespace = 'oracle' COLLATE NOCASE
+          AND t.similarity_enabled = 1
+        ORDER BY t.label COLLATE NOCASE, t.slug COLLATE NOCASE, t.id, ct.source
+        """
+      )
+      try statement.bind(cardKey.rawValue, at: 1)
+
+      struct AccumulatedTag {
+        var tagID: String
+        var slug: String
+        var label: String
+        var description: String?
+        var annotation: String?
+        var sources: Set<String>
+      }
+
+      var orderedTagIDs: [String] = []
+      var accumulated: [String: AccumulatedTag] = [:]
+      while try statement.step() {
+        guard let tagID = statement.string(at: 0),
+          let slug = statement.string(at: 1),
+          let label = statement.string(at: 2)
+        else {
+          continue
+        }
+
+        let description = statement.string(at: 3)
+        let annotation = statement.string(at: 4)
+        let tagSource = statement.string(at: 5)
+        let membershipSource = statement.string(at: 6)
+        if accumulated[tagID] == nil {
+          orderedTagIDs.append(tagID)
+          accumulated[tagID] = AccumulatedTag(
+            tagID: tagID,
+            slug: slug,
+            label: label,
+            description: description,
+            annotation: annotation,
+            sources: []
+          )
+        } else if accumulated[tagID]?.annotation == nil, annotation != nil {
+          accumulated[tagID]?.annotation = annotation
+        }
+        if let tagSource {
+          accumulated[tagID]?.sources.insert(tagSource)
+        }
+        if let membershipSource {
+          accumulated[tagID]?.sources.insert(membershipSource)
+        }
+      }
+
+      return .available(orderedTagIDs.compactMap { tagID in
+        guard let tag = accumulated[tagID] else {
+          return nil
+        }
+        return SemanticCardFunctionalTag(
+          tagID: tag.tagID,
+          slug: tag.slug,
+          label: tag.label,
+          description: tag.description,
+          annotation: tag.annotation,
+          sources: tag.sources.sorted()
+        )
+      })
+    }
+  }
+
   public func semanticCardKeys(tagID: String) throws -> [SemanticCardKey] {
     try withDatabaseLock {
       guard try semanticCatalogAvailableUnlocked() else {
@@ -250,6 +332,23 @@ extension CardDatabase {
     let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
     let statement = try database.prepare(
       "SELECT 1 FROM \(schema).sqlite_master WHERE type = 'table' AND name = 'semantic_tags' COLLATE NOCASE LIMIT 1"
+    )
+    return try statement.step()
+  }
+
+  private func functionalOracleTagsAvailableUnlocked() throws -> Bool {
+    guard try semanticCatalogAvailableUnlocked() else {
+      return false
+    }
+    let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
+    let statement = try database.prepare(
+      """
+      SELECT 1
+      FROM \(schema).semantic_tags
+      WHERE namespace = 'oracle' COLLATE NOCASE
+        AND similarity_enabled = 1
+      LIMIT 1
+      """
     )
     return try statement.step()
   }

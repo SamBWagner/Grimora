@@ -109,6 +109,40 @@ public struct SemanticCardTagRecord: Codable, Equatable, Sendable {
   }
 }
 
+public struct SemanticCardFunctionalTag: Identifiable, Equatable, Sendable {
+  public var tagID: String
+  public var slug: String
+  public var label: String
+  public var description: String?
+  public var annotation: String?
+  public var sources: [String]
+
+  public var id: String {
+    tagID
+  }
+
+  public init(
+    tagID: String,
+    slug: String,
+    label: String,
+    description: String?,
+    annotation: String?,
+    sources: [String]
+  ) {
+    self.tagID = tagID
+    self.slug = slug
+    self.label = label
+    self.description = description
+    self.annotation = annotation
+    self.sources = sources
+  }
+}
+
+public enum SemanticCardFunctionalTagsLookup: Equatable, Sendable {
+  case unavailable
+  case available([SemanticCardFunctionalTag])
+}
+
 public struct SemanticTagStatsRecord: Codable, Equatable, Sendable {
   public var tagID: String
   public var directCardCount: Int

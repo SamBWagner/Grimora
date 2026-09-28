@@ -284,6 +284,7 @@ public struct CardDetailView: View {
     private var detailText: some View {
         VStack(alignment: .leading, spacing: Self.detailSectionSpacing) {
             oracleSection
+            functionalTagsSection
             if showsInlinePrintingsSection {
                 printingsSection
             }
@@ -865,6 +866,7 @@ public struct CardDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     oracleSection
+                    functionalTagsSection
                     expandedPrintingsGrid
                     valueSection
                 }
@@ -1694,6 +1696,15 @@ public struct CardDetailView: View {
 
     private var palette: GrimoraPalette {
         GrimoraPalette(colorScheme: colorScheme)
+    }
+
+    private var functionalTagsSection: some View {
+        CardFunctionalTagsSection(state: model.cardFunctionalTagsState) { tag in
+            detailFeedbackTrigger += 1
+            Task {
+                await model.searchCards(taggedWith: tag)
+            }
+        }
     }
 
     private var shareContent: CardShareContent {

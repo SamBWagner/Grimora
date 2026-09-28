@@ -49,10 +49,12 @@ public final class GrimoraAppModel {
   public internal(set) var searchResultTotal = 0
   public internal(set) var selectedCardPrintings: [CardRecord] = []
   public internal(set) var selectedCardValueGuide: CardValueGuide?
+  public internal(set) var cardFunctionalTagsState: CardFunctionalTagsState = .idle
   public internal(set) var valueHistoryBackgroundActivity: ValueHistoryBackgroundActivity?
   public internal(set) var valueExchangeRate: CurrencyExchangeRate?
   public var selectedCard: CardRecord? {
     didSet {
+      updateCardFunctionalTagsSelection(from: oldValue, to: selectedCard)
       if !isUpdatingSelectedCardSource {
         selectedCardCollectionEntryID = nil
       }
@@ -299,6 +301,7 @@ public final class GrimoraAppModel {
   let cloudSyncCoordinator: CloudSyncCoordinator
   let canOfferInitialCloudSync: Bool
   let currencyExchangeRateClient: any CurrencyExchangeRateClient
+  let cardFunctionalTagLoader: CardFunctionalTagLoader
   let managedCatalogMigrationService: ManagedCatalogMigrationService?
   let cloudSyncDeviceID: String
   let cloudSyncDeviceName: String
@@ -345,6 +348,8 @@ public final class GrimoraAppModel {
   /// cancels the prior task so a stale background load can never publish over a newer one.
   var listLoadGeneration: UInt64 = 0
   var listLoadTask: Task<Void, Never>?
+  var cardFunctionalTagsGeneration: UInt64 = 0
+  var cardFunctionalTagsTask: Task<Void, Never>?
 
   public init(
     environment: GrimoraEnvironment,
@@ -385,6 +390,7 @@ public final class GrimoraAppModel {
     self.cloudSyncCoordinator = environment.cloudSyncCoordinator
     self.canOfferInitialCloudSync = environment.canOfferInitialCloudSync
     self.currencyExchangeRateClient = environment.currencyExchangeRateClient
+    self.cardFunctionalTagLoader = environment.cardFunctionalTagLoader
     self.managedCatalogMigrationService = environment.managedCatalogMigrationService
     self.managedCatalogMigrationStatus = environment.initialManagedCatalogMigrationStatus
     self.cloudSyncDeviceID = cloudSyncDeviceID ?? GrimoraCloudSyncPreferences.deviceID()
