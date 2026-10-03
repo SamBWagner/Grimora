@@ -164,6 +164,7 @@ extension CardDatabase {
           try statsInsert.reset()
         }
       }
+      markCatalogContentChangedUnlocked()
     }
   }
 
@@ -302,6 +303,338 @@ extension CardDatabase {
         )
       })
     }
+  }
+
+  public func semanticRelatedCards(
+    for card: CardRecord,
+    filters: SemanticRelatedCardFilters = SemanticRelatedCardFilters()
+  ) async throws -> SemanticRelatedCardsLookup {
+    try await semanticRelatedCards(for: card, filters: filters, afterInput: nil)
+  }
+
+  func semanticRelatedCards(
+    for card: CardRecord,
+    filters: SemanticRelatedCardFilters = SemanticRelatedCardFilters(),
+    afterInput: (@Sendable () async -> Void)?
+  ) async throws -> SemanticRelatedCardsLookup {
+    let sourceCardKey = SemanticCardKey(oracleID: card.oracleID, printingID: card.id)
+    while true {
+      try Task.checkCancellation()
+      let input = try await withCancellableDatabaseLock {
+        guard try functionalOracleTagsAvailableUnlocked() else {
+          return Optional<SemanticRelatedCardQueryInput>.none
+        }
+        var input = try semanticRelatedCardQueryInputUnlocked(
+          sourceCardKey: sourceCardKey,
+          filters: filters
+        )
+        input.catalogGeneration = catalogContentGeneration
+        return input
+      }
+      guard let input else {
+        return .unavailable
+      }
+
+      await afterInput?()
+      try Task.checkCancellation()
+      let matches = try SemanticRelatedCardScorer(snapshot: input.snapshot).rankedCandidates(
+        for: sourceCardKey,
+        among: input.candidates,
+        filters: filters
+      )
+      try Task.checkCancellation()
+      let cardsByID = try await withCancellableDatabaseLock {
+        guard catalogContentGeneration == input.catalogGeneration else {
+          return Optional<[CardRecord.ID: CardRecord]>.none
+        }
+        return try cardsByID(forIDs: matches.map(\.printingID))
+      }
+      guard let cardsByID else {
+        continue
+      }
+
+      return .available(matches.compactMap { match in
+        guard let relatedCard = cardsByID[match.printingID] else {
+          return nil
+        }
+        return SemanticRelatedCard(
+          card: relatedCard,
+          score: match.score,
+          sharedConcepts: match.sharedConcepts
+        )
+      })
+    }
+  }
+
+  private struct SemanticRelatedCardQueryInput {
+    var snapshot: SemanticCatalogSnapshot
+    var candidates: [SemanticRelatedCardCandidate]
+    var catalogGeneration: UInt64 = 0
+  }
+
+  private func semanticRelatedCardQueryInputUnlocked(
+    sourceCardKey: SemanticCardKey,
+    filters: SemanticRelatedCardFilters
+  ) throws -> SemanticRelatedCardQueryInput {
+    let tags = try semanticTagsUnlocked()
+    let edges = try semanticEdgesUnlocked()
+    let stats = try semanticStatsUnlocked()
+    let enabledTagIDs = Set(tags.lazy.filter(\.similarityEnabled).map(\.id))
+    let sourceMemberships = try semanticCardTagsUnlocked(cardKeys: [sourceCardKey])
+    let parentsByChild = Dictionary(grouping: edges, by: \.childTagID)
+      .mapValues { $0.map(\.parentTagID).sorted() }
+    let childrenByParent = Dictionary(grouping: edges, by: \.parentTagID)
+      .mapValues { $0.map(\.childTagID).sorted() }
+
+    var sourceEffectiveTagIDs: Set<String> = []
+    var ancestors = sourceMemberships.map(\.tagID).filter(enabledTagIDs.contains)
+    while let tagID = ancestors.popLast() {
+      try Task.checkCancellation()
+      guard enabledTagIDs.contains(tagID), sourceEffectiveTagIDs.insert(tagID).inserted else {
+        continue
+      }
+      ancestors.append(contentsOf: parentsByChild[tagID, default: []])
+    }
+
+    guard !sourceEffectiveTagIDs.isEmpty else {
+      return SemanticRelatedCardQueryInput(
+        snapshot: SemanticCatalogSnapshot(
+          tags: tags,
+          aliases: [],
+          edges: edges,
+          cardTags: sourceMemberships,
+          stats: stats
+        ),
+        candidates: []
+      )
+    }
+
+    var candidateDirectTagIDs: Set<String> = []
+    var descendants = Array(sourceEffectiveTagIDs).sorted()
+    while let tagID = descendants.popLast() {
+      try Task.checkCancellation()
+      guard enabledTagIDs.contains(tagID), candidateDirectTagIDs.insert(tagID).inserted else {
+        continue
+      }
+      descendants.append(contentsOf: childrenByParent[tagID, default: []])
+    }
+
+    let candidateCardKeys = try semanticCardKeysUnlocked(
+      tagIDs: candidateDirectTagIDs,
+      excluding: sourceCardKey
+    )
+    let candidates = try semanticRelatedCardCandidatesUnlocked(
+      cardKeys: candidateCardKeys,
+      filters: filters
+    )
+    let relevantCardKeys = Set(candidates.map(\.cardKey)).union([sourceCardKey])
+    let memberships = try semanticCardTagsUnlocked(cardKeys: relevantCardKeys)
+
+    return SemanticRelatedCardQueryInput(
+      snapshot: SemanticCatalogSnapshot(
+        tags: tags,
+        aliases: [],
+        edges: edges,
+        cardTags: memberships,
+        stats: stats
+      ),
+      candidates: candidates
+    )
+  }
+
+  private func semanticCardKeysUnlocked(
+    tagIDs: Set<String>,
+    excluding sourceCardKey: SemanticCardKey
+  ) throws -> Set<SemanticCardKey> {
+    guard !tagIDs.isEmpty else {
+      return []
+    }
+    let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
+    let sortedTagIDs = tagIDs.sorted()
+    let chunkSize = 800
+    var cardKeys: Set<SemanticCardKey> = []
+    for start in stride(from: 0, to: sortedTagIDs.count, by: chunkSize) {
+      try Task.checkCancellation()
+      let chunk = Array(sortedTagIDs[start..<min(start + chunkSize, sortedTagIDs.count)])
+      let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+      let statement = try database.prepare(
+        """
+        SELECT DISTINCT card_key
+        FROM \(schema).semantic_card_tags
+        WHERE tag_id IN (\(placeholders))
+          AND card_key <> ?
+        ORDER BY card_key
+        """
+      )
+      for (index, tagID) in chunk.enumerated() {
+        try statement.bind(tagID, at: Int32(index + 1))
+      }
+      try statement.bind(sourceCardKey.rawValue, at: Int32(chunk.count + 1))
+      var rowCount = 0
+      while try statement.step() {
+        if let rawValue = statement.string(at: 0) {
+          cardKeys.insert(SemanticCardKey(rawValue: rawValue))
+        }
+        rowCount += 1
+        if rowCount.isMultiple(of: 256) {
+          try Task.checkCancellation()
+        }
+      }
+    }
+    return cardKeys
+  }
+
+  private func semanticRelatedCardCandidatesUnlocked(
+    cardKeys: Set<SemanticCardKey>,
+    filters: SemanticRelatedCardFilters
+  ) throws -> [SemanticRelatedCardCandidate] {
+    guard !cardKeys.isEmpty else {
+      return []
+    }
+    let preferredPrintingOrder = Self.preferredPrintingOrderClause(preferences: [])
+    let oracleIDs = cardKeys.compactMap(\.oracleID).sorted()
+    let printingIDs = cardKeys.compactMap(\.printingID).sorted()
+    let chunkSize = 800
+    var candidates: [SemanticRelatedCardCandidate] = []
+
+    for start in stride(from: 0, to: oracleIDs.count, by: chunkSize) {
+      try Task.checkCancellation()
+      let chunk = Array(oracleIDs[start..<min(start + chunkSize, oracleIDs.count)])
+      let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+      let statement = try database.prepare(
+        """
+        WITH ranked_cards AS (
+            SELECT
+                id,
+                oracle_id,
+                name,
+                color_identity_key,
+                legalities_key,
+                ROW_NUMBER() OVER (
+                    PARTITION BY oracle_id
+                    ORDER BY \(preferredPrintingOrder)
+                ) AS printing_rank
+            FROM cards
+            WHERE oracle_id IN (\(placeholders))
+        )
+        SELECT id, oracle_id, name, color_identity_key, legalities_key
+        FROM ranked_cards
+        WHERE printing_rank = 1
+        ORDER BY oracle_id
+        """
+      )
+      for (index, oracleID) in chunk.enumerated() {
+        try statement.bind(oracleID, at: Int32(index + 1))
+      }
+      try appendSemanticRelatedCardCandidates(
+        from: statement,
+        filters: filters,
+        to: &candidates
+      )
+    }
+
+    for start in stride(from: 0, to: printingIDs.count, by: chunkSize) {
+      try Task.checkCancellation()
+      let chunk = Array(printingIDs[start..<min(start + chunkSize, printingIDs.count)])
+      let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+      let statement = try database.prepare(
+        """
+        SELECT id, oracle_id, name, color_identity_key, legalities_key
+        FROM cards
+        WHERE id IN (\(placeholders))
+        ORDER BY id
+        """
+      )
+      for (index, printingID) in chunk.enumerated() {
+        try statement.bind(printingID, at: Int32(index + 1))
+      }
+      try appendSemanticRelatedCardCandidates(
+        from: statement,
+        filters: filters,
+        to: &candidates
+      )
+    }
+
+    return candidates.sorted { $0.cardKey.rawValue < $1.cardKey.rawValue }
+  }
+
+  private func appendSemanticRelatedCardCandidates(
+    from statement: SQLiteStatement,
+    filters: SemanticRelatedCardFilters,
+    to candidates: inout [SemanticRelatedCardCandidate]
+  ) throws {
+    var rowCount = 0
+    while try statement.step() {
+      guard let printingID = statement.string(at: 0), let name = statement.string(at: 2) else {
+        continue
+      }
+      let candidate = SemanticRelatedCardCandidate(
+        cardKey: SemanticCardKey(oracleID: statement.string(at: 1), printingID: printingID),
+        printingID: printingID,
+        name: name,
+        colorIdentity: Set(Self.deserializedList(statement.string(at: 3))),
+        legalities: Self.deserializedLegalities(statement.string(at: 4))
+      )
+      if filters.includes(candidate) {
+        candidates.append(candidate)
+      }
+      rowCount += 1
+      if rowCount.isMultiple(of: 256) {
+        try Task.checkCancellation()
+      }
+    }
+  }
+
+  private func semanticCardTagsUnlocked(
+    cardKeys: Set<SemanticCardKey>
+  ) throws -> [SemanticCardTagRecord] {
+    guard !cardKeys.isEmpty else {
+      return []
+    }
+    let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
+    let sortedCardKeys = cardKeys.map(\.rawValue).sorted()
+    let chunkSize = 800
+    var memberships: [SemanticCardTagRecord] = []
+    for start in stride(from: 0, to: sortedCardKeys.count, by: chunkSize) {
+      try Task.checkCancellation()
+      let chunk = Array(sortedCardKeys[start..<min(start + chunkSize, sortedCardKeys.count)])
+      let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+      let statement = try database.prepare(
+        """
+        SELECT card_key, tag_id, weight_millis, annotation, source
+        FROM \(schema).semantic_card_tags
+        WHERE card_key IN (\(placeholders))
+        ORDER BY card_key, tag_id, source
+        """
+      )
+      for (index, cardKey) in chunk.enumerated() {
+        try statement.bind(cardKey, at: Int32(index + 1))
+      }
+      var rowCount = 0
+      while try statement.step() {
+        guard let cardKey = statement.string(at: 0),
+          let tagID = statement.string(at: 1),
+          let weightMillis = statement.int(at: 2),
+          let source = statement.string(at: 4)
+        else {
+          continue
+        }
+        memberships.append(
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(rawValue: cardKey),
+            tagID: tagID,
+            weightMillis: weightMillis,
+            annotation: statement.string(at: 3),
+            source: source
+          )
+        )
+        rowCount += 1
+        if rowCount.isMultiple(of: 256) {
+          try Task.checkCancellation()
+        }
+      }
+    }
+    return memberships
   }
 
   public func semanticCardKeys(tagID: String) throws -> [SemanticCardKey] {

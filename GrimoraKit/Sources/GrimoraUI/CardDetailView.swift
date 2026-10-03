@@ -285,6 +285,7 @@ public struct CardDetailView: View {
         VStack(alignment: .leading, spacing: Self.detailSectionSpacing) {
             oracleSection
             functionalTagsSection
+            relatedCardsSection
             if showsInlinePrintingsSection {
                 printingsSection
             }
@@ -867,6 +868,7 @@ public struct CardDetailView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     oracleSection
                     functionalTagsSection
+                    relatedCardsSection
                     expandedPrintingsGrid
                     valueSection
                 }
@@ -1704,6 +1706,13 @@ public struct CardDetailView: View {
             Task {
                 await model.searchCards(taggedWith: tag)
             }
+        }
+    }
+
+    private var relatedCardsSection: some View {
+        CardRelatedCardsSection(state: model.relatedCardsState) { relatedCard in
+            detailFeedbackTrigger += 1
+            model.selectRelatedCard(relatedCard)
         }
     }
 

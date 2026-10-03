@@ -3,6 +3,7 @@ import Foundation
 public final class CardDatabase: @unchecked Sendable {
   let database: SQLiteDatabase
   private let lock = NSRecursiveLock()
+  var catalogContentGeneration: UInt64 = 0
   var attachedCatalogURL: URL?
   public static let currentSearchSchemaVersion = "4"
 
@@ -29,5 +30,27 @@ public final class CardDatabase: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return try body()
+  }
+
+  func withCancellableDatabaseLock<T>(_ body: () throws -> T) async throws -> T {
+    while !tryDatabaseLock() {
+      try Task.checkCancellation()
+      try await Task.sleep(nanoseconds: 1_000_000)
+    }
+    defer { unlockDatabase() }
+    try Task.checkCancellation()
+    return try body()
+  }
+
+  func markCatalogContentChangedUnlocked() {
+    catalogContentGeneration &+= 1
+  }
+
+  private func tryDatabaseLock() -> Bool {
+    lock.try()
+  }
+
+  private func unlockDatabase() {
+    lock.unlock()
   }
 }

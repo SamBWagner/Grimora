@@ -508,6 +508,7 @@ struct TouchRootView: View {
                 },
                 onClose: onClose
             )
+            .id(card.id)
             .task(id: card.id) {
                 async let imageCaching: Void = model.cacheDetailImages(for: card)
                 async let printingLoad: Void = model.loadPrintings(for: card)

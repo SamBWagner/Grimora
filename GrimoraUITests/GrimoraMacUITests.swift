@@ -140,6 +140,95 @@ final class GrimoraMacUITests: XCTestCase {
         XCTAssertTrue(app.buttons["open-card-functional-card"].exists)
     }
 
+    func testCardDetailRelatedCardShowsExplanationAndOpensSelection() throws {
+        var sourceCard = CardRecord(
+            id: "related-source",
+            oracleID: "oracle-related-source",
+            name: "Related Source",
+            releasedAt: "2020-01-01",
+            setCode: "tst",
+            setName: "Test Set",
+            setType: "expansion",
+            collectorNumber: "1",
+            collectorNumberNumber: 1,
+            rarity: "common",
+            rarityRank: 0,
+            colorSortKey: 0,
+            layout: "normal",
+            typeLine: "Creature — Wizard",
+            oracleText: "Source oracle text.",
+            isRealCard: true
+        )
+        sourceCard.oracleID = "oracle-related-source"
+        var relatedCard = sourceCard
+        relatedCard.id = "related-target"
+        relatedCard.oracleID = "oracle-related-target"
+        relatedCard.name = "Related Target"
+        relatedCard.collectorNumber = "2"
+        relatedCard.collectorNumberNumber = 2
+        relatedCard.oracleText = "Related target oracle text."
+        let semanticCatalog = SemanticCatalogSnapshot(
+            tags: [
+                SemanticTagRecord(
+                    id: "tag-draw-engine",
+                    namespace: "oracle",
+                    slug: "draw-engine",
+                    label: "Draw Engine",
+                    description: "Provides repeatable card draw.",
+                    similarityEnabled: true,
+                    source: "scryfall-oracle-tags@2026-06-14"
+                )
+            ],
+            aliases: [],
+            edges: [],
+            cardTags: [
+                SemanticCardTagRecord(
+                    cardKey: SemanticCardKey(oracleID: sourceCard.oracleID, printingID: sourceCard.id),
+                    tagID: "tag-draw-engine",
+                    weightMillis: 1_500,
+                    annotation: "repeatable",
+                    source: "scryfall-oracle-tags@2026-06-14"
+                ),
+                SemanticCardTagRecord(
+                    cardKey: SemanticCardKey(oracleID: relatedCard.oracleID, printingID: relatedCard.id),
+                    tagID: "tag-draw-engine",
+                    weightMillis: 1_500,
+                    annotation: "repeatable",
+                    source: "scryfall-oracle-tags@2026-06-14"
+                )
+            ],
+            stats: [
+                SemanticTagStatsRecord(
+                    tagID: "tag-draw-engine",
+                    directCardCount: 2,
+                    effectiveCardCount: 2,
+                    inverseFrequencyMillis: 1_000
+                )
+            ]
+        )
+        let databaseURL = try seedDatabase(
+            cards: [sourceCard, relatedCard],
+            semanticCatalog: semanticCatalog
+        )
+        let app = launchApp(databaseURL: databaseURL)
+
+        let sourceButton = app.buttons["open-card-related-source"]
+        XCTAssertTrue(sourceButton.waitForExistence(timeout: 5))
+        sourceButton.click()
+        let relatedButton = app.buttons["card-related-card-related-target"]
+        XCTAssertTrue(relatedButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(relatedButton.label.contains("Draw Engine"))
+        XCTAssertTrue(relatedButton.label.contains("Scryfall"))
+
+        relatedButton.click()
+
+        XCTAssertTrue(app.staticTexts["Related Target"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitForValue(
+            of: firstElement(app, identifier: "card-detail-oracle-text"),
+            toEqual: "Related target oracle text."
+        ))
+    }
+
     func testAdvancedSearchFieldButtonOpensFormAndAppliesQuery() throws {
         let databaseURL = try seedDatabase(cards: allCardClassFixtureCards())
         let app = launchApp(databaseURL: databaseURL)

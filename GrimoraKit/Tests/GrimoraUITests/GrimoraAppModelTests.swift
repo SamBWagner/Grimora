@@ -621,6 +621,35 @@ private enum CardFunctionalTagLoaderTestError: Error {
   case failed
 }
 
+private actor ControlledRelatedCardLoader {
+  private var continuations: [
+    SemanticCardKey: CheckedContinuation<SemanticRelatedCardsLookup, any Error>
+  ] = [:]
+  private var requestedKeys: Set<SemanticCardKey> = []
+
+  func load(_ card: CardRecord) async throws -> SemanticRelatedCardsLookup {
+    let key = SemanticCardKey(oracleID: card.oracleID, printingID: card.id)
+    requestedKeys.insert(key)
+    return try await withCheckedThrowingContinuation { continuation in
+      continuations[key] = continuation
+    }
+  }
+
+  func waitUntilRequested(_ key: SemanticCardKey) async {
+    while !requestedKeys.contains(key) {
+      await Task.yield()
+    }
+  }
+
+  func succeed(_ key: SemanticCardKey, with lookup: SemanticRelatedCardsLookup) {
+    continuations.removeValue(forKey: key)?.resume(returning: lookup)
+  }
+}
+
+private enum RelatedCardLoaderTestError: Error {
+  case failed
+}
+
 @MainActor
 final class GrimoraAppModelTests: XCTestCase {
   func testSelectedCardFunctionalTagsLoadAsynchronouslyByOracleIdentity() async throws {
@@ -691,6 +720,155 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertEqual(tags.map(\.label), ["Draw Engine"])
     XCTAssertEqual(tags.map(\.annotation), ["repeatable"])
     XCTAssertEqual(tags.map(\.sources), [["scryfall-oracle-tags@2026-06-14"]])
+  }
+
+  func testSelectedCardRelatedCardsLoadAsynchronouslyByOracleIdentity() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var source = uiRecords()[0]
+    source.oracleID = "oracle-source"
+    var candidate = uiRecords()[1]
+    candidate.oracleID = "oracle-candidate"
+    try database.replaceAllCards([source, candidate])
+    try markLibraryReady(database)
+    let expected = SemanticRelatedCard(
+      card: candidate,
+      score: 0.75,
+      sharedConcepts: [
+        SemanticRelatedCardConcept(
+          tagID: "draw",
+          slug: "draw-engine",
+          label: "Draw Engine",
+          contribution: 1.5,
+          sources: ["scryfall-oracle-tags"]
+        )
+      ]
+    )
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        relatedCardLoader: { card, _ in
+          XCTAssertEqual(card.oracleID, "oracle-source")
+          return .available([expected])
+        }
+      )
+    )
+    await model.drainSearchForTesting()
+
+    model.selectCard(source)
+    XCTAssertEqual(
+      model.relatedCardsState,
+      .loading(SemanticCardKey(oracleID: "oracle-source", printingID: source.id))
+    )
+    await model.drainRelatedCardsForTesting()
+
+    XCTAssertEqual(model.relatedCardsState, .loaded([expected]))
+  }
+
+  func testSelectedCardRelatedCardsReportAnUnavailableSemanticCatalog() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var card = uiRecords()[0]
+    card.oracleID = "oracle-source"
+    try database.replaceAllCards([card])
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        relatedCardLoader: { _, _ in .unavailable }
+      )
+    )
+    await model.drainSearchForTesting()
+
+    model.selectCard(card)
+    await model.drainRelatedCardsForTesting()
+
+    XCTAssertEqual(model.relatedCardsState, .unavailable)
+  }
+
+  func testSelectedCardRelatedCardsDistinguishAnAvailableCardWithoutMatches() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var card = uiRecords()[0]
+    card.oracleID = "oracle-source"
+    try database.replaceAllCards([card])
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        relatedCardLoader: { _, _ in .available([]) }
+      )
+    )
+    await model.drainSearchForTesting()
+
+    model.selectCard(card)
+    await model.drainRelatedCardsForTesting()
+
+    XCTAssertEqual(model.relatedCardsState, .empty)
+  }
+
+  func testSelectedCardRelatedCardsReportLoadingErrorsSeparately() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var card = uiRecords()[0]
+    card.oracleID = "oracle-source"
+    try database.replaceAllCards([card])
+    try markLibraryReady(database)
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        relatedCardLoader: { _, _ in
+          throw RelatedCardLoaderTestError.failed
+        }
+      )
+    )
+    await model.drainSearchForTesting()
+
+    model.selectCard(card)
+    await model.drainRelatedCardsForTesting()
+
+    XCTAssertEqual(
+      model.relatedCardsState,
+      .failed("Related cards could not be loaded.")
+    )
+  }
+
+  func testSelectedCardRelatedCardsIgnoreAStaleCompletedLoad() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    var firstCard = uiRecords()[0]
+    firstCard.oracleID = "oracle-first"
+    var secondCard = uiRecords()[1]
+    secondCard.oracleID = "oracle-second"
+    try database.replaceAllCards([firstCard, secondCard])
+    try markLibraryReady(database)
+
+    let loader = ControlledRelatedCardLoader()
+    let model = GrimoraAppModel(
+      environment: environment(
+        database: database,
+        relatedCardLoader: { card, _ in
+          try await loader.load(card)
+        }
+      )
+    )
+    await model.drainSearchForTesting()
+
+    let firstKey = SemanticCardKey(oracleID: firstCard.oracleID, printingID: firstCard.id)
+    let secondKey = SemanticCardKey(oracleID: secondCard.oracleID, printingID: secondCard.id)
+    let firstResult = SemanticRelatedCard(card: firstCard, score: 0.5, sharedConcepts: [])
+    let secondResult = SemanticRelatedCard(card: secondCard, score: 0.75, sharedConcepts: [])
+
+    model.selectCard(firstCard)
+    await loader.waitUntilRequested(firstKey)
+    model.selectCard(secondCard)
+    await loader.waitUntilRequested(secondKey)
+
+    await loader.succeed(secondKey, with: .available([secondResult]))
+    await model.drainRelatedCardsForTesting()
+    XCTAssertEqual(model.relatedCardsState, .loaded([secondResult]))
+
+    await loader.succeed(firstKey, with: .available([firstResult]))
+    for _ in 0..<20 {
+      await Task.yield()
+    }
+
+    XCTAssertEqual(model.relatedCardsState, .loaded([secondResult]))
   }
 
   func testSelectedCardFunctionalTagsIgnoreAStaleCompletedLoad() async throws {
@@ -6584,7 +6762,8 @@ final class GrimoraAppModelTests: XCTestCase {
     priceHistoryEnabled: Bool = false,
     cloudSyncCoordinator: CloudSyncCoordinator? = nil,
     autoUpdateChecksEnabled: Bool = false,
-    cardFunctionalTagLoader: CardFunctionalTagLoader? = nil
+    cardFunctionalTagLoader: CardFunctionalTagLoader? = nil,
+    relatedCardLoader: CardRelatedCardLoader? = nil
   ) -> GrimoraEnvironment {
     let bulkClient = BulkDataClient(network: network)
     let importer = importer ?? LibraryImporter(database: database, imageResolver: NoImageResolver())
@@ -6619,7 +6798,8 @@ final class GrimoraAppModelTests: XCTestCase {
       searchHistoryStore: searchHistoryStore ?? isolatedSearchHistoryStore(),
       hiddenSearchTermsStore: HiddenSearchTermsStore(userDefaults: isolatedUserDefaults()),
       cloudSyncCoordinator: cloudSyncCoordinator,
-      cardFunctionalTagLoader: cardFunctionalTagLoader
+      cardFunctionalTagLoader: cardFunctionalTagLoader,
+      relatedCardLoader: relatedCardLoader
     )
   }
 

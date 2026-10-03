@@ -150,6 +150,416 @@ struct SemanticCatalogStorageTests {
   }
 
   @Test
+  func relatedCardsCollapsePrintingsExcludeTheSourceAndReturnExplanations() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let source = relatedCard(id: "source-print", oracleID: "source", name: "Source")
+    let preferredCandidate = relatedCard(
+      id: "candidate-base",
+      oracleID: "candidate",
+      name: "Candidate",
+      language: "en",
+      isBasePrinting: true
+    )
+    let alternateCandidate = relatedCard(
+      id: "candidate-alt",
+      oracleID: "candidate",
+      name: "Candidate",
+      language: "ja",
+      isBasePrinting: false
+    )
+    let unrelated = relatedCard(id: "unrelated", oracleID: "unrelated", name: "Unrelated")
+    try database.replaceAllCards([source, preferredCandidate, alternateCandidate, unrelated])
+    try database.replaceSemanticCatalog(
+      with: SemanticCatalogSnapshot(
+        tags: [
+          SemanticTagRecord(
+            id: "draw",
+            namespace: "oracle",
+            slug: "draw-engine",
+            label: "Draw Engine",
+            description: nil,
+            similarityEnabled: true,
+            source: "tag-source"
+          )
+        ],
+        aliases: [],
+        edges: [],
+        cardTags: [
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: "source", printingID: source.id),
+            tagID: "draw",
+            weightMillis: 1_000,
+            annotation: nil,
+            source: "source-membership"
+          ),
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: "candidate", printingID: preferredCandidate.id),
+            tagID: "draw",
+            weightMillis: 1_000,
+            annotation: nil,
+            source: "candidate-membership"
+          ),
+        ],
+        stats: [
+          SemanticTagStatsRecord(
+            tagID: "draw",
+            directCardCount: 2,
+            effectiveCardCount: 2,
+            inverseFrequencyMillis: 1_000
+          )
+        ]
+      )
+    )
+
+    let lookup = try await database.semanticRelatedCards(for: source)
+    guard case .available(let related) = lookup else {
+      Issue.record("Expected semantic related cards to be available")
+      return
+    }
+
+    #expect(related.map(\.card.id) == ["candidate-base"])
+    #expect(related[0].sharedConcepts.map(\.slug) == ["draw-engine"])
+    #expect(related[0].sharedConcepts[0].sources == [
+      "candidate-membership",
+      "source-membership",
+      "tag-source",
+    ])
+  }
+
+  @Test
+  func relatedCardsIncludeCandidatesThatShareOnlyAnInheritedConcept() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let source = relatedCard(id: "source-print", oracleID: "source", name: "Source")
+    let candidate = relatedCard(id: "candidate-print", oracleID: "candidate", name: "Candidate")
+    try database.replaceAllCards([source, candidate])
+    try database.replaceSemanticCatalog(
+      with: SemanticCatalogSnapshot(
+        tags: [
+          SemanticTagRecord(
+            id: "draw",
+            namespace: "oracle",
+            slug: "draw",
+            label: "Draw",
+            description: nil,
+            similarityEnabled: true,
+            source: "tag-source"
+          ),
+          SemanticTagRecord(
+            id: "enchantment-draw",
+            namespace: "oracle",
+            slug: "enchantment-draw",
+            label: "Enchantment Draw",
+            description: nil,
+            similarityEnabled: true,
+            source: "tag-source"
+          ),
+          SemanticTagRecord(
+            id: "creature-draw",
+            namespace: "oracle",
+            slug: "creature-draw",
+            label: "Creature Draw",
+            description: nil,
+            similarityEnabled: true,
+            source: "tag-source"
+          ),
+        ],
+        aliases: [],
+        edges: [
+          SemanticTagEdgeRecord(parentTagID: "draw", childTagID: "enchantment-draw"),
+          SemanticTagEdgeRecord(parentTagID: "draw", childTagID: "creature-draw"),
+        ],
+        cardTags: [
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: source.oracleID, printingID: source.id),
+            tagID: "enchantment-draw",
+            weightMillis: 1_000,
+            annotation: nil,
+            source: "source-membership"
+          ),
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: candidate.oracleID, printingID: candidate.id),
+            tagID: "creature-draw",
+            weightMillis: 1_000,
+            annotation: nil,
+            source: "candidate-membership"
+          ),
+        ],
+        stats: [
+          SemanticTagStatsRecord(
+            tagID: "draw",
+            directCardCount: 0,
+            effectiveCardCount: 2,
+            inverseFrequencyMillis: 1_000
+          ),
+          SemanticTagStatsRecord(
+            tagID: "enchantment-draw",
+            directCardCount: 1,
+            effectiveCardCount: 1,
+            inverseFrequencyMillis: 1_500
+          ),
+          SemanticTagStatsRecord(
+            tagID: "creature-draw",
+            directCardCount: 1,
+            effectiveCardCount: 1,
+            inverseFrequencyMillis: 1_500
+          ),
+        ]
+      )
+    )
+
+    let lookup = try await database.semanticRelatedCards(for: source)
+    guard case .available(let related) = lookup else {
+      Issue.record("Expected semantic related cards to be available")
+      return
+    }
+
+    #expect(related.map(\.card.id) == [candidate.id])
+    #expect(related[0].sharedConcepts.map(\.slug) == ["draw"])
+  }
+
+  @Test
+  func relatedCardLookupStopsBeforeDatabaseWorkWhenItsTaskIsAlreadyCancelled() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let source = relatedCard(id: "source-print", oracleID: "source", name: "Source")
+    let candidate = relatedCard(id: "candidate-print", oracleID: "candidate", name: "Candidate")
+    try database.replaceAllCards([source, candidate])
+    try database.replaceSemanticCatalog(
+      with: SemanticCatalogSnapshot(
+        tags: [
+          SemanticTagRecord(
+            id: "draw",
+            namespace: "oracle",
+            slug: "draw-engine",
+            label: "Draw Engine",
+            description: nil,
+            similarityEnabled: true,
+            source: "tag-source"
+          )
+        ],
+        aliases: [],
+        edges: [],
+        cardTags: [
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: source.oracleID, printingID: source.id),
+            tagID: "draw",
+            weightMillis: 1_000,
+            annotation: nil,
+            source: "source-membership"
+          ),
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: candidate.oracleID, printingID: candidate.id),
+            tagID: "draw",
+            weightMillis: 1_000,
+            annotation: nil,
+            source: "candidate-membership"
+          ),
+        ],
+        stats: [
+          SemanticTagStatsRecord(
+            tagID: "draw",
+            directCardCount: 2,
+            effectiveCardCount: 2,
+            inverseFrequencyMillis: 1_000
+          )
+        ]
+      )
+    )
+
+    let gate = RelatedCardLookupGate()
+    let task = Task {
+      await gate.wait()
+      return try await database.semanticRelatedCards(for: source)
+    }
+    task.cancel()
+    await gate.open()
+
+    do {
+      _ = try await task.value
+      Issue.record("Expected the cancelled related-card lookup to throw CancellationError")
+    } catch is CancellationError {
+      // Expected.
+    } catch {
+      Issue.record("Expected CancellationError, got \(error)")
+    }
+  }
+
+  @Test
+  func relatedCardLookupCancellationDoesNotWaitForHeldDatabaseLock() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let source = relatedCard(id: "source-print", oracleID: "source", name: "Source")
+    let candidate = relatedCard(id: "candidate-print", oracleID: "candidate", name: "Candidate")
+    try database.replaceAllCards([source, candidate])
+    try database.replaceSemanticCatalog(
+      with: relatedCardSnapshot(source: source, candidate: candidate)
+    )
+
+    let blocker = RelatedCardDatabaseLockBlocker()
+    let holder = Task.detached {
+      blocker.hold(database)
+    }
+    #expect(blocker.waitUntilHeld())
+    let delayedRelease = Task.detached {
+      try? await Task.sleep(nanoseconds: 300_000_000)
+      blocker.release()
+    }
+    let lookupTask = Task {
+      try await database.semanticRelatedCards(for: source)
+    }
+    try await Task.sleep(nanoseconds: 20_000_000)
+
+    let clock = ContinuousClock()
+    let cancellationStart = clock.now
+    lookupTask.cancel()
+    let result = await lookupTask.result
+    let cancellationDuration = cancellationStart.duration(to: clock.now)
+
+    if case .failure(let error) = result {
+      #expect(error is CancellationError)
+    } else {
+      Issue.record("Expected the blocked related-card lookup to be cancelled")
+    }
+    #expect(cancellationDuration < .milliseconds(150))
+    _ = await delayedRelease.result
+    _ = await holder.result
+  }
+
+  @Test
+  func relatedCardLookupRetriesWhenCatalogChangesBeforeHydration() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let source = relatedCard(id: "source-print", oracleID: "source", name: "Source")
+    let firstCandidate = relatedCard(
+      id: "candidate-a-print",
+      oracleID: "candidate-a",
+      name: "Candidate A"
+    )
+    let replacementCandidate = relatedCard(
+      id: "candidate-b-print",
+      oracleID: "candidate-b",
+      name: "Candidate B"
+    )
+    try database.replaceAllCards([source, firstCandidate])
+    try database.replaceSemanticCatalog(
+      with: relatedCardSnapshot(source: source, candidate: firstCandidate)
+    )
+
+    let inputBuilt = RelatedCardLookupGate()
+    let continueLookup = RelatedCardLookupGate()
+    let lookupTask = Task {
+      try await database.semanticRelatedCards(
+        for: source,
+        afterInput: {
+          await inputBuilt.open()
+          await continueLookup.wait()
+        }
+      )
+    }
+    await inputBuilt.wait()
+    try database.withDatabaseLock {
+      try database.replaceAllCards([source, replacementCandidate])
+      try database.replaceSemanticCatalog(
+        with: relatedCardSnapshot(source: source, candidate: replacementCandidate)
+      )
+    }
+    await continueLookup.open()
+
+    let lookup = try await lookupTask.value
+    guard case .available(let related) = lookup else {
+      Issue.record("Expected related-card lookup to remain available after retry")
+      return
+    }
+    #expect(related.map(\.card.id) == [replacementCandidate.id])
+  }
+
+  @Test
+  func relatedCardLookupRetriesWhenStreamingResetChangesCatalog() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let source = relatedCard(id: "source-print", oracleID: "source", name: "Source")
+    let candidate = relatedCard(id: "candidate-print", oracleID: "candidate", name: "Candidate")
+    try database.replaceAllCards([source, candidate])
+    try database.replaceSemanticCatalog(
+      with: relatedCardSnapshot(source: source, candidate: candidate)
+    )
+
+    let inputBuilt = RelatedCardLookupGate()
+    let continueLookup = RelatedCardLookupGate()
+    let attempts = RelatedCardLookupAttemptCounter()
+    let lookupTask = Task {
+      try await database.semanticRelatedCards(
+        for: source,
+        afterInput: {
+          let attempt = await attempts.record()
+          if attempt == 1 {
+            await inputBuilt.open()
+            await continueLookup.wait()
+          }
+        }
+      )
+    }
+    await inputBuilt.wait()
+    try database.resetForStreamingCatalogBuild()
+    await continueLookup.open()
+
+    let lookup = try await lookupTask.value
+    guard case .available(let related) = lookup else {
+      Issue.record("Expected related-card lookup to remain available after streaming reset")
+      return
+    }
+    #expect(related.isEmpty)
+    #expect(await attempts.value() == 2)
+  }
+
+  @Test
+  func relatedCardLookupRetriesWhenStreamingAppendChangesPreferredPrinting() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    let source = relatedCard(id: "source-print", oracleID: "source", name: "Source")
+    let alternateCandidate = relatedCard(
+      id: "candidate-alt",
+      oracleID: "candidate",
+      name: "Candidate",
+      language: "ja",
+      isBasePrinting: false
+    )
+    let preferredCandidate = relatedCard(
+      id: "candidate-base",
+      oracleID: "candidate",
+      name: "Candidate",
+      language: "en",
+      isBasePrinting: true
+    )
+    try database.replaceAllCards([source, alternateCandidate])
+    try database.replaceSemanticCatalog(
+      with: relatedCardSnapshot(source: source, candidate: alternateCandidate)
+    )
+
+    let inputBuilt = RelatedCardLookupGate()
+    let continueLookup = RelatedCardLookupGate()
+    let attempts = RelatedCardLookupAttemptCounter()
+    let lookupTask = Task {
+      try await database.semanticRelatedCards(
+        for: source,
+        afterInput: {
+          let attempt = await attempts.record()
+          if attempt == 1 {
+            await inputBuilt.open()
+            await continueLookup.wait()
+          }
+        }
+      )
+    }
+    await inputBuilt.wait()
+    try database.appendCatalogCards([preferredCandidate])
+    await continueLookup.open()
+
+    let lookup = try await lookupTask.value
+    guard case .available(let related) = lookup else {
+      Issue.record("Expected related-card lookup to remain available after streaming append")
+      return
+    }
+    #expect(related.map(\.card.id) == [preferredCandidate.id])
+    #expect(await attempts.value() == 2)
+  }
+
+  @Test
   func semanticReadsSupportCaseVariantTableNames() throws {
     let database = try CardDatabase(storage: .inMemory)
     let snapshot = semanticSnapshot()
@@ -189,6 +599,74 @@ struct SemanticCatalogStorageTests {
   }
 
   @Test
+  func attachedCatalogRanksAndHydratesRelatedCards() async throws {
+    let directory = semanticTemporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let catalogURL = directory.appendingPathComponent("Catalog.sqlite")
+    let source = relatedCard(id: "source-print", oracleID: "source", name: "Source")
+    let candidate = relatedCard(id: "candidate-print", oracleID: "candidate", name: "Candidate")
+
+    var catalog: CardDatabase? = try CardDatabase(storage: .file(catalogURL))
+    try catalog?.replaceAllCards([source, candidate])
+    try catalog?.replaceSemanticCatalog(
+      with: SemanticCatalogSnapshot(
+        tags: [
+          SemanticTagRecord(
+            id: "draw",
+            namespace: "oracle",
+            slug: "draw-engine",
+            label: "Draw Engine",
+            description: nil,
+            similarityEnabled: true,
+            source: "tag-source"
+          )
+        ],
+        aliases: [],
+        edges: [],
+        cardTags: [
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: source.oracleID, printingID: source.id),
+            tagID: "draw",
+            weightMillis: 1_000,
+            annotation: nil,
+            source: "source-membership"
+          ),
+          SemanticCardTagRecord(
+            cardKey: SemanticCardKey(oracleID: candidate.oracleID, printingID: candidate.id),
+            tagID: "draw",
+            weightMillis: 1_000,
+            annotation: nil,
+            source: "candidate-membership"
+          ),
+        ],
+        stats: [
+          SemanticTagStatsRecord(
+            tagID: "draw",
+            directCardCount: 2,
+            effectiveCardCount: 2,
+            inverseFrequencyMillis: 1_000
+          )
+        ]
+      )
+    )
+    try catalog?.prepareForCatalogDistribution()
+    catalog = nil
+
+    let attached = try CardDatabase(
+      userDatabaseURL: directory.appendingPathComponent("User.sqlite"),
+      catalogURL: catalogURL
+    )
+    let lookup = try await attached.semanticRelatedCards(for: source)
+    guard case .available(let related) = lookup else {
+      Issue.record("Expected attached semantic related cards to be available")
+      return
+    }
+
+    #expect(related.map(\.card.id) == [candidate.id])
+    #expect(related[0].sharedConcepts.map(\.slug) == ["draw-engine"])
+  }
+
+  @Test
   func legacyCatalogWithoutSemanticTablesOpensWithAnEmptySemanticSnapshot() throws {
     let directory = semanticTemporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -223,6 +701,132 @@ struct SemanticCatalogStorageTests {
         == []
     )
     #expect(try attached.semanticCardKeys(tagID: "missing") == [])
+  }
+}
+
+private func relatedCard(
+  id: String,
+  oracleID: String,
+  name: String,
+  language: String = "en",
+  isBasePrinting: Bool = true
+) -> CardRecord {
+  CardRecord(
+    id: id,
+    oracleID: oracleID,
+    name: name,
+    language: language,
+    setCode: "tst",
+    setName: "Test Set",
+    setType: "expansion",
+    collectorNumber: "1",
+    rarity: "rare",
+    colorSortKey: 6,
+    colorIdentity: ["W"],
+    layout: "normal",
+    typeLine: "Enchantment",
+    oracleText: "Test text.",
+    legalities: ["commander": "legal"],
+    isBasePrinting: isBasePrinting
+  )
+}
+
+private func relatedCardSnapshot(
+  source: CardRecord,
+  candidate: CardRecord
+) -> SemanticCatalogSnapshot {
+  SemanticCatalogSnapshot(
+    tags: [
+      SemanticTagRecord(
+        id: "draw",
+        namespace: "oracle",
+        slug: "draw-engine",
+        label: "Draw Engine",
+        description: nil,
+        similarityEnabled: true,
+        source: "tag-source"
+      )
+    ],
+    aliases: [],
+    edges: [],
+    cardTags: [
+      SemanticCardTagRecord(
+        cardKey: SemanticCardKey(oracleID: source.oracleID, printingID: source.id),
+        tagID: "draw",
+        weightMillis: 1_000,
+        annotation: nil,
+        source: "source-membership"
+      ),
+      SemanticCardTagRecord(
+        cardKey: SemanticCardKey(oracleID: candidate.oracleID, printingID: candidate.id),
+        tagID: "draw",
+        weightMillis: 1_000,
+        annotation: nil,
+        source: "candidate-membership"
+      ),
+    ],
+    stats: [
+      SemanticTagStatsRecord(
+        tagID: "draw",
+        directCardCount: 2,
+        effectiveCardCount: 2,
+        inverseFrequencyMillis: 1_000
+      )
+    ]
+  )
+}
+
+private actor RelatedCardLookupGate {
+  private var isOpen = false
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    guard !isOpen else {
+      return
+    }
+    await withCheckedContinuation { continuation in
+      continuations.append(continuation)
+    }
+  }
+
+  func open() {
+    isOpen = true
+    let waiting = continuations
+    continuations.removeAll()
+    waiting.forEach { $0.resume() }
+  }
+}
+
+private actor RelatedCardLookupAttemptCounter {
+  private var count = 0
+
+  func record() -> Int {
+    count += 1
+    return count
+  }
+
+  func value() -> Int {
+    count
+  }
+}
+
+private final class RelatedCardDatabaseLockBlocker: @unchecked Sendable {
+  private let acquired = DispatchSemaphore(value: 0)
+  private let released = DispatchSemaphore(value: 0)
+
+  func hold(_ database: CardDatabase) {
+    database.withDatabaseLock {
+      acquired.signal()
+      released.wait()
+    }
+  }
+
+  func waitUntilHeld() -> Bool {
+    acquired.wait(timeout: .now() + 1) == .success
+  }
+
+  func release() {
+    released.signal()
   }
 }
 

@@ -89,6 +89,7 @@ extension CardDatabase {
     let totalCards = cards.count
 
     try withDatabaseLock {
+      markCatalogContentChangedUnlocked()
       if preservesCardValueHistory {
         progress?(CardDatabaseWriteProgress(phase: .preservingValueHistory))
         try database.execute("DROP TABLE IF EXISTS temp.preserved_card_value_mappings")
@@ -544,6 +545,7 @@ extension CardDatabase {
       throw CatalogStorageError.invalidCatalog("Attached catalogs are replaced as files")
     }
     try withDatabaseLock {
+      markCatalogContentChangedUnlocked()
       try resetDisposableLibraryTables(progress: nil)
     }
   }

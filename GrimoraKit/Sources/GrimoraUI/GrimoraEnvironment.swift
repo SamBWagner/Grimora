@@ -8,6 +8,11 @@ public typealias CardFunctionalTagLoader = @Sendable (
   SemanticCardKey
 ) async throws -> SemanticCardFunctionalTagsLookup
 
+public typealias CardRelatedCardLoader = @Sendable (
+  CardRecord,
+  SemanticRelatedCardFilters
+) async throws -> SemanticRelatedCardsLookup
+
 public struct GrimoraEnvironment: Sendable {
   public var database: CardDatabase
   public var updateService: LibraryUpdateService
@@ -28,6 +33,7 @@ public struct GrimoraEnvironment: Sendable {
   public var managedCatalogMigrationService: ManagedCatalogMigrationService?
   public var initialManagedCatalogMigrationStatus: ManagedCatalogMigrationStatus?
   public var cardFunctionalTagLoader: CardFunctionalTagLoader
+  public var relatedCardLoader: CardRelatedCardLoader
 
   public init(
     database: CardDatabase,
@@ -50,7 +56,8 @@ public struct GrimoraEnvironment: Sendable {
     currencyExchangeRateClient: (any CurrencyExchangeRateClient)? = nil,
     managedCatalogMigrationService: ManagedCatalogMigrationService? = nil,
     initialManagedCatalogMigrationStatus: ManagedCatalogMigrationStatus? = nil,
-    cardFunctionalTagLoader: CardFunctionalTagLoader? = nil
+    cardFunctionalTagLoader: CardFunctionalTagLoader? = nil,
+    relatedCardLoader: CardRelatedCardLoader? = nil
   ) {
     self.database = database
     self.updateService = updateService
@@ -78,6 +85,9 @@ public struct GrimoraEnvironment: Sendable {
       try await Task.detached(priority: .userInitiated) {
         try database.semanticFunctionalTags(for: cardKey)
       }.value
+    }
+    self.relatedCardLoader = relatedCardLoader ?? { card, filters in
+      try await database.semanticRelatedCards(for: card, filters: filters)
     }
   }
 

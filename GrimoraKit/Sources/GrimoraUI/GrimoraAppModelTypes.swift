@@ -29,6 +29,15 @@ public enum CardFunctionalTagsState: Equatable, Sendable {
   case failed(String)
 }
 
+public enum CardRelatedCardsState: Equatable, Sendable {
+  case idle
+  case loading(SemanticCardKey)
+  case unavailable
+  case empty
+  case loaded([SemanticRelatedCard])
+  case failed(String)
+}
+
 /// The off-main result of reading a collection's detail state from the database.
 /// Every field is `Sendable`, so the loader can compute it on a background task and
 /// hand it back to the `@MainActor` model to publish.

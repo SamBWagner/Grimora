@@ -38,6 +38,7 @@ extension CardDatabase {
     }
 
     try withDatabaseLock {
+      markCatalogContentChangedUnlocked()
       try database.transaction {
         let placeholders = Array(repeating: "?", count: Self.insertCardColumns.count)
           .joined(separator: ", ")

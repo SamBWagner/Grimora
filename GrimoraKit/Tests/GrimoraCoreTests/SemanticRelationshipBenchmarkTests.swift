@@ -1,4 +1,5 @@
 import Foundation
+@testable import GrimoraCore
 import Testing
 
 struct SemanticRelationshipBenchmarkTests {
@@ -16,6 +17,93 @@ struct SemanticRelationshipBenchmarkTests {
     for name in ["Satyr Enchanter", "Enchantress's Presence", "Mesa Enchantress"] {
       #expect(try #require(positions[name]) < broadDrawPosition)
     }
+  }
+
+  @Test
+  func productionScorerPreservesBenchmarkRankingAndExplanations() throws {
+    let fixture = try SemanticBenchmarkFixture.load()
+    let benchmark = SemanticBenchmarkScorer(fixture: fixture)
+    let queryPrintingID = "0babfe00-9bad-48fc-b3b1-df8280242fd2"
+    let queryCard = try #require(fixture.cards.first { $0.printingID == queryPrintingID })
+    let scorer = try SemanticRelatedCardScorer(snapshot: benchmark.productionSnapshot())
+
+    let ranked = try scorer.rankedCandidates(
+      for: SemanticCardKey(oracleID: queryCard.oracleID, printingID: queryPrintingID),
+      among: benchmark.productionCandidates(),
+      filters: SemanticRelatedCardFilters(limit: 20)
+    )
+    let positions = Dictionary(uniqueKeysWithValues: ranked.enumerated().map { ($0.element.name, $0.offset) })
+    let broadDrawPosition = try #require(positions["Beast Whisperer"])
+
+    for name in ["Satyr Enchanter", "Enchantress's Presence", "Mesa Enchantress"] {
+      #expect(try #require(positions[name]) < broadDrawPosition)
+    }
+    #expect(ranked.allSatisfy { $0.cardKey.oracleID != queryCard.oracleID })
+    #expect(Set(ranked.map(\.cardKey)).count == ranked.count)
+
+    let satyr = try #require(ranked.first { $0.name == "Satyr Enchanter" })
+    #expect(Array(satyr.sharedConcepts.prefix(4).map(\.slug)) == [
+      "cast-trigger-you",
+      "enchantment-engine",
+      "draw-engine",
+      "repeatable-pure-draw",
+    ])
+    #expect(satyr.sharedConcepts.allSatisfy { !$0.sources.isEmpty })
+  }
+
+  @Test
+  func productionDatabaseQueryPreservesBenchmarkRankingAndExplanations() async throws {
+    let fixture = try SemanticBenchmarkFixture.load()
+    let benchmark = SemanticBenchmarkScorer(fixture: fixture)
+    let queryPrintingID = "0babfe00-9bad-48fc-b3b1-df8280242fd2"
+    let cards = fixture.cards.map { card in
+      CardRecord(
+        id: card.printingID,
+        oracleID: card.oracleID,
+        name: card.name,
+        setCode: "tst",
+        setName: "Test Set",
+        setType: "expansion",
+        collectorNumber: card.printingID,
+        rarity: "rare",
+        colorSortKey: 6,
+        layout: "normal",
+        typeLine: "Enchantment",
+        oracleText: "Benchmark card."
+      )
+    }
+    let queryCard = try #require(cards.first { $0.id == queryPrintingID })
+    let database = try CardDatabase(storage: .inMemory)
+    try database.replaceAllCards(cards)
+    try database.replaceSemanticCatalog(with: benchmark.productionSnapshot())
+
+    let lookup = try await database.semanticRelatedCards(
+      for: queryCard,
+      filters: SemanticRelatedCardFilters(limit: 20)
+    )
+    guard case .available(let ranked) = lookup else {
+      Issue.record("Expected benchmark related-card lookup to be available")
+      return
+    }
+    let positions = Dictionary(uniqueKeysWithValues: ranked.enumerated().map {
+      ($0.element.card.name, $0.offset)
+    })
+    let broadDrawPosition = try #require(positions["Beast Whisperer"])
+
+    for name in ["Satyr Enchanter", "Enchantress's Presence", "Mesa Enchantress"] {
+      #expect(try #require(positions[name]) < broadDrawPosition)
+    }
+    #expect(ranked.allSatisfy { $0.card.oracleID != queryCard.oracleID })
+    #expect(Set(ranked.map(\.id)).count == ranked.count)
+
+    let satyr = try #require(ranked.first { $0.card.name == "Satyr Enchanter" })
+    #expect(Array(satyr.sharedConcepts.prefix(4).map(\.slug)) == [
+      "cast-trigger-you",
+      "enchantment-engine",
+      "draw-engine",
+      "repeatable-pure-draw",
+    ])
+    #expect(satyr.sharedConcepts.allSatisfy { !$0.sources.isEmpty })
   }
 
   @Test
@@ -298,6 +386,89 @@ private struct SemanticBenchmarkScorer {
     let tagByID = Dictionary(uniqueKeysWithValues: fixture.tags.map { ($0.id, $0) })
     let features = featureVectors(oracleIDs: [card.oracleID])[card.oracleID, default: [:]]
     return Set(features.keys.compactMap { tagByID[$0]?.slug })
+  }
+
+  func productionSnapshot() -> SemanticCatalogSnapshot {
+    let tagByID = Dictionary(uniqueKeysWithValues: fixture.tags.map { ($0.id, $0) })
+    let disabledTagIDs = disabledTagIDs(tagByID: tagByID)
+    let oracleIDs = Set(fixture.cards.map(\.oracleID))
+    let featuresByOracleID = featureVectors(oracleIDs: oracleIDs)
+    let documentCount = Double(oracleIDs.count)
+    let source = "scryfall-oracle-tags@\(fixture.source.oracleTagsUpdatedAt)"
+
+    let tags = fixture.tags.map { tag in
+      SemanticTagRecord(
+        id: tag.id,
+        namespace: "oracle",
+        slug: tag.slug,
+        label: tag.label,
+        description: tag.description,
+        similarityEnabled: !disabledTagIDs.contains(tag.id),
+        source: source
+      )
+    }
+    let aliases = fixture.tags.flatMap { tag in
+      tag.aliases.map { alias in
+        SemanticTagAliasRecord(
+          tagID: tag.id,
+          alias: alias,
+          aliasKey: SemanticTagAliasRecord.normalizedKey(for: alias)
+        )
+      }
+    }
+    let edges = fixture.tags.flatMap { tag in
+      tag.parentIDs.map { parentID in
+        SemanticTagEdgeRecord(parentTagID: parentID, childTagID: tag.id)
+      }
+    }
+    let cardTags = fixture.tags.flatMap { tag in
+      tag.taggings.map { tagging in
+        SemanticCardTagRecord(
+          cardKey: SemanticCardKey(oracleID: tagging.oracleID, printingID: tagging.oracleID),
+          tagID: tag.id,
+          weightMillis: Int((weight(for: tagging.weight) * 1_000).rounded()),
+          annotation: tagging.annotation,
+          source: source
+        )
+      }
+    }
+    let stats = fixture.tags.map { tag in
+      let directCount = Set(tag.taggings.map(\.oracleID)).count
+      let effectiveCount = max(
+        directCount,
+        featuresByOracleID.values.count { $0[tag.id] != nil }
+      )
+      let idfMillis: Int
+      if disabledTagIDs.contains(tag.id) {
+        idfMillis = 0
+      } else {
+        idfMillis = Int(((log((documentCount + 1) / (Double(effectiveCount) + 1)) + 1) * 1_000).rounded())
+      }
+      return SemanticTagStatsRecord(
+        tagID: tag.id,
+        directCardCount: directCount,
+        effectiveCardCount: effectiveCount,
+        inverseFrequencyMillis: idfMillis
+      )
+    }
+
+    return SemanticCatalogSnapshot(
+      tags: tags,
+      aliases: aliases,
+      edges: edges,
+      cardTags: cardTags,
+      stats: stats
+    )
+  }
+
+  func productionCandidates() -> [SemanticRelatedCardCandidate] {
+    fixture.cards.map { card in
+      SemanticRelatedCardCandidate(
+        cardKey: SemanticCardKey(oracleID: card.oracleID, printingID: card.printingID),
+        printingID: card.printingID,
+        name: card.name
+      )
+    }
   }
 
   private func featureVectors(oracleIDs: Set<String>) -> [String: [String: Double]] {

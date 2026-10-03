@@ -123,6 +123,7 @@ extension CardDatabase {
         try createCatalogOverlayViews()
         try saveCatalogManifestMetadata(expectedManifest)
         try? fileManager.removeItem(at: backupURL)
+        markCatalogContentChangedUnlocked()
       } catch {
         try? dropCatalogOverlayViews()
         try? database.detachDatabase(named: Self.catalogSchemaName)

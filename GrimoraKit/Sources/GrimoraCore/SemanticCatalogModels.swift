@@ -8,7 +8,9 @@ public struct SemanticCardKey: RawRepresentable, Codable, Equatable, Hashable, S
   }
 
   public init(oracleID: String?, printingID: String) {
-    if let oracleID, !oracleID.isEmpty {
+    if let oracleID,
+      !oracleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    {
       rawValue = "o:\(oracleID)"
     } else {
       rawValue = "p:\(printingID)"

@@ -50,11 +50,13 @@ public final class GrimoraAppModel {
   public internal(set) var selectedCardPrintings: [CardRecord] = []
   public internal(set) var selectedCardValueGuide: CardValueGuide?
   public internal(set) var cardFunctionalTagsState: CardFunctionalTagsState = .idle
+  public internal(set) var relatedCardsState: CardRelatedCardsState = .idle
   public internal(set) var valueHistoryBackgroundActivity: ValueHistoryBackgroundActivity?
   public internal(set) var valueExchangeRate: CurrencyExchangeRate?
   public var selectedCard: CardRecord? {
     didSet {
       updateCardFunctionalTagsSelection(from: oldValue, to: selectedCard)
+      updateRelatedCardsSelection(from: oldValue, to: selectedCard)
       if !isUpdatingSelectedCardSource {
         selectedCardCollectionEntryID = nil
       }
@@ -302,6 +304,7 @@ public final class GrimoraAppModel {
   let canOfferInitialCloudSync: Bool
   let currencyExchangeRateClient: any CurrencyExchangeRateClient
   let cardFunctionalTagLoader: CardFunctionalTagLoader
+  let relatedCardLoader: CardRelatedCardLoader
   let managedCatalogMigrationService: ManagedCatalogMigrationService?
   let cloudSyncDeviceID: String
   let cloudSyncDeviceName: String
@@ -350,6 +353,8 @@ public final class GrimoraAppModel {
   var listLoadTask: Task<Void, Never>?
   var cardFunctionalTagsGeneration: UInt64 = 0
   var cardFunctionalTagsTask: Task<Void, Never>?
+  var relatedCardsGeneration: UInt64 = 0
+  var relatedCardsTask: Task<Void, Never>?
 
   public init(
     environment: GrimoraEnvironment,
@@ -391,6 +396,7 @@ public final class GrimoraAppModel {
     self.canOfferInitialCloudSync = environment.canOfferInitialCloudSync
     self.currencyExchangeRateClient = environment.currencyExchangeRateClient
     self.cardFunctionalTagLoader = environment.cardFunctionalTagLoader
+    self.relatedCardLoader = environment.relatedCardLoader
     self.managedCatalogMigrationService = environment.managedCatalogMigrationService
     self.managedCatalogMigrationStatus = environment.initialManagedCatalogMigrationStatus
     self.cloudSyncDeviceID = cloudSyncDeviceID ?? GrimoraCloudSyncPreferences.deviceID()

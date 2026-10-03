@@ -30,6 +30,15 @@ struct SemanticCatalogModelTests {
   }
 
   @Test
+  func cardKeyFallsBackToPrintingIdentityForWhitespaceOnlyOracleIdentity() {
+    let key = SemanticCardKey(oracleID: "   \n", printingID: "printing-a")
+
+    #expect(key.rawValue == "p:printing-a")
+    #expect(key.oracleID == nil)
+    #expect(key.printingID == "printing-a")
+  }
+
+  @Test
   func aliasKeysAreDeterministicAndSearchNormalized() {
     #expect(SemanticTagAliasRecord.normalizedKey(for: "  Réanimation  ") == "reanimation")
     #expect(SemanticTagAliasRecord.normalizedKey(for: "CARD DRAW") == "card draw")
