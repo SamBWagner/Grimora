@@ -4,6 +4,8 @@ public final class CardDatabase: @unchecked Sendable {
   let database: SQLiteDatabase
   private let lock = NSRecursiveLock()
   var catalogContentGeneration: UInt64 = 0
+  // Protected by the database lock; never shared between attached-catalog instances.
+  var collectionSemanticProfileCache: [String: CardCollectionSemanticProfile] = [:]
   var attachedCatalogURL: URL?
   public static let currentSearchSchemaVersion = "4"
 
@@ -44,6 +46,7 @@ public final class CardDatabase: @unchecked Sendable {
 
   func markCatalogContentChangedUnlocked() {
     catalogContentGeneration &+= 1
+    collectionSemanticProfileCache.removeAll(keepingCapacity: true)
   }
 
   private func tryDatabaseLock() -> Bool {

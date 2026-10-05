@@ -6748,6 +6748,74 @@ final class GrimoraAppModelTests: XCTestCase {
     XCTAssertTrue(model.isFoilSelected(for: card))
   }
 
+  func testCollectionProfilePublishesOnlyTheCurrentSelectionAndContent() async throws {
+    let database = try CardDatabase(storage: .inMemory)
+    try markLibraryReady(database)
+    let first = try database.createCardCollection(named: "First")
+    let second = try database.createCardCollection(named: "Second")
+    let gate = CollectionProfileModelGate()
+    let model = GrimoraAppModel(environment: environment(database: database, collectionSemanticProfileLoader: { list, entries, policy in
+      await gate.wait()
+      return .available(try CardCollectionSemanticProfiler.profile(for: list, entries: entries, snapshot: .empty, policy: policy))
+    }))
+    model.selectedCollectionID = first.id
+    model.loadSelectedCollectionSemanticProfile()
+    let obsolete = model.collectionSemanticProfileTask
+    XCTAssertEqual(model.collectionSemanticProfileState, .loading(first.id))
+    model.selectedCollectionID = second.id
+    await gate.open()
+    await obsolete?.value
+    XCTAssertEqual(model.collectionSemanticProfileState, .idle)
+    model.loadSelectedCollectionSemanticProfile()
+    await model.drainCollectionSemanticProfileForTesting()
+    guard case .loaded(let profile) = model.collectionSemanticProfileState else { return XCTFail("Expected current profile") }
+    XCTAssertEqual(profile.listID, second.id)
+  }
+
+  func testCollectionProfileRejectsQuantityZoneAndRulesetChanges() async throws {
+    for change in 0..<3 {
+      let database = try CardDatabase(storage: .inMemory)
+      try database.replaceAllCards(uiRecords())
+      try markLibraryReady(database)
+      let list = try database.createCardCollection(named: "Fixture")
+      let entry = try database.appendCard(uiRecords()[0].id, toList: list.id)
+      let gate = CollectionProfileModelGate()
+      let model = GrimoraAppModel(environment: environment(database: database, collectionSemanticProfileLoader: { list, entries, policy in
+        await gate.wait()
+        return .available(try CardCollectionSemanticProfiler.profile(for: list, entries: entries, snapshot: .empty, policy: policy))
+      }))
+      model.selectedCollectionID = list.id
+      model.selectedCollectionEntries = [entry]
+      model.loadSelectedCollectionSemanticProfile()
+      let obsolete = model.collectionSemanticProfileTask
+      switch change {
+      case 0: model.selectedCollectionEntries[0].quantity += 1
+      case 1: model.selectedCollectionEntries[0].zone = .maybeboard
+      default:
+        let index = try XCTUnwrap(model.cardCollections.firstIndex { $0.id == list.id })
+        model.cardCollections[index].ruleset = .commander
+      }
+      await gate.open(); await obsolete?.value
+      XCTAssertEqual(model.collectionSemanticProfileState, .idle)
+    }
+  }
+
+  func testCollectionProfileExposesUnavailableAndFailureStates() async throws {
+    for fails in [false, true] {
+      let database = try CardDatabase(storage: .inMemory)
+      try markLibraryReady(database)
+      let list = try database.createCardCollection(named: "Fixture")
+      let model = GrimoraAppModel(environment: environment(database: database, collectionSemanticProfileLoader: { _, _, _ in
+        if fails { throw URLError(.cannotLoadFromNetwork) }
+        return .unavailable
+      }))
+      model.selectedCollectionID = list.id
+      model.loadSelectedCollectionSemanticProfile()
+      await model.drainCollectionSemanticProfileForTesting()
+      XCTAssertEqual(model.collectionSemanticProfileState, fails ? .failed("List semantics could not be loaded.") : .unavailable)
+    }
+  }
+
   private func environment(
     database: CardDatabase,
     network: NetworkClient = BlockingNetworkClient(),
@@ -6763,7 +6831,8 @@ final class GrimoraAppModelTests: XCTestCase {
     cloudSyncCoordinator: CloudSyncCoordinator? = nil,
     autoUpdateChecksEnabled: Bool = false,
     cardFunctionalTagLoader: CardFunctionalTagLoader? = nil,
-    relatedCardLoader: CardRelatedCardLoader? = nil
+    relatedCardLoader: CardRelatedCardLoader? = nil,
+    collectionSemanticProfileLoader: CollectionSemanticProfileLoader? = nil
   ) -> GrimoraEnvironment {
     let bulkClient = BulkDataClient(network: network)
     let importer = importer ?? LibraryImporter(database: database, imageResolver: NoImageResolver())
@@ -6799,7 +6868,8 @@ final class GrimoraAppModelTests: XCTestCase {
       hiddenSearchTermsStore: HiddenSearchTermsStore(userDefaults: isolatedUserDefaults()),
       cloudSyncCoordinator: cloudSyncCoordinator,
       cardFunctionalTagLoader: cardFunctionalTagLoader,
-      relatedCardLoader: relatedCardLoader
+      relatedCardLoader: relatedCardLoader,
+      collectionSemanticProfileLoader: collectionSemanticProfileLoader
     )
   }
 
@@ -7344,4 +7414,14 @@ extension GrimoraAppModelTests {
     let after = try database.cardCollectionEntries(forListID: list.id)
     XCTAssertEqual(after.map(\.cardID), ["beta"])
   }
+}
+
+private actor CollectionProfileModelGate {
+  private var isOpen = false
+  private var waiters: [CheckedContinuation<Void, Never>] = []
+  func wait() async {
+    if isOpen { return }
+    await withCheckedContinuation { waiters.append($0) }
+  }
+  func open() { isOpen = true; let pending = waiters; waiters = []; for waiter in pending { waiter.resume() } }
 }

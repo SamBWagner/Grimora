@@ -51,6 +51,7 @@ public final class GrimoraAppModel {
   public internal(set) var selectedCardValueGuide: CardValueGuide?
   public internal(set) var cardFunctionalTagsState: CardFunctionalTagsState = .idle
   public internal(set) var relatedCardsState: CardRelatedCardsState = .idle
+  public internal(set) var collectionSemanticProfileState: CollectionSemanticProfileState = .idle
   public internal(set) var valueHistoryBackgroundActivity: ValueHistoryBackgroundActivity?
   public internal(set) var valueExchangeRate: CurrencyExchangeRate?
   public var selectedCard: CardRecord? {
@@ -105,7 +106,14 @@ public final class GrimoraAppModel {
     GrimoraDefaultSearchConfiguration()
   public internal(set) var searchHistory: [String] = []
   public internal(set) var hiddenSearchTerms: [SearchRefinement] = []
-  public internal(set) var cardCollections: [CardCollectionRecord] = []
+  public internal(set) var cardCollections: [CardCollectionRecord] = [] {
+    didSet {
+      guard let selectedCollectionID else { return }
+      if oldValue.first(where: { $0.id == selectedCollectionID })?.ruleset != selectedCollection?.ruleset {
+        invalidateCollectionSemanticProfile()
+      }
+    }
+  }
   public internal(set) var cardCollectionOverviewItems: [CardCollectionOverviewItem] = []
   /// Card IDs currently in the Favourites list, refreshed whenever the lists reload.
   /// Backs the star toggle surfaced on search result cards.
@@ -116,9 +124,17 @@ public final class GrimoraAppModel {
   /// Fast id → label lookup for resolving an entry's `labelIDs` into pips without scanning.
   public internal(set) var labelsByID: [CardLabelRecord.ID: CardLabelRecord] = [:]
   public internal(set) var sidebarSelection: GrimoraSidebarSelection = .search
-  public internal(set) var selectedCollectionID: CardCollectionRecord.ID?
+  public internal(set) var selectedCollectionID: CardCollectionRecord.ID? {
+    didSet {
+      if selectedCollectionID != oldValue { invalidateCollectionSemanticProfile() }
+    }
+  }
   public internal(set) var selectedCollectionCategories: [CardCollectionCategoryRecord] = []
-  public internal(set) var selectedCollectionEntries: [CardCollectionEntryRecord] = []
+  public internal(set) var selectedCollectionEntries: [CardCollectionEntryRecord] = [] {
+    didSet {
+      if selectedCollectionEntries != oldValue { invalidateCollectionSemanticProfile() }
+    }
+  }
   /// The selected collection's entries grouped into display sections, built off the main
   /// thread by the list loader so the detail view doesn't regroup+sort on every body pass.
   /// Reflects the full list; the detail view rebuilds in-body only for the small
@@ -305,6 +321,7 @@ public final class GrimoraAppModel {
   let currencyExchangeRateClient: any CurrencyExchangeRateClient
   let cardFunctionalTagLoader: CardFunctionalTagLoader
   let relatedCardLoader: CardRelatedCardLoader
+  let collectionSemanticProfileLoader: CollectionSemanticProfileLoader
   let managedCatalogMigrationService: ManagedCatalogMigrationService?
   let cloudSyncDeviceID: String
   let cloudSyncDeviceName: String
@@ -353,6 +370,8 @@ public final class GrimoraAppModel {
   var listLoadTask: Task<Void, Never>?
   var cardFunctionalTagsGeneration: UInt64 = 0
   var cardFunctionalTagsTask: Task<Void, Never>?
+  var collectionSemanticProfileGeneration: UInt64 = 0
+  var collectionSemanticProfileTask: Task<Void, Never>?
   var relatedCardsGeneration: UInt64 = 0
   var relatedCardsTask: Task<Void, Never>?
 
@@ -397,6 +416,7 @@ public final class GrimoraAppModel {
     self.currencyExchangeRateClient = environment.currencyExchangeRateClient
     self.cardFunctionalTagLoader = environment.cardFunctionalTagLoader
     self.relatedCardLoader = environment.relatedCardLoader
+    self.collectionSemanticProfileLoader = environment.collectionSemanticProfileLoader
     self.managedCatalogMigrationService = environment.managedCatalogMigrationService
     self.managedCatalogMigrationStatus = environment.initialManagedCatalogMigrationStatus
     self.cloudSyncDeviceID = cloudSyncDeviceID ?? GrimoraCloudSyncPreferences.deviceID()

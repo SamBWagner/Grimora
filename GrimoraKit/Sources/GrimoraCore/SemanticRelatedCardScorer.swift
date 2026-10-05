@@ -52,12 +52,14 @@ public struct SemanticRelatedCardFilters: Equatable, Sendable {
     }
 
     if let maximumColorIdentity {
-      let allowed = Set(maximumColorIdentity.map {
-        $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-      })
-      let candidateColors = Set(candidate.colorIdentity.map {
-        $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-      })
+      let allowed = Set(
+        maximumColorIdentity.map {
+          $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        })
+      let candidateColors = Set(
+        candidate.colorIdentity.map {
+          $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        })
       if !candidateColors.isSubset(of: allowed) {
         return false
       }
@@ -151,9 +153,10 @@ public enum SemanticRelatedCardsLookup: Equatable, Sendable {
 }
 
 public struct SemanticRelatedCardScorer: Sendable {
-  private struct Feature: Sendable {
+  struct Feature: Sendable {
     var weight: Double
     var sources: Set<String>
+    var assertions: Set<SemanticConceptAssertion>
   }
 
   private let tagsByID: [String: SemanticTagRecord]
@@ -179,7 +182,7 @@ public struct SemanticRelatedCardScorer: Sendable {
     }
     for (index, childTagID) in parents.keys.sorted().enumerated() {
       try Self.checkCancellation(at: index)
-      parents[childTagID]?.sort()
+      parents[childTagID] = Array(Set(parents[childTagID] ?? [])).sorted()
     }
 
     var memberships: [SemanticCardKey: [SemanticCardTagRecord]] = [:]
@@ -250,45 +253,8 @@ public struct SemanticRelatedCardScorer: Sendable {
         continue
       }
 
-      let sharedTagIDs = Set(sourceFeatures.keys).intersection(candidateFeatures.keys).sorted()
-      var concepts: [SemanticRelatedCardConcept] = []
-      concepts.reserveCapacity(sharedTagIDs.count)
-      for tagID in sharedTagIDs {
-        try Task.checkCancellation()
-        guard let tag = tagsByID[tagID] else {
-          continue
-        }
-        let contribution = weightedContribution(
-          source: sourceFeatures[tagID]?.weight ?? 0,
-          candidate: candidateFeatures[tagID]?.weight ?? 0,
-          tagID: tagID
-        )
-        guard contribution > 0 else {
-          continue
-        }
-        let sources = (sourceFeatures[tagID]?.sources ?? [])
-          .union(candidateFeatures[tagID]?.sources ?? [])
-          .union([tag.source])
-          .sorted()
-        concepts.append(
-          SemanticRelatedCardConcept(
-            tagID: tagID,
-            slug: tag.slug,
-            label: tag.label,
-            contribution: contribution,
-            sources: sources
-          )
-        )
-      }
-      concepts.sort {
-        if $0.contribution != $1.contribution {
-          return $0.contribution > $1.contribution
-        }
-        if $0.slug != $1.slug {
-          return $0.slug < $1.slug
-        }
-        return $0.tagID < $1.tagID
-      }
+      let concepts = try sharedConcepts(
+        between: sourceCardKey, and: cardKey, features: featuresByCardKey)
       let numerator = concepts.reduce(0.0) { $0 + $1.contribution }
       guard numerator > 0 else {
         continue
@@ -314,7 +280,56 @@ public struct SemanticRelatedCardScorer: Sendable {
     }.prefix(filters.limit).map { $0 }
   }
 
-  private func featureVectors(
+  func sharedConcepts(
+    between first: SemanticCardKey,
+    and second: SemanticCardKey,
+    features: [SemanticCardKey: [String: Feature]]
+  ) throws -> [SemanticRelatedCardConcept] {
+    let sourceFeatures = features[first] ?? [:]
+    let candidateFeatures = features[second] ?? [:]
+    let sharedTagIDs = Set(sourceFeatures.keys).intersection(candidateFeatures.keys).sorted()
+    var concepts: [SemanticRelatedCardConcept] = []
+    concepts.reserveCapacity(sharedTagIDs.count)
+    for tagID in sharedTagIDs {
+      try Task.checkCancellation()
+      guard let tag = tagsByID[tagID] else {
+        continue
+      }
+      let contribution = weightedContribution(
+        source: sourceFeatures[tagID]?.weight ?? 0,
+        candidate: candidateFeatures[tagID]?.weight ?? 0,
+        tagID: tagID
+      )
+      guard contribution > 0 else {
+        continue
+      }
+      let sources = (sourceFeatures[tagID]?.sources ?? [])
+        .union(candidateFeatures[tagID]?.sources ?? [])
+        .union([tag.source])
+        .sorted()
+      concepts.append(
+        SemanticRelatedCardConcept(
+          tagID: tagID,
+          slug: tag.slug,
+          label: tag.label,
+          contribution: contribution,
+          sources: sources
+        )
+      )
+    }
+    concepts.sort {
+      if $0.contribution != $1.contribution {
+        return $0.contribution > $1.contribution
+      }
+      if $0.slug != $1.slug {
+        return $0.slug < $1.slug
+      }
+      return $0.tagID < $1.tagID
+    }
+    return concepts
+  }
+
+  func featureVectors(
     for cardKeys: Set<SemanticCardKey>
   ) throws -> [SemanticCardKey: [String: Feature]] {
     var features = Dictionary(uniqueKeysWithValues: cardKeys.map { ($0, [String: Feature]()) })
@@ -322,68 +337,85 @@ public struct SemanticRelatedCardScorer: Sendable {
       try Task.checkCancellation()
       for membership in membershipsByCardKey[cardKey, default: []] {
         try Task.checkCancellation()
-        try addFeature(
-          tagID: membership.tagID,
-          weight: Double(membership.weightMillis) / 1_000,
-          sources: [membership.source],
-          depth: 0,
-          to: cardKey,
-          features: &features,
-          visited: []
-        )
+        try addFeatures(from: membership, to: cardKey, features: &features)
       }
     }
     return features
   }
 
-  private func addFeature(
-    tagID: String,
-    weight: Double,
-    sources: Set<String>,
-    depth: Int,
+  /// Breadth-first traversal chooses the lexicographically first shortest enabled path
+  /// per direct assertion. This retains its strongest inherited contribution and exact
+  /// provenance without enumerating exponentially many paths through a diamond hierarchy.
+  private func addFeatures(
+    from assertion: SemanticCardTagRecord,
     to cardKey: SemanticCardKey,
-    features: inout [SemanticCardKey: [String: Feature]],
-    visited: Set<String>
+    features: inout [SemanticCardKey: [String: Feature]]
   ) throws {
-    try Task.checkCancellation()
-    guard let tag = tagsByID[tagID], !visited.contains(tagID) else {
-      return
-    }
-
-    var nextVisited = visited
-    nextVisited.insert(tagID)
-    let effectiveWeight = weight * pow(0.5, Double(depth))
-    let featureSources = sources.union([tag.source])
-    if let existing = features[cardKey]?[tagID] {
-      features[cardKey]?[tagID] = Feature(
-        weight: max(existing.weight, effectiveWeight),
-        sources: existing.sources.union(featureSources)
-      )
-    } else {
-      features[cardKey]?[tagID] = Feature(
-        weight: effectiveWeight,
-        sources: featureSources
-      )
-    }
-
-    for parentTagID in parentsByChild[tagID, default: []] {
-      try addFeature(
-        tagID: parentTagID,
-        weight: weight,
-        sources: featureSources,
-        depth: depth + 1,
-        to: cardKey,
-        features: &features,
-        visited: nextVisited
-      )
+    guard assertion.weightMillis > 0 else { return }
+    let inheritedSources = try inheritedSources(from: assertion)
+    var queue: [(tagID: String, path: [String], sources: Set<String>)] = [
+      (assertion.tagID, [], [assertion.source])
+    ]
+    var cursor = 0
+    var visited: Set<String> = []
+    while cursor < queue.count {
+      try Task.checkCancellation()
+      let current = queue[cursor]
+      cursor += 1
+      guard let tag = tagsByID[current.tagID], visited.insert(tag.id).inserted else { continue }
+      let weight = Double(assertion.weightMillis) / 1000 * pow(0.5, Double(current.path.count))
+      guard weight > 0 else { continue }
+      let path = current.path + [tag.id]
+      let sources = inheritedSources[tag.id] ?? current.sources.union([tag.source])
+      let evidence = SemanticConceptAssertion(
+        tagPath: path, weightMillis: assertion.weightMillis, source: assertion.source,
+        annotation: assertion.annotation)
+      if let existing = features[cardKey]?[tag.id] {
+        features[cardKey]?[tag.id] = Feature(
+          weight: max(existing.weight, weight), sources: existing.sources.union(sources),
+          assertions: existing.assertions.union([evidence]))
+      } else {
+        features[cardKey]?[tag.id] = Feature(
+          weight: weight, sources: sources, assertions: [evidence])
+      }
+      for parent in parentsByChild[tag.id, default: []] where !visited.contains(parent) {
+        queue.append((parent, path, sources))
+      }
     }
   }
 
-  private func magnitude(of features: [String: Feature]) -> Double {
-    sqrt(features.keys.sorted().reduce(0.0) { total, tagID in
-      let weighted = (features[tagID]?.weight ?? 0) * inverseFrequency(for: tagID)
-      return total + weighted * weighted
-    })
+  /// Propagate source sets separately from canonical paths. Sets only grow, so every
+  /// enabled inheritance route contributes provenance without enumerating its paths.
+  /// The finite source/tag domain also terminates defensively on malformed cycles.
+  private func inheritedSources(from assertion: SemanticCardTagRecord) throws -> [String: Set<
+    String
+  >] {
+    guard let direct = tagsByID[assertion.tagID] else { return [:] }
+    var sources: [String: Set<String>] = [direct.id: [assertion.source, direct.source]]
+    var pending = [direct.id]
+    var cursor = 0
+    while cursor < pending.count {
+      try Task.checkCancellation()
+      let child = pending[cursor]
+      cursor += 1
+      for parentID in parentsByChild[child, default: []] {
+        guard parentID != direct.id, let parent = tagsByID[parentID] else { continue }
+        let updated = (sources[parentID] ?? []).union(sources[child] ?? []).union([parent.source])
+        if updated != sources[parentID] {
+          sources[parentID] = updated
+          pending.append(parentID)
+        }
+      }
+    }
+    return sources
+  }
+
+  func magnitude(of features: [String: Feature]) -> Double {
+    sqrt(
+      features.keys.sorted().reduce(0.0) { total, tagID in
+        let weighted = (features[tagID]?.weight ?? 0) * inverseFrequency(for: tagID)
+        return total + weighted * weighted
+      })
   }
 
   private func weightedContribution(

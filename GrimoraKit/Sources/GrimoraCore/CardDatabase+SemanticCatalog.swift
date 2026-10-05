@@ -585,7 +585,7 @@ extension CardDatabase {
     }
   }
 
-  private func semanticCardTagsUnlocked(
+  func semanticCardTagsUnlocked(
     cardKeys: Set<SemanticCardKey>
   ) throws -> [SemanticCardTagRecord] {
     guard !cardKeys.isEmpty else {
@@ -669,7 +669,7 @@ extension CardDatabase {
     return try statement.step()
   }
 
-  private func functionalOracleTagsAvailableUnlocked() throws -> Bool {
+  func functionalOracleTagsAvailableUnlocked() throws -> Bool {
     guard try semanticCatalogAvailableUnlocked() else {
       return false
     }
@@ -795,16 +795,18 @@ extension CardDatabase {
     }
   }
 
-  private func semanticTagsUnlocked() throws -> [SemanticTagRecord] {
+  func semanticTagsUnlocked() throws -> [SemanticTagRecord] {
+    let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
     let statement = try database.prepare(
       """
       SELECT id, namespace, slug, label, description, similarity_enabled, source
-      FROM semantic_tags
+      FROM \(schema).semantic_tags
       ORDER BY id
       """
     )
     var result: [SemanticTagRecord] = []
     while try statement.step() {
+      try Task.checkCancellation()
       guard let id = statement.string(at: 0),
         let namespace = statement.string(at: 1),
         let slug = statement.string(at: 2),
@@ -830,15 +832,17 @@ extension CardDatabase {
   }
 
   private func semanticAliasesUnlocked() throws -> [SemanticTagAliasRecord] {
+    let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
     let statement = try database.prepare(
       """
       SELECT tag_id, alias, alias_key
-      FROM semantic_tag_aliases
+      FROM \(schema).semantic_tag_aliases
       ORDER BY tag_id, alias_key
       """
     )
     var result: [SemanticTagAliasRecord] = []
     while try statement.step() {
+      try Task.checkCancellation()
       guard let tagID = statement.string(at: 0),
         let alias = statement.string(at: 1),
         let aliasKey = statement.string(at: 2)
@@ -850,16 +854,18 @@ extension CardDatabase {
     return result
   }
 
-  private func semanticEdgesUnlocked() throws -> [SemanticTagEdgeRecord] {
+  func semanticEdgesUnlocked() throws -> [SemanticTagEdgeRecord] {
+    let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
     let statement = try database.prepare(
       """
       SELECT parent_tag_id, child_tag_id
-      FROM semantic_tag_edges
+      FROM \(schema).semantic_tag_edges
       ORDER BY parent_tag_id, child_tag_id
       """
     )
     var result: [SemanticTagEdgeRecord] = []
     while try statement.step() {
+      try Task.checkCancellation()
       guard let parentID = statement.string(at: 0), let childID = statement.string(at: 1) else {
         continue
       }
@@ -868,7 +874,7 @@ extension CardDatabase {
     return result
   }
 
-  private func semanticCardTagsUnlocked() throws -> [SemanticCardTagRecord] {
+  func semanticCardTagsUnlocked() throws -> [SemanticCardTagRecord] {
     let statement = try database.prepare(
       """
       SELECT card_key, tag_id, weight_millis, annotation, source
@@ -898,16 +904,18 @@ extension CardDatabase {
     return result
   }
 
-  private func semanticStatsUnlocked() throws -> [SemanticTagStatsRecord] {
+  func semanticStatsUnlocked() throws -> [SemanticTagStatsRecord] {
+    let schema = usesExternalCatalog ? Self.catalogSchemaName : "main"
     let statement = try database.prepare(
       """
       SELECT tag_id, direct_card_count, effective_card_count, idf_millis
-      FROM semantic_tag_stats
+      FROM \(schema).semantic_tag_stats
       ORDER BY tag_id
       """
     )
     var result: [SemanticTagStatsRecord] = []
     while try statement.step() {
+      try Task.checkCancellation()
       guard let tagID = statement.string(at: 0),
         let directCardCount = statement.int(at: 1),
         let effectiveCardCount = statement.int(at: 2),

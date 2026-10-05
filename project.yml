@@ -228,12 +228,55 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: Apple Development
         DEVELOPMENT_TEAM: BJPQVZR5PZ
+  GrimoraMacProfileTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: GrimoraKit/Tests/GrimoraCoreTests/CardCollectionSemanticProfileTests.swift
+      - path: GrimoraKit/Tests/GrimoraCoreTests/CardCollectionSemanticProfileRuntimeTests.swift
+    dependencies:
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora.GrimoraMacProfileTests
+        CODE_SIGNING_ALLOWED: NO
+  GrimoraiOSProfileTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: GrimoraKit/Tests/GrimoraCoreTests/CardCollectionSemanticProfileTests.swift
+      - path: GrimoraKit/Tests/GrimoraCoreTests/CardCollectionSemanticProfileRuntimeTests.swift
+    dependencies:
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora.GrimoraiOSProfileTests
+        CODE_SIGNING_ALLOWED: NO
+  GrimoraVisionOSProfileTests:
+    type: bundle.unit-test
+    platform: visionOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: GrimoraKit/Tests/GrimoraCoreTests/CardCollectionSemanticProfileTests.swift
+      - path: GrimoraKit/Tests/GrimoraCoreTests/CardCollectionSemanticProfileRuntimeTests.swift
+    dependencies:
+      - package: GrimoraKit
+        product: GrimoraCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.samwagner.Grimora.GrimoraVisionOSProfileTests
+        CODE_SIGNING_ALLOWED: NO
 schemes:
   GrimoraMac:
     build:
       targets:
         GrimoraMac: all
         GrimoraMacUITests: [test]
+        GrimoraMacProfileTests: [test]
     run:
       config: Debug
     test:
@@ -241,6 +284,7 @@ schemes:
       gatherCoverageData: true
       targets:
         - GrimoraMacUITests
+        - GrimoraMacProfileTests
   GrimoraEngineApp:
     build:
       targets:
@@ -258,6 +302,7 @@ schemes:
       targets:
         GrimoraiOS: all
         GrimoraiOSUITests: [test]
+        GrimoraiOSProfileTests: [test]
     run:
       config: Debug
     test:
@@ -265,11 +310,14 @@ schemes:
       targets:
         - name: GrimoraiOSUITests
           parallelizable: true
+        - name: GrimoraiOSProfileTests
+          parallelizable: false
   GrimoraVisionOS:
     build:
       targets:
         GrimoraVisionOS: all
         GrimoraVisionOSUITests: [test]
+        GrimoraVisionOSProfileTests: [test]
     run:
       config: Debug
     test:
@@ -277,3 +325,5 @@ schemes:
       targets:
         - name: GrimoraVisionOSUITests
           parallelizable: true
+        - name: GrimoraVisionOSProfileTests
+          parallelizable: false

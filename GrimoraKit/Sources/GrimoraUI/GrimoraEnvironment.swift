@@ -13,6 +13,12 @@ public typealias CardRelatedCardLoader = @Sendable (
   SemanticRelatedCardFilters
 ) async throws -> SemanticRelatedCardsLookup
 
+public typealias CollectionSemanticProfileLoader = @Sendable (
+  CardCollectionRecord,
+  [CardCollectionEntryRecord],
+  CardCollectionSemanticPolicy
+) async throws -> CardCollectionSemanticProfileLookup
+
 public struct GrimoraEnvironment: Sendable {
   public var database: CardDatabase
   public var updateService: LibraryUpdateService
@@ -34,6 +40,7 @@ public struct GrimoraEnvironment: Sendable {
   public var initialManagedCatalogMigrationStatus: ManagedCatalogMigrationStatus?
   public var cardFunctionalTagLoader: CardFunctionalTagLoader
   public var relatedCardLoader: CardRelatedCardLoader
+  public var collectionSemanticProfileLoader: CollectionSemanticProfileLoader
 
   public init(
     database: CardDatabase,
@@ -57,7 +64,8 @@ public struct GrimoraEnvironment: Sendable {
     managedCatalogMigrationService: ManagedCatalogMigrationService? = nil,
     initialManagedCatalogMigrationStatus: ManagedCatalogMigrationStatus? = nil,
     cardFunctionalTagLoader: CardFunctionalTagLoader? = nil,
-    relatedCardLoader: CardRelatedCardLoader? = nil
+    relatedCardLoader: CardRelatedCardLoader? = nil,
+    collectionSemanticProfileLoader: CollectionSemanticProfileLoader? = nil
   ) {
     self.database = database
     self.updateService = updateService
@@ -88,6 +96,9 @@ public struct GrimoraEnvironment: Sendable {
     }
     self.relatedCardLoader = relatedCardLoader ?? { card, filters in
       try await database.semanticRelatedCards(for: card, filters: filters)
+    }
+    self.collectionSemanticProfileLoader = collectionSemanticProfileLoader ?? { list, entries, policy in
+      try await database.collectionSemanticProfile(for: list, entries: entries, policy: policy)
     }
   }
 

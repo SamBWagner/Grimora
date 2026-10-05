@@ -1,8 +1,36 @@
-import GrimoraCore
 import Foundation
+import GrimoraCore
 import Testing
 
 struct SemanticRelatedCardScorerTests {
+  @Test
+  func diamondHierarchyPreservesSourcesFromEveryInheritedRoute() throws {
+    let first = SemanticCardKey(oracleID: "first", printingID: "first")
+    let second = SemanticCardKey(oracleID: "second", printingID: "second")
+    let snapshot = SemanticCatalogSnapshot(
+      tags: ["draw", "left", "right", "root"].map {
+        .init(
+          id: $0, namespace: "oracle", slug: $0, label: $0, description: nil,
+          similarityEnabled: true, source: $0)
+      },
+      aliases: [],
+      edges: [
+        .init(parentTagID: "left", childTagID: "draw"),
+        .init(parentTagID: "right", childTagID: "draw"),
+        .init(parentTagID: "root", childTagID: "left"),
+        .init(parentTagID: "root", childTagID: "right"),
+      ],
+      cardTags: [first, second].map {
+        .init(cardKey: $0, tagID: "draw", weightMillis: 1000, annotation: nil, source: "fixture")
+      },
+      stats: []
+    )
+    let matches = try SemanticRelatedCardScorer(snapshot: snapshot).rankedCandidates(
+      for: first, among: [.init(cardKey: second, printingID: "second", name: "Second")])
+    let root = try #require(matches.first?.sharedConcepts.first { $0.tagID == "root" })
+    #expect(root.sources == ["draw", "fixture", "left", "right", "root"])
+  }
+
   @Test
   func formatColorIdentityAndLimitFiltersApplyBeforeRanking() throws {
     let sourceKey = SemanticCardKey(oracleID: "source", printingID: "source-print")
@@ -249,16 +277,17 @@ struct SemanticRelatedCardScorerTests {
           name: "Candidate \(index)"
         )
       )
-      memberships.append(contentsOf: (0..<8).map { offset in
-        let tagIndex = (index * 8 + offset) % tagCount
-        return SemanticCardTagRecord(
-          cardKey: cardKey,
-          tagID: "tag-\(tagIndex)",
-          weightMillis: 1_000,
-          annotation: nil,
-          source: "semantic-fixture"
-        )
-      })
+      memberships.append(
+        contentsOf: (0..<8).map { offset in
+          let tagIndex = (index * 8 + offset) % tagCount
+          return SemanticCardTagRecord(
+            cardKey: cardKey,
+            tagID: "tag-\(tagIndex)",
+            weightMillis: 1_000,
+            annotation: nil,
+            source: "semantic-fixture"
+          )
+        })
     }
     let snapshot = SemanticCatalogSnapshot(
       tags: tags,
